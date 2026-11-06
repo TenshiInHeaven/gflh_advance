@@ -3,6 +3,7 @@ import { store, refreshSequence, sequenceStats, removeTeam, moveTeam, clearSeque
 import { icon, toast, toastErr, toastOk, confirmDialog, butterflySvg } from "../ui.js";
 import { esc, fmtNum, factionColor, navigate, powerDisplay } from "../util.js";
 import { bindDragSort } from "./drag-sort.js";
+import { addByIdHtml, bindAddById } from "./add-by-id.js";
 import { openExecuteModal } from "./execute-modal.js";
 
 let rootEl = null;
@@ -70,6 +71,7 @@ function render() {
       }
     </div>
     <div class="seq-foot">
+      <div class="seq-add-row">${addByIdHtml({ compact: true })}</div>
       <button class="btn btn-primary btn-block btn-lg" type="button" data-act="execute" ${draft.length ? "" : "disabled"}>
         ${icon("play", 14)} 执行注入
       </button>
@@ -82,6 +84,7 @@ function render() {
   `;
 
   bindEvents(draft);
+  bindAddById(rootEl);
 }
 
 function seqItemHtml(team, index) {

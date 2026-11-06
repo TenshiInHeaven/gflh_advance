@@ -13,6 +13,7 @@ import {
 } from "../ui.js";
 import { esc, fmtNum, factionColor, navigate, powerDisplay } from "../util.js";
 import { bindDragSort } from "../components/drag-sort.js";
+import { addByIdHtml, bindAddById } from "../components/add-by-id.js";
 import { openExecuteModal } from "../components/execute-modal.js";
 
 const MODES = [
@@ -37,6 +38,7 @@ export async function render(root) {
     badge: "SEQUENCE",
     sub: "序列就是执行后「收藏标靶」的编号顺序：拖拽条目排序，最多 35 个。序列仅是草稿，执行向导里预览确认后才会真正写入游戏。",
     actions: `
+      <div class="page-head-add">${addByIdHtml()}</div>
       <button class="btn btn-ghost" type="button" data-act="import">${icon("download", 14)} 从当前靶机导入</button>
       <button class="btn btn-cyan" type="button" data-nav="/chapters">${icon("map", 14)} 去选队伍</button>
       <button class="btn btn-primary" type="button" data-act="execute">${icon("play", 14)} 执行注入</button>
@@ -54,6 +56,7 @@ export async function render(root) {
   }
 
   // 页头按钮只绑定一次（renderPage 只替换 data-seq-page 内部，避免重复绑定）
+  bindAddById(root.querySelector(".page-head"));
   root.querySelectorAll(".page-head [data-act]").forEach((button) => {
     if (button.dataset.act === "execute") {
       button.addEventListener("click", openExec);

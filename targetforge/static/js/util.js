@@ -26,6 +26,26 @@ export function fmtFloat(n, digits = 1, fallback = "—") {
   return num.toFixed(digits);
 }
 
+/** 机场/后续刷新候选判定：role/reserve 标记（catalog v1.5 按 team id 族推断，inferred=true） */
+export function isReserveTeam(team) {
+  if (!team || typeof team !== "object") return false;
+  if (team.reserve === true || team.is_reserve === true || Boolean(team.reserve_reason)) return true;
+  if (String(team.role || "").toLowerCase() === "reserve") return true;
+  if (Array.isArray(team.appearances) && team.appearances.some((item) => String(item?.role || "").toLowerCase() === "reserve")) return true;
+  const roles = team.roles;
+  if (Array.isArray(roles)) return roles.map((item) => String(item).toLowerCase()).includes("reserve");
+  if (typeof roles === "string") return roles.toLowerCase().includes("reserve");
+  return false;
+}
+
+/** stage / stage detail 里的机场刷新候选数量 */
+export function reserveCountOf(stage, fallbackList) {
+  if (stage && Number.isFinite(Number(stage.reserve_team_count))) return Number(stage.reserve_team_count);
+  if (Array.isArray(fallbackList)) return fallbackList.length;
+  if (stage && Array.isArray(stage.reserve_teams)) return stage.reserve_teams.length;
+  return 0;
+}
+
 /** 支援队伍判定：team.roles 含 support / team.support=true / 后端 support 标记 */
 export function isSupportTeam(team) {
   if (!team || typeof team !== "object") return false;

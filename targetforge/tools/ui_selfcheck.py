@@ -578,61 +578,184 @@ def run_checks(base_url: str, mock: bool) -> int:
             checker.assert_count(".stage-row", 5)
             checker.shot("03_chapter_detail.png", ".stage-list")
 
-            # ---------------- 04 关卡队伍：谜境守卫+ mission 11435（支援队伍混在同一列表） ----------------
+            # ---------------- 04 关卡队伍：谜境守卫+ mission 11435（支援/机场候选并入同一列表体系） ----------------
             load("/chapters/score--60", ".stage-row")
             support_stage_row = page.locator(".stage-row", has_text="11435")
             if support_stage_row.count() == 0:
                 support_stage_row = page.locator(".stage-row").first
             support_stage_row.first.click()
             checker.wait(".team-card")
-            page.wait_for_timeout(900)
+            page.wait_for_timeout(1000)
+
+            # 顶部 chip：敌方 X · 支援 Y · 可能刷新 Z
+            header_text = page.locator(".page-sub").inner_text()
+            if "敌方" in header_text and "支援" in header_text and "可能刷新" in header_text:
+                checker.passed.append(f"11435 顶部 chip 含敌方/支援/可能刷新（{header_text.replace(chr(10), ' ')[:120]}）")
+            else:
+                checker.failures.append(f"11435 顶部 chip 缺少敌方/支援/可能刷新：{header_text[:160]}")
+            EVIDENCE["support_header"] = header_text.replace("\n", " ")
+
+            # 支援队伍卡并入同一队伍列表（搜索定位）
             page.fill("[data-team-search]", "6363006")
             page.wait_for_timeout(700)
             support_card = page.locator('.team-card[data-team-detail="6363006"]')
             if support_card.count() > 0:
-                support_card.scroll_into_view_if_needed()
-                page.wait_for_timeout(400)
-                checker.shot("04_stage_teams.png", '.team-card[data-team-detail="6363006"]', scroll_top=False, settle=400)
-                checker.passed.append("04 关卡队伍截图：支援队伍 6363006 混在同一队伍列表")
-                # 支援队伍可加入序列（在填充序列前测试，测后移除）
+                support_text = support_card.inner_text()
+                if "673,555" in support_text and support_card.locator(".badge.support").count() > 0:
+                    checker.passed.append("主队伍列表含支援卡 6363006（673,555 + 支援队伍徽标）")
+                else:
+                    checker.failures.append(f"支援卡信息异常：{support_text[:160]}")
                 if support_card.locator("[data-add-team]").count() > 0:
-                    support_card.locator("[data-add-team]").first.click()
-                    page.wait_for_timeout(1100)
-                    try:
-                        seq_ids = [
-                            int(team["id"])
-                            for team in (http_json(base_url.rstrip("/") + "/api/sequence") or {}).get("draft", [])
-                        ]
-                    except Exception:  # noqa: BLE001
-                        seq_ids = []
-                    if 6363006 in seq_ids:
-                        checker.passed.append("支援队伍 6363006 可加入序列（/api/sequence 已包含）")
-                    else:
-                        checker.failures.append(f"支援队伍加入序列失败：{seq_ids[:40]}")
-                    try:
-                        http_post(
-                            base_url.rstrip("/") + "/api/sequence",
-                            {"action": "remove", "team_id": 6363006},
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
-                    page.wait_for_timeout(400)
-                    # 重新加载关卡页，让前端序列 store 与服务端同步，避免后续截图序列计数-1
-                    load("/stages/11435", ".team-card")
-                    page.wait_for_timeout(700)
+                    checker.passed.append("支援队伍卡支持加入序列")
+                else:
+                    checker.failures.append("支援队伍卡缺少加入序列按钮")
             else:
-                checker.shot("04_stage_teams.png", ".team-grid")
-                checker.failures.append("11435 关卡页未在队伍列表中找到支援队伍 6363006")
+                checker.failures.append("11435 主队伍列表缺少支援队伍 6363006")
             page.fill("[data-team-search]", "")
             page.wait_for_timeout(600)
 
-            # 效能筛选控件存在性（关卡队伍为本地过滤；有标注队伍主要在积分/特殊队伍里）
+            # 机场刷新候选：默认折叠 → 展开 → 再显示更多（同一列表体系，不做单独 tab）
+            if page.locator(".support-tab").count() == 0:
+                checker.passed.append("11435 无独立支援/机场 tab（共用同一列表体系）")
+            else:
+                checker.failures.append("11435 出现独立支援/机场 tab")
+            reserve_toggle = page.locator("[data-reserve-toggle]")
+            if reserve_toggle.count() > 0 and "可能刷新" in reserve_toggle.inner_text():
+                checker.passed.append(f"机场候选折叠条含数量（{reserve_toggle.inner_text().replace(chr(10), ' ')[:110]}）")
+            else:
+                checker.failures.append("机场候选折叠条缺失")
+            if page.locator(".reserve-grid .team-card").count() == 0:
+                checker.passed.append("机场候选默认折叠（不刷屏）")
+            else:
+                checker.failures.append("机场候选默认未折叠")
+            reserve_toggle.first.click()
+            page.wait_for_timeout(700)
+            expanded_count = page.locator(".reserve-grid .team-card").count()
+            reserve_badges = page.locator(".reserve-grid .team-card .badge.reserve").count()
+            if expanded_count > 0 and reserve_badges >= expanded_count:
+                checker.passed.append(f"展开机场候选 {expanded_count} 张卡均带「机场可能刷新（推断）」badge")
+            else:
+                checker.failures.append(f"机场候选卡/badge 缺失：{expanded_count}/{reserve_badges}")
+            more_btn = page.locator("[data-reserve-more]")
+            after_more = expanded_count
+            if more_btn.count() > 0:
+                before_more = expanded_count
+                more_btn.first.click()
+                page.wait_for_timeout(700)
+                after_more = page.locator(".reserve-grid .team-card").count()
+                if after_more > before_more:
+                    checker.passed.append(f"「再显示更多」生效（{before_more} → {after_more} 张）")
+                else:
+                    checker.failures.append("「再显示更多」未增加候选")
+            reserve_ids = page.evaluate(
+                "() => [...document.querySelectorAll('.reserve-grid .team-card')].map(e => e.dataset.teamDetail)"
+            )
+            if "6363057" in reserve_ids and "6363060" in reserve_ids:
+                checker.passed.append("机场候选含 6363057 / 6363060（AA-02）")
+            else:
+                checker.failures.append(f"机场候选缺少 6363057/6363060：{reserve_ids[:20]}")
+            EVIDENCE["reserve"] = {
+                "expanded": after_more,
+                "ids": list(reserve_ids[:24]),
+                "collapsed_default": True,
+            }
+            page.locator(".reserve-grid").first.scroll_into_view_if_needed()
+            page.wait_for_timeout(400)
+            checker.shot("04_stage_teams.png", ".reserve-grid", scroll_top=False, settle=400)
+
+            # 全局搜索按编号：显示队伍结果卡 + 加入序列
+            page.fill("#global-search", "#6363006")
+            page.wait_for_timeout(1500)
+            search_result = page.locator(".sd-team-result")
+            if search_result.count() > 0 and "6363006" in search_result.first.inner_text():
+                checker.passed.append("全局搜索 #6363006 出现队伍结果卡")
+            else:
+                checker.failures.append("全局搜索 #6363006 未出现队伍结果")
+            checker.shot("20_search_team.png", "#search-drop", scroll_top=False, settle=300)
+            search_add = page.locator("[data-search-add]").first
+            if search_add.count() > 0:
+                search_add.click()
+                page.wait_for_timeout(1300)
+                try:
+                    search_seq_ids = [
+                        int(t["id"])
+                        for t in (http_json(base_url.rstrip("/") + "/api/sequence") or {}).get("draft", [])
+                    ]
+                except Exception:  # noqa: BLE001
+                    search_seq_ids = []
+                if 6363006 in search_seq_ids:
+                    checker.passed.append("搜索结果可直接加入序列（/api/sequence 命中 6363006）")
+                else:
+                    checker.failures.append(f"搜索结果加入序列失败：{search_seq_ids[:40]}")
+                try:
+                    http_post(base_url.rstrip("/") + "/api/sequence", {"action": "remove", "team_id": 6363006})
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                checker.failures.append("搜索结果缺少「加入序列」按钮")
+            page.fill("#global-search", "")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+
+            # 序列页「按编号加入」（支持 # 前缀）
+            load("/sequence", ".add-by-id")
+            page.wait_for_timeout(700)
+            seq_input = page.locator(".page-head .add-by-id [data-add-id-input]").first
+            if seq_input.count() > 0:
+                seq_input.fill("#6363006")
+                seq_input.press("Enter")
+                page.wait_for_timeout(1600)
+                try:
+                    byid_seq_ids = [
+                        int(t["id"])
+                        for t in (http_json(base_url.rstrip("/") + "/api/sequence") or {}).get("draft", [])
+                    ]
+                except Exception:  # noqa: BLE001
+                    byid_seq_ids = []
+                if 6363006 in byid_seq_ids:
+                    checker.passed.append("序列页「按编号加入」#6363006 成功")
+                else:
+                    checker.failures.append(f"序列页按编号加入失败：{byid_seq_ids[:40]}")
+            else:
+                checker.failures.append("序列页缺少「按编号加入」输入框")
+            try:
+                http_post(base_url.rstrip("/") + "/api/sequence", {"action": "clear"})
+            except Exception:  # noqa: BLE001
+                pass
+
+            # 侧栏高亮滑块：总览 → 关卡图鉴 transform 变化
+            load("/overview", ".hero-butterfly")
+            page.wait_for_timeout(800)
+            hl = page.locator("[data-nav-highlight]")
+            before_transform = hl.evaluate("el => getComputedStyle(el).transform")
+            before_box = hl.bounding_box()
+            page.locator('.nav-item[data-nav="/chapters"]').click()
+            checker.wait(".chapter-card")
+            page.wait_for_timeout(1000)
+            after_transform = hl.evaluate("el => getComputedStyle(el).transform")
+            after_box = hl.bounding_box()
+            moved = (before_transform != after_transform) or (
+                bool(before_box) and bool(after_box) and before_box.get("y") != after_box.get("y")
+            )
+            if moved:
+                checker.passed.append(f"侧栏高亮块 transform 随路由移动（{before_transform} → {after_transform}）")
+            else:
+                checker.failures.append(f"侧栏高亮块未移动：{before_transform} / {after_transform}")
+            EVIDENCE["sidebar_highlight"] = {
+                "before": before_transform,
+                "after": after_transform,
+                "before_y": before_box.get("y") if before_box else None,
+                "after_y": after_box.get("y") if after_box else None,
+            }
+            checker.shot("21_sidebar_highlight.png", ".sidenav", scroll_top=False)
+
+            # 回到关卡队伍页：效能筛选控件 + 全部加入（供后续序列截图）
+            load("/stages/11435", ".team-card")
+            page.wait_for_timeout(800)
             if page.locator(".power-filter").count() > 0:
                 checker.passed.append("关卡队伍页含效能筛选/排序控件")
             else:
                 checker.failures.append("关卡队伍页缺少效能筛选控件")
-
-            # 加入序列，供序列页 / 执行预览使用
             add_all = page.locator('[data-act="add-all"]')
             if add_all.count() > 0:
                 add_all.first.click()
@@ -641,7 +764,7 @@ def run_checks(base_url: str, mock: bool) -> int:
                     page.wait_for_function(
                         "() => { const el = document.querySelector('[data-nav-count=\"sequence\"]');"
                         " return el && Number(el.textContent) > 0; }",
-                        timeout=12000,
+                        timeout=15000,
                     )
                     checker.passed.append("从关卡加入序列")
                 except Exception as exc:  # noqa: BLE001
@@ -1115,7 +1238,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 20
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 22
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

@@ -20,10 +20,11 @@ import {
   handleViewError,
   emptyState,
 } from "./ui.js";
-import { esc, fmtNum, fmtDate, timeAgo, navigate, parseRoute, debounce, bindSearch, powerDisplay } from "./util.js";
+import { esc, fmtNum, fmtDate, timeAgo, navigate, parseRoute, debounce, bindSearch, powerDisplay, isSupportTeam, isReserveTeam } from "./util.js";
 import { initSequencePanel } from "./components/sequence-panel.js";
 import { openTeamDrawer } from "./components/team-drawer.js";
 import { maybeShowTutorialOverlay } from "./components/tutorial-overlay.js";
+import { addTeamById } from "./components/add-by-id.js";
 
 /* 视图 */
 import * as overview from "./views/overview.js";
@@ -65,6 +66,7 @@ async function boot() {
   renderNavCounts();
   initTopbar();
   bindGlobalEvents();
+  initNavHighlight();
 
   // 先注册全局事件，保证基础数据首次加载时顶栏/导航角标就能同步刷新
   store.on("health", (payload) => {
@@ -260,6 +262,38 @@ const runSearch = debounce(async (value, wait = 0) => {
     drop.innerHTML = "";
     return;
   }
+  // 纯数字 / #编号：直接按队伍编号查详情，显示队伍结果卡 + 加入序列
+  const numericMatch = value.trim().match(/^#?(\d{2,})$/);
+  if (numericMatch) {
+    const teamId = Number(numericMatch[1]);
+    try {
+      const detail = await api.team(teamId);
+      const disp = powerDisplay(detail.power, detail.power_known);
+      const roleBadges = [];
+      if (isSupportTeam(detail)) roleBadges.push('<span class="badge support">支援队伍</span>');
+      const isReserve =
+        isReserveTeam(detail) ||
+        Boolean(detail.reserve_reason) ||
+        (Array.isArray(detail.appearances) &&
+          detail.appearances.some((item) => String(item?.role || "").toLowerCase() === "reserve"));
+      if (isReserve) roleBadges.push('<span class="badge reserve">机场可能刷新（推断）</span>');
+      const inSequence = (store.sequence?.draft || []).some((team) => Number(team.id) === Number(detail.id));
+      drop.innerHTML = `
+        <div class="sd-group-title">队伍（按编号）</div>
+        <div class="sd-item sd-team-result" data-search-nav="/teams/${esc(detail.id)}">
+          <span class="badge mono sd-team-id">#${esc(detail.id)}</span>
+          <span class="sd-main">
+            <span class="sd-title">效能 ${disp.known ? disp.text : "未标注"} · ${esc(String(detail.units ?? ""))} 单位 · ${esc(detail.faction || "")}</span>
+            <span class="sd-sub">总血量 ${fmtNum(detail.hp_total)}${roleBadges.length ? ` · ${roleBadges.join(" ")}` : ""}</span>
+          </span>
+          <span class="sd-actions"><button class="btn btn-xs btn-cyan" type="button" data-search-add="${esc(detail.id)}" ${inSequence ? "disabled" : ""}>${inSequence ? "已在序列" : `${icon("plus", 11)} 加入序列`}</button></span>
+        </div>`;
+      return;
+    } catch (err) {
+      drop.innerHTML = `<div class="sd-empty">没有找到编号为 #${teamId} 的可收藏队伍<br><span class="text-mute">可在序列页「按编号加入」再试。</span></div>`;
+      return;
+    }
+  }
   try {
     const data = await api.search(value, 20);
     const teams = data.teams || [];
@@ -344,9 +378,45 @@ function matchRoute(path) {
 }
 
 function setNavActive(navId) {
+  const target = navId ? `/${navId}` : "";
   document.querySelectorAll(".nav-item").forEach((item) => {
-    item.classList.toggle("active", item.dataset.nav === navId);
+    const nav = item.dataset.nav || "";
+    item.classList.toggle("active", Boolean(target) && (nav === target || nav === navId));
   });
+  moveNavHighlight(true);
+}
+
+/* 侧栏高亮滑块：独立高亮块通过 transform 平滑移动到当前菜单项 */
+function initNavHighlight() {
+  moveNavHighlight(false);
+  window.addEventListener("resize", debounce(() => moveNavHighlight(false), 120));
+}
+
+function moveNavHighlight(animate = false) {
+  const nav = document.querySelector(".nav");
+  const hl = document.querySelector("[data-nav-highlight]");
+  if (!nav || !hl) return;
+  const active = nav.querySelector(".nav-item.active");
+  if (!active || !active.offsetHeight) {
+    hl.classList.remove("is-visible");
+    return;
+  }
+  const first = !hl.dataset.positioned;
+  const top = active.offsetTop;
+  const height = active.offsetHeight;
+  const noAnim = first || !animate;
+  if (noAnim) hl.style.transition = "none";
+  hl.style.transform = `translateY(${top}px)`;
+  hl.style.height = `${height}px`;
+  hl.classList.add("is-visible", "is-ready");
+  hl.dataset.positioned = "1";
+  if (noAnim) {
+    // 初始化 / resize 直接定位，无动画；下一帧恢复 CSS transition
+    void hl.offsetHeight;
+    requestAnimationFrame(() => {
+      hl.style.transition = "";
+    });
+  }
 }
 
 export async function renderRoute() {
@@ -415,6 +485,20 @@ function bindGlobalEvents() {
     if (navEl) {
       event.preventDefault();
       navigate(navEl.dataset.nav);
+      return;
+    }
+    const searchAdd = event.target.closest("[data-search-add]");
+    if (searchAdd) {
+      event.preventDefault();
+      event.stopPropagation();
+      const teamId = Number(searchAdd.dataset.searchAdd);
+      searchAdd.disabled = true;
+      const ok = await addTeamById(teamId);
+      if (ok) {
+        searchAdd.textContent = "已在序列";
+      } else if (searchAdd.isConnected) {
+        searchAdd.disabled = false;
+      }
       return;
     }
     const searchNav = event.target.closest("[data-search-nav]");

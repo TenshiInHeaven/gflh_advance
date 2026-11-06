@@ -376,6 +376,7 @@ function chapterStages(chapter) {
         order: 0,
         settlement: mockSettlement(chapter, "11435"),
         support_team_count: 1,
+        reserve_team_count: 2,
       },
     ];
   }
@@ -425,14 +426,19 @@ function makeTeamSummary(teamId, options = {}) {
   const orphan = options.orphan ?? false;
   const units = randInt(rng, 4, 9);
   const supportTeam = Number(teamId) === 6363006;
+  const reserveTeam = Number(teamId) === 6363057 || Number(teamId) === 6363060;
   // 只有积分关卡/部分特殊队伍有标注效能（约 18%），其余为 0 = 未标注；偶发负值
   const knownRoll = rng();
   const powerKnown = supportTeam || (options.power_known ?? knownRoll < 0.18);
   const power = supportTeam
     ? 673555
-    : powerKnown
-      ? (rng() < 0.12 ? -randInt(rng, 100, 4200) : randInt(rng, 18000, 176000))
-      : 0;
+    : reserveTeam
+      ? Number(teamId) === 6363057
+        ? 421000
+        : 388000
+      : powerKnown
+        ? (rng() < 0.12 ? -randInt(rng, 100, 4200) : randInt(rng, 18000, 176000))
+        : 0;
   const hpTotal = supportTeam
     ? 372000
     : Math.round(randInt(rng, 9000, 150000) * (units / 6));
@@ -484,7 +490,10 @@ function makeTeamSummary(teamId, options = {}) {
     units: supportTeam ? 9 : units,
     hp_total: hpTotal,
     faction: supportTeam ? "铁血" : faction,
-    roles: supportTeam || options.support ? ["support"] : ["enemy"],
+    roles: supportTeam || options.support ? ["support"] : reserveTeam || options.reserve ? ["reserve"] : ["enemy"],
+    inferred: reserveTeam || options.reserve ? true : undefined,
+    role: reserveTeam || options.reserve ? "reserve" : undefined,
+    reserve_reason: reserveTeam || options.reserve ? "同系列未入场怪组（机场/后期刷新候选，STC 无显式映射）" : undefined,
     tags: options.tags || tagsFor(seedOf(`tags:${teamId}`)),
     species: species.slice(0, 8),
     members: members.slice(0, 6),
@@ -615,6 +624,7 @@ function makeTeamDetail(teamId) {
     };
   });
   const supportTeam = summary.roles?.includes("support");
+  const reserveTeam = summary.roles?.includes("reserve");
   if (supportTeam) {
     appearances.unshift({
       mission_id: 11435,
@@ -631,6 +641,7 @@ function makeTeamDetail(teamId) {
     power: summary.power,
     power_known: summary.power_known,
     roles: summary.roles || ["enemy"],
+    inferred: summary.inferred,
     units: summary.units,
     hp_total: summary.hp_total,
     faction: summary.faction,
@@ -1286,6 +1297,8 @@ export async function mockRequest(method, path, body = {}) {
     const stageId = Number(match[1]);
     const { stage, chapter } = findStage(stageId);
     const supportTeams = stageId === 11435 ? [makeTeamSummary(6363006, { support: true })] : [];
+    const reserveTeams =
+      stageId === 11435 ? [makeTeamSummary(6363057, { reserve: true }), makeTeamSummary(6363060, { reserve: true })] : [];
     const teams = [];
     const rng = mulberry32(hash32(`stage-teams:${stageId}`));
     const teamCount = randInt(rng, 5, 12);
@@ -1305,9 +1318,15 @@ export async function mockRequest(method, path, body = {}) {
       );
     }
     return ok({
-      stage: { ...stage, support_team_count: supportTeams.length, chapter_title: chapter.title },
+      stage: {
+        ...stage,
+        support_team_count: supportTeams.length,
+        reserve_team_count: reserveTeams.length,
+        chapter_title: chapter.title,
+      },
       teams,
       support_teams: supportTeams,
+      reserve_teams: reserveTeams,
     });
   }
   match = route.match(/^\/api\/teams\/(\d+)$/);

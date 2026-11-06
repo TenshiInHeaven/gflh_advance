@@ -458,12 +458,39 @@ body::after {
   text-transform: uppercase;
 }
 .nav {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
+.nav-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 38px;
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(94, 225, 255, 0.16), rgba(94, 225, 255, 0.03) 62%, transparent);
+  border: 1px solid rgba(94, 225, 255, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), height 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.18s ease;
+}
+.nav-highlight.is-visible { opacity: 1; }
+.nav-highlight::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--amber), rgba(94, 225, 255, 0.25));
+  box-shadow: 0 0 12px var(--amber-glow);
+}
 .nav-item {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 11px;
@@ -492,20 +519,11 @@ body::after {
 }
 .nav-item:hover .nav-ico { color: var(--amber); }
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(94, 225, 255, 0.16), rgba(94, 225, 255, 0.03) 62%, transparent);
   color: var(--amber-2);
-  border-color: rgba(94, 225, 255, 0.18);
 }
 .nav-item.active .nav-ico { color: var(--amber); }
-.nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  background: linear-gradient(180deg, var(--amber), rgba(94, 225, 255, 0.25));
-  box-shadow: 0 0 12px var(--amber-glow);
+@media (prefers-reduced-motion: reduce) {
+  .nav-highlight { transition: none; }
 }
 
 .nav-spacer { flex: 1; }
@@ -3761,6 +3779,16 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
   letter-spacing: 0;
 }
 .appear-item .tag { margin-left: 2px; }
+/* ---------- 28.51 机场刷新候选（catalog v1.5 推断） ---------- */
+.badge.reserve {
+  color: #ffd27a;
+  border-color: rgba(242, 193, 78, 0.42);
+  background: rgba(242, 193, 78, 0.1);
+}
+.team-card.is-reserve { border-color: rgba(242, 193, 78, 0.22); }
+.team-card.is-reserve::before { background: var(--gold); }
+.team-side-chip.reserve { color: #ffd27a; border: 1px solid rgba(242, 193, 78, 0.4); background: rgba(242, 193, 78, 0.08); }
+
 /* ---------- 28.52 支援队伍（spot.ally_team_id） ---------- */
 .badge.support {
   color: #7fe9ff;
@@ -4069,3 +4097,83 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 @media print {
   body { background: #070d1c !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- 29. 按编号加入序列 / 编号搜索 / 侧栏滑块补充 ---------- */
+.add-by-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(10, 18, 39, 0.55);
+}
+.add-by-id.compact { height: 30px; width: 100%; }
+.abi-ico { display: inline-flex; color: var(--text-mute); flex: none; }
+.abi-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  outline: none;
+}
+.abi-input::placeholder { color: var(--text-mute); font-size: 10.5px; letter-spacing: 0.2px; }
+.add-by-id .btn { height: 22px; padding: 0 7px; font-size: 10px; flex: none; }
+.page-head-add { display: flex; align-items: center; }
+.page-head-add .add-by-id { width: 252px; }
+.seq-add-row { margin-bottom: 8px; }
+.seq-add-row .add-by-id { width: 100%; }
+.sd-team-result { display: flex; align-items: center; gap: 10px; }
+.sd-team-result .sd-main { flex: 1; min-width: 0; }
+.sd-team-result .sd-actions { flex: none; display: flex; align-items: center; }
+.sd-team-id { height: 18px; font-size: 10px; }
+.sd-team-result .badge.support, .sd-team-result .badge.reserve { height: 17px; font-size: 9px; }
+
+/* ---------- 28.49 机场刷新候选折叠区（v1.5 推断） ---------- */
+.reserve-strip {
+  margin-top: 18px;
+  border: 1px solid rgba(242, 193, 78, 0.2);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(242, 193, 78, 0.035), rgba(10, 18, 39, 0.3));
+  overflow: hidden;
+}
+.reserve-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 13px;
+  text-align: left;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  border: 0;
+  background: none;
+}
+.reserve-toggle:hover { background: rgba(242, 193, 78, 0.05); }
+.reserve-toggle.open { border-bottom: 1px solid rgba(242, 193, 78, 0.16); }
+.reserve-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 19px;
+  padding: 0 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  color: #1b1505;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  border-radius: 2px;
+  flex: none;
+}
+.reserve-toggle-title { color: var(--text); font-size: 12px; flex: none; }
+.reserve-toggle-title b { color: var(--gold-2); font-family: var(--font-mono); }
+.reserve-toggle-hint { color: var(--text-mute); font-size: 10.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reserve-toggle-action { display: inline-flex; align-items: center; gap: 3px; color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
+.reserve-grid-wrap { padding: 13px; }
+.reserve-grid { opacity: 0.98; }
+.reserve-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.reserve-foot-hint { color: var(--text-mute); font-size: 10.5px; line-height: 1.6; }
+.tag.reserve { color: #ffd27a; border-color: rgba(242, 193, 78, 0.4); background: rgba(242, 193, 78, 0.08); }

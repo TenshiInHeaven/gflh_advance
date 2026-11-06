@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { store, addTeam } from "../store.js";
 import { icon, openDrawer, toast, toastErr, toastOk, setBusy, errorState, skeletonRows, speciesIconHtml } from "../ui.js";
-import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay, isSupportTeam } from "../util.js";
+import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay, isSupportTeam, isReserveTeam } from "../util.js";
 
 const unitName = (member) => member.name || member.code || "未知单位";
 
@@ -113,15 +113,19 @@ export function teamDetailBodyHtml(detail) {
                 const role =
                   item.role === "support" || item.support || item.is_support || item.support_team
                     ? "support"
-                    : item.role === "enemy" || item.enemy
-                      ? "enemy"
-                      : support
-                        ? "support"
-                        : "enemy";
+                    : item.role === "reserve"
+                      ? "reserve"
+                      : item.role === "enemy" || item.enemy
+                        ? "enemy"
+                        : support
+                          ? "support"
+                          : reserve
+                            ? "reserve"
+                            : "enemy";
                 return `
           <button class="appear-item" type="button" data-stage-detail="${esc(item.mission_id)}">
             <span class="ai-code">${esc(item.code || item.mission_id)}</span>
-            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")} <span class="tag ${role === "support" ? "support" : "enemy"}">${role === "support" ? "支援" : "敌方"}</span></span>
+            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")} <span class="tag ${role}">${role === "support" ? "支援" : role === "reserve" ? "可能刷新" : "敌方"}</span></span>
             <span class="ai-diff">${item.difficulty ? `难度 ${fmtNum(item.difficulty)}` : ""}</span>
             ${icon("chevronRight", 12)}
           </button>`;
@@ -155,8 +159,10 @@ export function teamDetailHeadHtml(detail) {
   const fc = factionColor(detail.faction);
   const powerDisp = powerDisplay(detail.power, detail.power_known);
   const support = isSupportTeam(detail);
+  const reserve = isReserveTeam(detail);
   const flags = [];
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
+  if (reserve) flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
   if (detail.gray_zone) flags.push('<span class="badge cyan">灰域队伍</span>');
   if (detail.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
   return `

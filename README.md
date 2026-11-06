@@ -26,9 +26,13 @@
 |---|---|
 | ![积分结算](docs/screenshots/score-settlement.jpg) | ![结算形式](docs/screenshots/score-teams.jpg) |
 
-| 谜境守卫+：敌方 30 · 支援 17 合并列表 | 本怪组出现位置（支援队 6363006 → 谜境守卫+） |
+| 谜境守卫+：敌方 30 · 支援 17 + 机场候选（推断） | 按怪组编号搜索并加入序列 |
 |---|---|
-| ![关卡队伍](docs/screenshots/stage-teams.jpg) | ![本怪组出现位置](docs/screenshots/team-appearances.jpg) |
+| ![关卡队伍](docs/screenshots/stage-teams.jpg) | ![编号搜索](docs/screenshots/search-team.jpg) |
+
+| 本怪组出现位置（支援队 6363006 → 谜境守卫+） | 侧栏高亮滑块（切换平滑移动） |
+|---|---|
+| ![本怪组出现位置](docs/screenshots/team-appearances.jpg) | ![侧栏高亮](docs/screenshots/sidebar-highlight.jpg) |
 
 ## 功能
 
@@ -41,6 +45,11 @@
   （顶部显示「敌方 X · 支援 Y」，支援卡带「支援队伍」徽标，同样可加入序列）；队伍详情新增
   **「本怪组出现位置」**，同一怪组在多个关卡以敌方/支援身份出现时全部列出
   （如谜境守卫+ 的支援队 6363006，效能 673,555、24 单位）。
+- **机场/后续刷新候选（推断）**：关卡队伍列表下方默认折叠展示「可能刷新 N 支」候选，卡带「机场可能刷新（推断）」
+  徽标，可展开/加入序列。STC 没有显式机场刷新池映射，候选按**同关卡队伍 id 族**推断
+  （如谜境守卫+ 的 AA-02 队 6363057/6363060、静默沙盘的威廉队 770060、潘洛斯的 Hebe/Styx 660002/660003）。
+- **按怪组编号搜索/加入**：顶栏全局搜索输入 `6363006` / `#6363006` 直接出队伍结果卡并可加入序列；
+  序列页/序列面板也有「按编号加入」输入框。
 - **怪种图鉴**：264 个图鉴怪种，每只怪都有从**本机游戏资源提取的真实头像**（透明底 160px）；
   按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（筛「灰域」得到所有在灰域出现过的怪种，含灰域 BOSS）；
   怪种详情列出所有怪组并分页。
@@ -59,7 +68,8 @@
 - **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、11 条 FAQ、安全须知。
 
 数据规模（以当前国服客户端为例）：7 组 121 章（活动 73 + 积分关卡 25）/ 2345 关 / 13,700 支可收藏队伍 / 264 个可收藏怪种 /
-灰域 14 区域 3352 队 / 无固定关卡 4381 队（含支援队伍后 3802 队）/ 支援梯队 864 支（818 可收藏，329 个关卡有支援链接）。
+灰域 14 区域 3352 队 / 无固定关卡 4381 队（含支援队伍后 3802 队）/ 支援梯队 864 支（818 可收藏，329 个关卡有支援链接）/
+机场/后续刷新候选（推断）1637 个关卡有候选、覆盖 5461 支同系列未入场队伍。
 
 ## 前置依赖
 
@@ -150,13 +160,13 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 129 个单测（app / catalog / gflh）
+python -m unittest discover -s targetforge/tests -t .      # 130 个单测（app / catalog / gflh）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（29 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 20 张截图
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 22 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
 ```
 
-前端自检结果：159 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：177 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
@@ -194,6 +204,16 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.5.0（2026-11-07）
+
+- **机场/后续刷新候选（推断）**：STC 没有显式机场刷新池，按同关卡队伍 id 族推断「可能刷新」候选并并入关卡队伍列表
+  （默认折叠、卡带「机场可能刷新（推断）」徽标、可展开/加入序列）；例：谜境守卫+ AA-02 队 6363057/6363060、
+  静默沙盘威廉队 770060、潘洛斯 Hebe/Styx 660002/660003。全量 1637 个关卡有候选（5461 支未入场队伍）。
+- **按怪组编号搜索/加入**：顶栏搜索 `6363006` / `#6363006` 直接出队伍结果卡并可加入序列；序列页/面板增加「按编号加入」输入框。
+- **侧栏高亮滑块**：当前菜单项背景改为独立高亮块，切换时平滑移动（reduced-motion 下关闭），并修复了 active 状态
+  因 data-nav 带 `/` 前缀而从未生效的问题。
+- 版本号 v1.5.0（catalog schema=5，10.2MB）。
 
 ### v1.4.0（2026-11-07）
 

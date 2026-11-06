@@ -49,6 +49,15 @@ v1.2 变化（用户实测反馈）
    与 ``roles``（enemy/support）；只有敌方+支援都无链接的可收藏队伍才进 orphan
    （orphan 从 4381 降到 3802）。stage 的 ``team_count``/敌方 ``teams`` 列表不变。
 
+8. **机场/后续刷新候选（v1.5）**：STC **没有显式 mission→机场刷新池映射**；按同系列
+   team id 族推断 ``reserve_teams``：取该 stage 已引用队伍（enemy∪ally∪boss，排除 id<=1000）
+   中出现最多的 ``str(id)[:4]`` 前缀（≥3 个引用），候选 = 同前缀、有槽位、可收藏、未被
+   引用的队伍（id 升序，≤80）。stage 详情带 ``reserve_teams``（team_summary +
+   ``role:"reserve"`` / ``inferred:true`` / ``reserve_reason``）与 ``reserve_team_count``；
+   章节 stage 行只带 ``reserve_team_count``。这是**推断**：不计入 team_count/
+   support_team_count，也不改变队伍的 orphan/roles 真实链接状态（只在 detail appearances
+   里加 ``role:"reserve"``、``inferred:true`` 的「可能刷新」条目）。
+
 设计取舍
 --------
 catalog.json 不存"前端完整详情"，而是存**查询所需的紧凑索引**：
@@ -102,7 +111,11 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+
+#: 机场/后续刷新候选（reserve）的说明：STC 没有显式 mission→刷新池映射，只能按 id 族推断
+RESERVE_REASON = "同系列未入场怪组（机场/后期刷新候选，STC 无显式映射）"
+RESERVE_CAP = 80
 
 #: mission 文本 key 前缀：``mission-{10000000 + mission_id}``
 MISSION_TEXT_BASE = 10_000_000
@@ -137,10 +150,11 @@ SCORE_SPECIAL_CAMPAIGNS: frozenset[int] = frozenset({-40401, -40402, -40403, -40
 #: 模拟作战的固定 mission id 段（1104..1106 的 map_res 是 OPS5_Y，1701..1745 是靶场系列）
 SIMULATION_ID_RANGES: tuple[tuple[int, int], ...] = ((1101, 1106), (1701, 1745))
 
-#: 章节列表里关卡摘要的字段（v1.3 加 settlement；v1.4 加 support_team_count）
+#: 章节列表里关卡摘要的字段（v1.3 settlement / v1.4 support / v1.5 reserve）
 STAGE_LIST_KEYS = (
     "id", "title", "code", "difficulty", "recommend_level",
-    "team_count", "support_team_count", "species_count", "tags", "order", "settlement",
+    "team_count", "support_team_count", "reserve_team_count",
+    "species_count", "tags", "order", "settlement",
 )
 
 #: 队伍详情里展示的数值键（contract §2.3 示例；只展示参数，不含技能）
@@ -797,6 +811,40 @@ def _build_payload() -> dict:
     def _is_gray_mission(mission_id: int) -> bool:
         return _int((missions.get(mission_id) or {}).get("campaign")) == -404
 
+    # ---- 机场/后续刷新候选（reserve，推断） ----------------------------
+    # STC 没有显式的 mission→机场刷新池映射，只能按 team id 族推断：
+    # 取该 mission 已引用队伍（enemy ∪ ally ∪ boss，排除 id<=1000）里出现最多的
+    # str(id)[:4] 前缀（需 >=3 个引用），候选 = 同前缀、有槽位、可收藏、未被引用的队伍。
+    prefix_collectable: dict[str, list[int]] = defaultdict(list)
+    for collectable_id in collectable:
+        prefix_collectable[str(collectable_id)[:4]].append(collectable_id)
+    for ids in prefix_collectable.values():
+        ids.sort()
+    stage_reserve_teams: dict[int, list[int]] = {}
+    for mission_id in mission_teams:
+        referenced = set(mission_teams.get(mission_id, set()))
+        referenced |= set(support_mission_teams.get(mission_id, set()))
+        prefix_tally: Counter = Counter()
+        for team_id in referenced:
+            if team_id > 1000:
+                prefix_tally[str(team_id)[:4]] += 1
+        if not prefix_tally:
+            continue
+        prefix, count = sorted(prefix_tally.items(),
+                               key=lambda item: (-item[1], item[0]))[0]
+        if count < 3:
+            continue
+        candidates = [team_id for team_id in prefix_collectable.get(prefix, [])
+                      if team_id not in referenced][:RESERVE_CAP]
+        if candidates:
+            stage_reserve_teams[mission_id] = candidates
+    reserve_team_missions: dict[int, list[int]] = defaultdict(list)
+    for mission_id, team_ids in stage_reserve_teams.items():
+        for team_id in team_ids:
+            reserve_team_missions[team_id].append(mission_id)
+    for ids in reserve_team_missions.values():
+        ids.sort()
+
     # ---- 队伍记录（详情数值按需计算，这里只存紧凑索引） ----------------
     team_records: list[dict] = []
     team_species: dict[int, set[int]] = {}
@@ -915,6 +963,7 @@ def _build_payload() -> dict:
             "members": slots,
             "appearances": appearances,
             "support_appearances": support_appearances,
+            "reserve_appearances": sorted(reserve_team_missions.get(team_id, ())),
             "roles": roles,
             "collectable": True,
             "gray_zone": is_gray,
@@ -1126,6 +1175,7 @@ def _build_payload() -> dict:
             "recommend_level": recommend_level,
             "team_count": len(team_ids),
             "support_team_count": len(support_mission_teams.get(mission_id, [])),
+            "reserve_team_count": len(stage_reserve_teams.get(mission_id, [])),
             "species_count": len(species_union),
             "tags": tags,
             "order": order,
@@ -1421,6 +1471,12 @@ def _build_payload() -> dict:
                                        support_mission_teams.items()
                                        if mid in stage_mission_ids),
         },
+        "reserve": {
+            "stages_with_reserve": len(stage_reserve_teams),
+            "links": sum(len(ids) for ids in stage_reserve_teams.values()),
+            "teams": len(reserve_team_missions),
+            "reason": RESERVE_REASON,
+        },
         "client_text": _source_file_info(TEXT_FILE),
         "enemy_full_model": _source_file_info(MODEL_FILE),
         "icons": icons_meta,
@@ -1444,6 +1500,8 @@ def _build_payload() -> dict:
             for mid, tids in support_mission_teams.items()
             if mid in stage_mission_ids and tids
         },
+        "stage_reserve_teams": {str(mid): ids
+                                for mid, ids in stage_reserve_teams.items()},
         "grayzone": {
             "chapter_id": "grayzone",
             "areas": areas,
@@ -1579,6 +1637,11 @@ class Catalog:
             int(key): [(int(pair[0]), int(pair[1])) for pair in value]
             for key, value in (payload.get("stage_support_teams") or {}).items()
         }
+        # v1.5 机场/后续刷新候选（推断）：stage → [team_id]
+        self._stage_reserve_teams: dict[int, list[int]] = {
+            int(key): [int(team_id) for team_id in value]
+            for key, value in (payload.get("stage_reserve_teams") or {}).items()
+        }
         self._teams: dict[int, dict] = {
             int(team["id"]): team for team in payload.get("teams") or []
         }
@@ -1664,6 +1727,17 @@ class Catalog:
             item["role"] = "support"
             item["support_count"] = support_count
             support_items.append(item)
+        reserve_links = self._stage_reserve_teams.get(mission_id, [])
+        reserve_items: list[dict] = []
+        for team_id in reserve_links:
+            summary = self._team_summary(team_id)
+            if summary is None:
+                continue
+            item = dict(summary)
+            item["role"] = "reserve"
+            item["inferred"] = True
+            item["reserve_reason"] = RESERVE_REASON
+            reserve_items.append(item)
         return {
             "stage": payload,
             "teams": [summary for summary in
@@ -1672,6 +1746,8 @@ class Catalog:
                       if summary is not None],
             "support_teams": support_items,
             "support_team_count": len(support_links),
+            "reserve_teams": reserve_items,
+            "reserve_team_count": len(reserve_links),
         }
 
     # -- 灰域 ---------------------------------------------------------
@@ -2050,7 +2126,11 @@ class Catalog:
         }
 
     def _appearances(self, record: dict) -> list[dict]:
-        """敌方 + 支援出处合并；每条带 ``role``（enemy/support）与 ``roles`` 列表。"""
+        """真实出处（敌方/支援）+ 推断出处（reserve，机场/后续刷新候选）。
+
+        每条带 ``role``（enemy/support/reserve）与 ``roles`` 列表；reserve 条目带
+        ``inferred: true``，只是"可能刷新"，不影响 orphan/roles 真实状态。
+        """
         role_map: dict[int, set[str]] = defaultdict(set)
         for mission_id in record.get("appearances") or []:
             if mission_id in self._stages:
@@ -2058,11 +2138,14 @@ class Catalog:
         for mission_id in record.get("support_appearances") or []:
             if mission_id in self._stages:
                 role_map[mission_id].add("support")
+        for mission_id in record.get("reserve_appearances") or []:
+            if mission_id in self._stages:
+                role_map[mission_id].add("reserve")
         entries = []
         for mission_id, roles in role_map.items():
             stage = self._stages[mission_id]
             gray = bool(stage.get("gray_zone")) or stage.get("chapter_id") == "grayzone"
-            primary = 0 if "enemy" in roles else 1
+            primary = 0 if "enemy" in roles else (1 if "support" in roles else 2)
             entries.append((1 if gray else 0, _int(stage.get("order")), primary, mission_id))
         entries.sort()
         out: list[dict] = []
@@ -2070,7 +2153,10 @@ class Catalog:
             stage = self._stages[mission_id]
             chapter = self._chapters.get(stage.get("chapter_id") or "")
             roles = sorted(role_map[mission_id],
-                           key=lambda value: 0 if value == "enemy" else 1)
+                           key=lambda value: {"enemy": 0, "support": 1,
+                                              "reserve": 2}.get(value, 9))
+            primary_role = ("enemy" if "enemy" in roles else
+                            ("support" if "support" in roles else "reserve"))
             out.append({
                 "mission_id": mission_id,
                 "chapter_id": stage.get("chapter_id"),
@@ -2079,8 +2165,9 @@ class Catalog:
                 "code": stage.get("code"),
                 "difficulty": stage.get("difficulty", 0),
                 "gray_zone": bool(stage.get("gray_zone")),
-                "role": "enemy" if "enemy" in roles else "support",
+                "role": primary_role,
                 "roles": roles,
+                "inferred": primary_role == "reserve",
             })
         return out
 

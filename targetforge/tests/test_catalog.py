@@ -12,6 +12,9 @@
   rank {id,name,title,type,score_rewards}（rank type=10 优先 type=6）；
 * **支援队伍（v1.4）**：spot.ally_team_id → stage.support_teams/support_team_count、
   team.roles（enemy/support）、支援出处、orphan 4381→3802；
+* **机场/后续刷新候选（v1.5）**：按 team id 族推断 stage.reserve_teams（role=reserve,
+  inferred=true, reserve_reason），如 11435 AA-02 / 11946 威廉 / 11603 Hebe·Styx；
+  reserve 不影响 team_count/support_team_count/orphan 真实状态；
 * 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
@@ -39,6 +42,7 @@ from targetforge.datapaths import ICON_DIR as DATA_ICON_DIR  # noqa: E402
 EXPECT_TEAMS = 13700
 EXPECT_SUPPORT_TEAMS = 864
 EXPECT_ORPHAN_TEAMS = 3802
+EXPECT_RESERVE_STAGES = 1637
 EXPECT_SPECIES = 264
 EXPECT_STAGES = 2345
 EXPECT_MISSIONS_IN_TABLE = 3986
@@ -71,8 +75,8 @@ CHAPTER_KEYS = {"id", "category", "kind", "title", "subtitle", "stage_count",
                 "team_count", "species_count", "difficulty_min", "difficulty_max",
                 "tags"}
 STAGE_LIST_KEYS = {"id", "title", "code", "difficulty", "recommend_level",
-                   "team_count", "support_team_count", "species_count", "tags",
-                   "order", "settlement"}
+                   "team_count", "support_team_count", "reserve_team_count",
+                   "species_count", "tags", "order", "settlement"}
 TEAM_SUMMARY_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
                      "tags", "roles", "collectable", "species", "members",
                      "gray_zone", "orphan", "stage"}
@@ -141,6 +145,10 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(support_meta["collectable"], 818)
         self.assertEqual(support_meta["missions_with_support"], 329)
         self.assertEqual(support_meta["stage_support_links"], 824)
+        reserve_meta = self.meta["sources"]["reserve"]
+        self.assertEqual(reserve_meta["stages_with_reserve"], EXPECT_RESERVE_STAGES)
+        self.assertGreater(reserve_meta["links"], 0)
+        self.assertIn("机场", reserve_meta["reason"])
         # 图标覆盖率报告（sources.icons）；支援队伍类型也会进 types（v1.4 后 282→301 个 code）
         icons = self.meta["sources"]["icons"]
         for key in ("files", "codes_needed", "codes_covered",
@@ -148,6 +156,53 @@ class CatalogDataTest(unittest.TestCase):
             self.assertIn(key, icons)
         self.assertGreaterEqual(icons["codes_needed"], 282)
         self.assertEqual(icons["codes_needed"], 301)
+
+    # -- 机场/后续刷新候选（reserve，推断） -----------------------------
+    def test_reserve_teams(self):
+        """v1.5：按 team id 族推断的机场/后续刷新候选（明确标记 inferred）。"""
+        detail = self.catalog.stage(11435)
+        self.assertEqual(detail["stage"]["team_count"], 30)          # 敌方计数不变
+        self.assertEqual(detail["stage"]["support_team_count"], 17)  # 支援计数不变
+        self.assertEqual(detail["reserve_team_count"], 16)           # 6363xxx 未引用队
+        reserve = {team["id"]: team for team in detail["reserve_teams"]}
+        self.assertIn(6363057, reserve)   # AA-02
+        self.assertIn(6363060, reserve)   # AA-02
+        for team_id in (6363057, 6363060):
+            item = reserve[team_id]
+            self.assertEqual(item["role"], "reserve")
+            self.assertTrue(item["inferred"])
+            self.assertTrue(item["collectable"])
+            self.assertEqual(item["reserve_reason"], catalog.RESERVE_REASON)
+            self.assertIn("机场", item["reserve_reason"])
+        self.assertEqual(reserve[6363057]["power"], 189798)
+        self.assertEqual(reserve[6363060]["power"], 187497)
+        # 静默沙盘（11946）后续含威廉 770060
+        weilian = {team["id"] for team in self.catalog.stage(11946)["reserve_teams"]}
+        self.assertIn(770060, weilian)
+        # 潘洛斯（11603）后续机场含 Hebe/Styx
+        panluo = {team["id"] for team in self.catalog.stage(11603)["reserve_teams"]}
+        self.assertIn(660002, panluo)
+        self.assertIn(660003, panluo)
+        # 主线的普通关没有同族未引用队伍 → reserve 为空（合理）
+        for stage in self.catalog.chapter("main-1")["stages"]:
+            self.assertEqual(stage["reserve_team_count"], 0, stage["title"])
+        # 章节 stage 行只带数量
+        row = next(stage for stage in self.catalog.chapter("score--60")["stages"]
+                   if stage["id"] == 11435)
+        self.assertEqual(row["reserve_team_count"], 16)
+        # appearances 里出现「可能刷新（推断）」条目，但不改变 orphan/roles 真实状态
+        team = self.catalog.team(6363057)
+        self.assertIsNotNone(team)
+        self.assertTrue(team["orphan"])          # 推断链接不算真实出处
+        self.assertEqual(team["roles"], [])
+        appearance = next(entry for entry in team["appearances"]
+                          if entry["mission_id"] == 11435)
+        self.assertEqual(appearance["role"], "reserve")
+        self.assertTrue(appearance["inferred"])
+        self.assertEqual(appearance["chapter_id"], "score--60")
+        # 有 reserve 的 stage 数量与 meta 一致
+        self.assertEqual(len(self.catalog._stage_reserve_teams),
+                         EXPECT_RESERVE_STAGES)
 
     # -- 章节 7 组 ----------------------------------------------------
     def test_chapter_groups(self):
@@ -434,14 +489,16 @@ class CatalogDataTest(unittest.TestCase):
     def test_stage_detail(self):
         detail = self.catalog.stage(5)
         self.assertIsNotNone(detail)
-        # 章节详情行 / stage 详情现在都带支援字段
+        # 章节详情行 / stage 详情现在都带支援 + reserve（推断）字段
         self.assertEqual(set(detail),
-                         {"stage", "teams", "support_teams", "support_team_count"})
+                         {"stage", "teams", "support_teams", "support_team_count",
+                          "reserve_teams", "reserve_team_count"})
         stage = detail["stage"]
         self.assertEqual(stage["id"], 5)
         self.assertEqual(stage["title"], "演习训练")
         self.assertEqual(stage["chapter_id"], "main-1")
         self.assertEqual(stage["chapter_title"], "第1章")
+        self.assertEqual(stage["reserve_team_count"], 0)
         for team in detail["teams"]:
             self.assertEqual(set(team), TEAM_SUMMARY_KEYS)
         self.assertEqual(self.catalog.stage(999999999), None)
@@ -518,7 +575,8 @@ class CatalogDataTest(unittest.TestCase):
         detail = self.catalog.stage(11435)
         self.assertIsNotNone(detail)
         self.assertEqual(set(detail),
-                         {"stage", "teams", "support_teams", "support_team_count"})
+                         {"stage", "teams", "support_teams", "support_team_count",
+                          "reserve_teams", "reserve_team_count"})
         # 敌方队伍列表/team_count 不变，支援队伍单独列
         self.assertEqual(detail["stage"]["team_count"], 30)
         self.assertNotIn(6363006, {team["id"] for team in detail["teams"]})

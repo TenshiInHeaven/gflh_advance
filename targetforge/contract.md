@@ -107,6 +107,11 @@ class Catalog:
 `spot.ally_team_id` 是**支援队伍**（同一 mission 的友方支援编队）：有槽位即收，可收藏/不可收藏都收，
 与敌方队伍分开展示（stage.support_teams）；支援链接也要计入队伍出处与 roles，不能当 orphan。
 
+**机场/后续刷新候选**：STC 没有显式的 mission→刷新池字段/表（`spot_buff_config.grow_enemy_pool`
+只是布尔、`mission_entrance_package` 是旧关卡串），AA-02/威廉/潘洛斯 Boss 等队伍没有任何 spot/mission
+引用，属于运行时刷新池。catalog 只能按 **team id 族**推断 `reserve_teams`（明确标 `inferred:true`）；
+推断链接不算真实出处（不改变 orphan/roles、不计入 team_count/support_team_count）。
+
 ### 2.2 归类规则
 
 1. `campaign == -404` → 灰域（chapter id `"grayzone"`，category `"grayzone"`）。
@@ -129,6 +134,10 @@ class Catalog:
 9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
 10. 队伍↔关卡：敌方链接（enemy/boss）与支援链接（ally）都进 `appearances`（带 role）；stage 的
     `teams`/`team_count` 只表示敌方，支援队伍单独放 `support_teams`/`support_team_count`，互不混淆。
+11. `reserve_teams`（推断）：每个 stage 取已引用队伍（enemy∪ally∪boss，排除 id<=1000）中出现最多的
+    `str(id)[:4]` id 族前缀（需 ≥3 个引用），候选 = 同前缀、有槽位、可收藏、未被该 mission 引用的队伍
+    （id 升序，≤80）。stage 详情带 `reserve_teams`（team_summary + `role:"reserve"`、`inferred:true`、
+    `reserve_reason`）与 `reserve_team_count`；章节 stage 行只带 `reserve_team_count`。
 
 排序：组顺序 main → event → **score** → tutorial → simulation → grayzone → orphan；
 组内章节按 `min(mission.order/id)` 升序。**groups 共 7 个，章节约 121 个**
@@ -178,7 +187,7 @@ class Catalog:
 // roles: ["enemy"] / ["support"] / ["enemy","support"]（v1.4 支援队伍链接）
 
 // GET /api/stages/{id}
-{"stage":{..., "team_count":30, "support_team_count":17, "settlement": {
+{"stage":{..., "team_count":30, "support_team_count":17, "reserve_team_count":16, "settlement": {
    "type":"score|normal",
    "event_score":{"mode":"1","params":24}|null,      // 积分结算配置（非空即积分关卡）
    "score_prize":{"raw":"1-0|110054:1","tiers":1}|null, // 积分奖励
@@ -187,9 +196,12 @@ class Catalog:
  }}, "teams":[team_summary,...],                      // 敌方队伍（不含支援）
  "support_teams":[{...team_summary, "role":"support", "support_count":1,
                    "collectable":true},...],          // 支援队伍（spot.ally_team_id，v1.4）
- "support_team_count":17}
-// team_count 只算敌方；support_team_count=支援队伍数量；两者互不影响。
-// 章节详情 /api/chapters/{id} 的每个 stage 行带 team_count 与 support_team_count（不带完整 support 列表）。
+ "support_team_count":17,
+ "reserve_teams":[{...team_summary, "role":"reserve", "inferred":true,
+                   "reserve_reason":"同系列未入场怪组（机场/后期刷新候选，STC 无显式映射）"},...],
+ "reserve_team_count":16}                             // 机场/后续刷新候选（推断，v1.5）
+// team_count 只算敌方；support/reserve 数量互不影响。
+// 章节详情 /api/chapters/{id} 的每个 stage 行带 team_count / support_team_count / reserve_team_count。
 // 积分关卡判定依据（不是名字带 +）：mission.event_score 结算配置；score_prize 为积分奖励；
 // rank 表 type=10 行是「<活动名>常驻积分榜」，sub_type 直接列 mission id（type=6 为活动积分榜）。
 // 分析工具：python targetforge/tools/analyze_score_stages.py [--json]
@@ -198,7 +210,8 @@ class Catalog:
 {"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,"faction":"铁血",
  "tags":["BOSS"],"roles":["enemy"],"collectable":true,"gray_zone":false,"orphan":false,
  ...
- // 出处：敌方与支援都在 appearances 里，role 标 "enemy"/"support"（同关两种都有时 roles 有两个）
+ // 出处：敌方与支援都在 appearances 里，role 标 "enemy"/"support"；reserve 推断条目
+ // role="reserve"、inferred=true（「可能刷新」，不改变 orphan），同关多角色时 roles 有多个
  "appearances":[{"mission_id":11435,"chapter_id":"score--60","chapter_title":"谜境守卫+",
                  "stage_title":"谜境守卫+","code":"-60-1","difficulty":32000,
                  "gray_zone":false,"role":"support","roles":["support"]},...最多24],
@@ -240,6 +253,11 @@ class Catalog:
   role/support_count/collectable），也可通过 team 详情反查出处（role=support），不计入敌方
   `teams`/`team_count`。不可收藏的支援队伍只在 stage.support_teams 里展示（`collectable=false`），
   不进 `team()` 查询与序列。
+- **机场/后续刷新候选（v1.5）**：STC 无显式刷新池映射，按 team id 族推断的 `reserve_teams`
+  明确标 `role="reserve"`、`inferred=true`、`reserve_reason`；全局 1637 个 stage 有候选。
+  推断条目只用于展示「可能刷新」，**不改变 orphan/roles 真实链接状态**，也不计入
+  `team_count`/`support_team_count`；team 详情 appearances 里同样以 `role="reserve"`、
+  `inferred=true` 呈现（不当作真实出处）。
 - 效能：`power` 来自 `enemy_team.effect_ext`；`power_known=false` 表示客户端未标注（常规关卡绝大多数如此），
   只有积分关卡/部分特殊队伍有值（含负值）。**不要伪造公式反推。**
 - **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。

@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { addTeam } from "../store.js";
 import { icon, pageHeadHtml, skeletonRows, handleViewError, toastOk, toastErr, setBusy } from "../ui.js";
-import { esc, fmtNum, factionColor, factionClass, navigate, powerDisplay, isSupportTeam } from "../util.js";
+import { esc, fmtNum, factionColor, factionClass, navigate, powerDisplay, isSupportTeam, isReserveTeam } from "../util.js";
 import { teamDetailBodyHtml } from "../components/team-drawer.js";
 
 export async function render(root, { params }) {
@@ -41,6 +41,7 @@ export async function render(root, { params }) {
           <span style="position:absolute;left:0;top:2px;bottom:2px;width:3px;background:${factionColor(detail.faction)}"></span>
           <span class="faction-chip ${factionClass(detail.faction)}"><i></i>${esc(detail.faction || "其它")}</span>
           ${isSupportTeam(detail) ? `<span class="badge support">${icon("shield", 9)} 支援队伍</span>` : ""}
+          ${isReserveTeam(detail) ? `<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>` : ""}
           ${detail.gray_zone ? '<span class="badge cyan">灰域队伍</span>' : ""}
           ${detail.orphan ? '<span class="badge violet">无固定关卡</span>' : ""}
           ${(detail.tags || []).map((tag) => `<span class="tag amber">${esc(tag)}</span>`).join("")}
