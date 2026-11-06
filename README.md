@@ -79,12 +79,20 @@
 git clone https://github.com/TenshiInHeaven/gflh_advance.git
 cd gflh_advance
 
-# 2) 安装依赖
-python -m pip install -r requirements.txt
+# 2) 先创建并激活虚拟环境（推荐，避免污染系统 Python）
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 
-# 3) 启动（Windows 可双击/运行 start.ps1）
+# 3) 安装锁定依赖（requirements.lock 带 sha256 校验）
+python -m pip install --upgrade pip
+python -m pip install --require-hashes -r requirements.lock
+
+# 4) 启动（Windows 可双击/运行 start.ps1，会自动用 .venv）
 python -m targetforge --open
 ```
+
+> 不熟悉命令行的，可以把本 README 交给 AI 助手（如「大肥鱼」）阅读后按步骤构建。
+> `start.ps1` 会自动创建 `.venv`、安装锁定依赖并启动，不想手输命令可以用它。
 
 首次启动会弹出**「先选择游戏客户端」**前置步骤：自动检测本机 Steam/运行中游戏，或点「浏览文件夹」手动选择
 `GIRLS' FRONTLINE` 安装目录（含 `GrilsFrontLine.exe` 与 `GrilsFrontLine_Data` 的那一层）。
@@ -149,7 +157,7 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 147 个单测（app / catalog / gflh / game setup）
+python -m unittest discover -s targetforge/tests -t .      # 150 个单测（app / catalog / gflh / game setup）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（33 项）
 python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 26 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
@@ -207,6 +215,16 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.9.2（2026-11-07）
+
+- **凭证 DPAPI 加密 + ACL**：`creds_latest.json` 默认用 Windows DPAPI 加密（绑定当前用户），文件 ACL 收紧为当前用户；
+  启动时自动把历史明文凭证迁移为加密格式；API/日志仍不返回 sign。
+- **依赖 hash 锁定**：新增 `requirements.lock`（gflzirc/requests/charset-normalizer/idna/urllib3/certifi，
+  含各平台 wheel/sdist sha256）；安装使用 `pip install --require-hashes`。
+- **虚拟环境引导**：README 安装步骤改为先 `python -m venv .venv` 并激活，再安装锁定依赖；
+  `start.ps1` 自动创建/使用 `.venv`。不熟悉命令行的可把 README 交给 AI 助手（如「大肥鱼」）阅读后按步骤构建。
+- 版本号 v1.9.2。
 
 ### v1.9.1（2026-11-07）
 

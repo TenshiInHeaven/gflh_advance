@@ -50,6 +50,7 @@ from datetime import datetime
 from pathlib import Path
 
 from targetforge.datapaths import CREDS_LATEST as DEFAULT_CREDS
+from targetforge import creds_store
 from targetforge.datapaths import DATA_DIR
 
 # ---------------------------------------------------------------------------
@@ -597,7 +598,7 @@ def current_targets(source: str = "auto") -> dict:
         raise ValueError(f"未知数据源：{source!r}（可用：auto / creds / state）")
 
     creds_path = Path(DEFAULT_CREDS)
-    creds = _read_json(creds_path) if creds_path.is_file() else None
+    creds = creds_store.read_creds(creds_path) if creds_path.is_file() else None
 
     if source == "state":
         return _current_from_state()
@@ -627,8 +628,16 @@ def current_targets(source: str = "auto") -> dict:
                         "或先执行一次注入生成本地状态"])
 
 
+def migrate_creds_encryption() -> bool:
+    """启动时把历史明文 creds_latest.json 迁移为 DPAPI 加密（失败静默）。"""
+    try:
+        return creds_store.migrate_plain(DEFAULT_CREDS)
+    except OSError:
+        return False
+
+
 def _creds_summary(path: Path) -> dict | None:
-    payload = _read_json(path)
+    payload = creds_store.read_creds(path)
     if payload is None:
         return None
     try:
@@ -706,12 +715,12 @@ def load_creds_file(name: str) -> dict:
             target = None
     if target is None or not target.is_file():
         raise ValueError(f"没有这个凭证文件：{base_name}")
-    payload = _read_json(target)
+    payload = creds_store.read_creds(target)
     if payload is None:
         raise ValueError(f"凭证文件不是合法 JSON：{base_name}")
     if not payload.get("uid") or not payload.get("sign"):
         raise ValueError(f"凭证文件不完整（缺少 uid/sign）：{base_name}")
-    _write_json_atomic(DEFAULT_CREDS, payload)
+    creds_store.write_creds(DEFAULT_CREDS, payload)
     result = current_targets(source="creds")
     result["ok"] = True
     result["loaded_from"] = base_name
@@ -1007,7 +1016,7 @@ def _write_capture_creds() -> str | None:
             "captured_at": _now_iso(),
         }
     try:
-        path = _write_json_atomic(DEFAULT_CREDS, payload)
+        path = creds_store.write_creds(DEFAULT_CREDS, payload)
     except OSError as exc:
         _cap_log("error", f"写入凭证失败：{type(exc).__name__}: {exc}")
         return None
@@ -1280,7 +1289,7 @@ def _resolve_creds_path(creds_file) -> Path:
 
 def _exec_creds(creds_file):
     path = _resolve_creds_path(creds_file)
-    creds = _read_json(path) if path.is_file() else None
+    creds = creds_store.read_creds(path) if path.is_file() else None
     return path, creds
 
 

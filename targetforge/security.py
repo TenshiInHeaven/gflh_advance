@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import re
+import os
+import subprocess
 from pathlib import Path
 from typing import Mapping
 
@@ -134,3 +136,47 @@ def validate_local_game_path(raw: str | Path) -> tuple[Path | None, str | None]:
     if not path.is_absolute():
         return None, "请提供游戏目录的绝对路径"
     return path, None
+
+
+def restrict_file_acl(path: str | Path) -> bool:
+    """Windows：把文件 ACL 收紧为仅当前用户（移除继承）。失败不抛，返回 False。"""
+    if os.name != "nt":
+        return False
+    target = Path(path)
+    if not target.exists():
+        return False
+    user = os.environ.get("USERNAME") or ""
+    if not user:
+        return False
+    domain = os.environ.get("USERDOMAIN") or ""
+    account = f"{domain}\\{user}" if domain and not user.startswith(domain + "\\") else user
+    try:
+        result = subprocess.run(
+            ["icacls", str(target), "/inheritance:r", "/grant:r", f"{account}:F"],
+            capture_output=True, timeout=10, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def restrict_dir_acl(path: str | Path) -> bool:
+    """Windows：把目录 ACL 收紧为仅当前用户（继承到子项）。失败不抛。"""
+    if os.name != "nt":
+        return False
+    target = Path(path)
+    if not target.is_dir():
+        return False
+    user = os.environ.get("USERNAME") or ""
+    if not user:
+        return False
+    domain = os.environ.get("USERDOMAIN") or ""
+    account = f"{domain}\\{user}" if domain and not user.startswith(domain + "\\") else user
+    try:
+        result = subprocess.run(
+            ["icacls", str(target), "/inheritance:r", "/grant:r", f"{account}:(OI)(CI)F"],
+            capture_output=True, timeout=10, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False

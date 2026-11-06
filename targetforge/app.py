@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -1103,6 +1103,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     ensure_dirs()
+    try:
+        security.restrict_dir_acl(DATA_DIR)
+    except Exception:  # noqa: BLE001 - ACL 收紧失败不能阻止启动
+        pass
+    try:
+        _gflh_module().migrate_creds_encryption()
+    except Exception:  # noqa: BLE001 - 凭证迁移失败不阻止启动
+        pass
     # v1.9：启动时先解析游戏客户端目录（settings → env → local_paths → 自动检测），
     # 保证后续 catalog 构建用正确的 game_root；检测到的路径不自动保存（需用户确认）。
     bootstrap = {"ok": False, "path": "", "source": None}

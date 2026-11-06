@@ -1,6 +1,6 @@
 # 加固清单与验证
 
-## 已实现（v1.9.1）
+## 已实现（v1.9.2）
 
 | 加固 | 实现位置 | 说明 |
 |---|---|---|
@@ -11,6 +11,9 @@
 | 只绑 loopback | `targetforge/app.py::main` | `--host` 仅允许 `127.0.0.1`/`localhost`/`::1`，否则退出 |
 | 安全响应头 | `app.py::Handler._send` | CSP、X-Frame-Options DENY、Referrer-Policy no-referrer、nosniff |
 | UNC/网络路径拒绝 | `security.py::validate_local_game_path` | 拒绝 `\\server\share` / `//server/share` |
+| **凭证 DPAPI 加密** | `targetforge/creds_store.py` | 新写入凭证用 Windows DPAPI 加密（绑定当前用户）；旧明文启动时自动迁移 |
+| **凭证/数据目录 ACL** | `security.py::restrict_file_acl/restrict_dir_acl` | 凭证文件 ACL 仅当前用户；数据目录启动时收紧 |
+| **依赖 hash 锁定** | `requirements.lock` + `start.ps1` | 6 个依赖固定版本 + 各平台 wheel/sdist sha256；`pip install --require-hashes` |
 | 凭证不返回/日志打码 | `gflh.py::list_creds/capture_status/_cap_log` | API/状态不返回 sign；日志自动把 sign 替换为 `***` |
 | 路径穿越防护 | `app.py::_icon/_static` | `relative_to` 白名单目录校验 |
 | 系统代理自动还原 | `gflh.py` capture 流程 | 默认 `auto_restore_proxy` |
@@ -20,11 +23,9 @@
 
 | 项目 | 风险 | 建议 |
 |---|---|---|
-| 凭证加密 | `creds_latest.json` 明文 | 用 Windows DPAPI（`CryptProtectData`）加密；或至少 `icacls` 限制当前用户 |
-| 依赖 hash | 安装时无校验 | `requirements.txt` 固定版本并用 `pip-compile --generate-hashes` / `--require-hashes` |
 | 文件选择频率限制 | 可反复弹窗 | 对 `/api/game/pick` 增加进程内限流/冷却 |
-| 数据目录 ACL | 同机其它用户可读 | 首次创建数据目录时设置仅当前用户 ACL |
 | 前端文本渲染 | 数据被篡改时可能 XSS | 已加 CSP；持续审计 `innerHTML`，优先 `textContent` |
+| 多用户本机认证 | 同机其它 Windows 用户可访问 loopback 端口 | 如有多用户场景，加随机 token/Windows 认证；单用户可接受 |
 | 端口占用检测 | 本机恶意进程抢注端口 | 启动前检查端口占用；仅本机用户可修复 |
 
 ## 复测
