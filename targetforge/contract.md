@@ -1,0 +1,297 @@
+# 靶机工坊 TargetForge —— 内部契约（Lead 维护，实现方只读）
+
+本地 Web 应用：浏览 STC 关卡 / 可收藏怪种 / 怪组，编排靶机序列，用 GFLH 协议注入「收藏标靶」。
+运行方式：`python -m targetforge`（系统 Python 3.14；需要 gflzirc、unit_model 可导入）。
+
+本文件是三个模块 + 前端的接口契约。**写操作按任务里给的 write_scopes，不要越界改文件。**
+
+目录：
+
+```text
+targetforge/
+  contract.md        本契约（Lead）
+  app.py             HTTP 服务 / 路由 / 状态 / job（Lead）
+  __main__.py        入口（Lead）
+  catalog.py         STC → catalog 缓存 + 查询（catalog 任务）
+  gflh.py            capture / 序列规划 / 注入 / 游戏控制（gflh 任务）
+  state.py           前端可改状态持久化（Lead，供 app 用）
+  static/            index.html + css/ + js/（frontend 任务）
+  tests/             unittest（各自任务写自己的 test_*.py）
+  tools/             截图/自检脚本（Lead）
+```
+
+数据根：`dataMiner/derived/targetforge/`（整个目录不入 git，可重建）：
+
+```text
+catalog.json          catalog 缓存（catalog.py build 产出，load 读取）
+state.json            前端状态：draft / tutorial / settings
+creds_*.json          capture 抓到的 uid/sign + 当前靶机（敏感，勿入 git / 勿出现在 API）
+run.log               运行日志（可选）
+```
+
+---
+
+## 1. 产品语义（实现必须遵守）
+
+- 靶机 = 游戏「靶机专训 → 收藏标靶」里的一条：`enemy_team_id`（队伍）+ `order_id`（显示序号 1..35）。
+- 只有 `enemy_team.targettrain_cancollect == "1"` 的队伍可注入。
+- 注入接口：`Targettrain/addCollect` / `Targettrain/delCollect`（走 gflzirc `GFLClient.send_request`）。
+- **UI 不得展示怪组/怪种的具体技能信息**（不出现技能名、技能描述、技能组 id、触发器等）。
+  可以展示：数值、编制、等级、坐标、力场、效能、关卡出处、队伍 id 等参数。
+- 灰域（campaign=-404，标题以「旅团商道 / 放射区 / …」开头）**不列举每个节点的关卡**：
+  灰域只作为 1 个章节，内部按 12 个「区域」分组，区域下列队伍。
+- 无固定关卡的队伍归入「无固定关卡」章节（按队伍列出），保证 264 个可收藏怪种都能在怪种图鉴里找到队伍。
+- 序列上限 35；草稿保存 `team_id` 列表（顺序即目标顺序）。
+- 三种执行模式：
+  - `append`：接在现有靶机后面（跳过已在列表的队伍；编号接着最大号往后排）
+  - `replace`：草稿第 i 个替换当前第 i 号靶机（i=1..N，N=草稿长度）；当前多出来的保留；
+    草稿多于当前则在末尾追加；草稿里某队伍若已存在于当前列表其它编号，先删旧项再放到目标编号
+  - `rebuild`：清空当前全部靶机，再按草稿 1..N 全量填充（`order_id` = 1..N）
+  - 另有 `clear`：只清空当前全部（不出现在执行向导的 3 个主选项里，但 API 支持）
+- 执行完提示「大退重登游戏同步」；清空后必须强退，否则进靶机界面可能卡死。
+
+---
+
+## 2. catalog.py 契约（catalog 任务实现）
+
+```python
+# 路径常量
+CATALOG_FILE = ROOT/"dataMiner/derived/targetforge/catalog.json"
+
+def build(force: bool = False) -> dict:
+    """解析 STC + client_text + enemy_full_model.csv，写 catalog.json，返回 meta。
+    force 时不看缓存 mtime。meta: {built_at, counts:{chapters,stages,teams,species,missions},
+    sources:{...}, elapsed_s}"""
+
+def load() -> Catalog:
+    """加载 catalog.json（不存在则 build()）。单例 + 线程安全。"""
+
+class Catalog:
+    built_at: str
+    counts: dict
+    def chapters(self) -> list[dict]
+    def chapter(self, chapter_id: str) -> dict | None
+    def stage(self, mission_id: int) -> dict | None
+    def grayzone_areas(self) -> list[dict]
+    def grayzone_teams(self, area_id: str, offset: int, limit: int, q: str = "") -> dict
+    def team(self, team_id: int) -> dict | None
+    def team_summaries(self, team_ids: list[int]) -> list[dict]
+    def species_list(self, *, q="", faction="", category="", offset=0, limit=60) -> dict
+    def species(self, codex_no: int) -> dict | None
+    def search(self, q: str, limit: int = 30) -> dict
+```
+
+### 2.1 数据源（只用这些，别自己发明）
+
+| 数据 | 来源 | 用途 |
+|---|---|---|
+| 队伍 | `unit_model.core.stc.table("enemy_team")` (5035) | id / effect_ext / targettrain_cancollect / fight_type / use_building |
+| 队伍编制 | `stc.table("enemy_in_team")` (5003) | 每格 type_id/level/number/def_percent/坐标/batch |
+| 敌人类型 | `stc.table("enemy_character_type")` (5025) | name 文本 key / code / 基础数值 |
+| 图鉴 | `stc.table("enemy_illustration")` (5090) | codex 编号=id、名称文本 key、forces/if_capture/type |
+| 关卡 | `stc.table("mission")` (5016) | campaign/sub/type/difficulty/map_res_name/boss_team_id/order/if_emergency |
+| 点位 | `stc.table("spot")` (5002) | mission_id ↔ enemy_team_id |
+| 活动 | `stc.table("mission_event")` (5074)、`stc.table("normal_activity")` (5233) | campaign → 活动名/章节名 |
+| 文本 | `dataMiner/derived/client_text.json` | `mission-{10000000+id}`、`enemy_character_type` 行内 name key、`enemy_illustration` 行内 name key、`mission_event` 行内 event_name key、`normal_activity` 行内 name/chapter_name key |
+| 类型索引 | `dataMiner/derived/enemy_full_model.csv` | type_id → codex_no / faction_name / boss / capturable（**只做映射与标签，不展示技能列**） |
+| 等级缩放 | `unit_model.core.enemy.enemy_attributes(type_id, level, scale_by_level=True)` | 展示用实际数值（660011 实测口径） |
+
+注意：`spot.enemy_team_id` 有的 mission_id 不在 mission 表（例 404101）→ 归「特殊作战」或忽略都可，
+但不要崩。`mission.boss_team_id` 是 `"2152;0"` 这种分号/逗号串，需拆分。
+
+### 2.2 归类规则
+
+1. `campaign == -404` → 灰域（chapter id `"grayzone"`，category `"grayzone"`）。
+2. `-10006 <= campaign <= -10000` → 教学（category `"tutorial"`），按 campaign 一章，标题取首个
+   `mission` 名冒号前部分（如「人形教学」）。
+3. `campaign in 0..13` 且 mission id < 90000 且 `map_res_name` 不以 `Moni` 开头 →
+   主线（category `"main"`），chapter id `f"main-{campaign}"`，标题 campaign==0 ? `"序章"` : `f"第{campaign}章"`。
+4. mission id >= 90000 且 campaign >= 0 → 往期活动复刻（category `"rerun"`），
+   chapter id `f"rerun-{campaign}"`，标题 `f"往期活动·第{campaign}章"`。
+5. `map_res_name` 以 `Moni` 开头（模拟作战/靶场）且有关卡队伍 → category `"simulation"`，
+   chapter id `"simulation"`，标题 `"模拟作战·靶场"`（通常 6 关）。
+6. 负 campaign（其它）→ 活动（category `"event"`）：
+   `normal_activity` 有 → 标题=chapter_name，副标题=活动 name；
+   否则 `mission_event` → 标题=活动名；否则 category `"special"`，标题 `f"特殊作战 {campaign}"`，
+   副标题取本章第一个关卡标题。
+7. 其余（含 campaign 14 等无关卡队伍的 campaign 不产生章节）。
+8. 不属于任何关卡、也没被 `mission.boss_team_id` 引用的可收藏队伍 → category `"orphan"`，
+   chapter id `"orphan"`，标题 `"无固定关卡"`（灰域/随机/往期事件队伍都在这；chapter 详情里直接带分页 teams）。
+9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 special 的「特殊作战·未知」章节。
+
+排序：组顺序 main → event → rerun → tutorial → special → simulation → grayzone → orphan；
+组内章节按 `min(mission.order/id)` 升序。**groups 共 8 个（含 orphan），章节约 110 个。**
+
+### 2.3 返回结构（前端直接消费）
+
+```jsonc
+// GET /api/chapters
+{"built_at": "...", "counts": {"chapters":110,"stages":2345,"teams":13700,"species":264},
+ "groups": [
+   {"id":"main","title":"主线","chapters":[...]},
+   ...
+   {"id":"orphan","title":"无固定关卡","chapters":[
+     {"id":"orphan","category":"orphan","title":"无固定关卡","subtitle":"...","stage_count":0,
+      "team_count":4381,"species_count":...}
+   ]}
+ ]}
+
+// GET /api/chapters/{id}
+{"chapter": {...同上}, "stages":[...]}
+// grayzone chapter: stages 为空，areas=[{"id":"旅团商道","title":"旅团商道","stage_count":210,"team_count":197,"species_count":40},...]
+// orphan chapter: stages 为空，直接返回分页 teams：
+//   GET /api/chapters/orphan?offset=0&limit=60&q=
+{"chapter":{...}, "stages":[], "teams":[team_summary...], "teams_total":4381, "offset":0, "limit":60}
+
+// team_summary（列表里到处用）
+{"id":6549244,"power":113600,"units":9,"hp_total":79300,
+ "faction":"铁血","tags":["BOSS","满力场"],
+ "species":[{"codex_no":5,"name":"稻草人"},...最多8个],
+ "members":[{"code":"Aegis_GA","name":"圣盾_GA","number":5,"count":3},...最多6组],
+ "gray_zone":false,"orphan":false,
+ "stage": {"chapter_id":"main-1","title":"第1章","stage_title":"演习训练","code":"1-1"} | null}
+
+// GET /api/stages/{id}
+{"stage":{...}, "teams":[team_summary,...]}
+
+// GET /api/teams/{id}（详情）
+{"id":6549244,"power":113600,"units":9,"hp_total":79300,"faction":"铁血",
+ "tags":["BOSS"],"gray_zone":false,"orphan":false,
+ "params":{"effect_ext":113600,"fight_type":0,"use_building":"","batch_max":0,
+           "gray_zone_missions":3,"mission_count":12,
+           "note":"数值按队伍等级缩放（单位实测口径）"},
+ "appearances":[{"mission_id":5,"chapter_id":"main-1","chapter_title":"第1章",
+                "stage_title":"演习训练","code":"1-1","difficulty":200,"gray_zone":false},...最多24],
+ "species":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1}],
+ "members":[{"type_id":11028,"code":"Aegis_GA","name":"圣盾_GA","codex_no":15,
+   "level":140,"number":5,"count":3,"def_percent":0,"batch":0,"x":8.0,"y":0.0,
+   "stats":{"maxlife":3360,"pow":37.3,"hit":65.3,"dodge":0,"armor":338.3,"armor_piercing":81.6,
+            "range":3,"speed":40,"shield":0,"def":99999,"crit":0,"crit_dmg":0,"tenacity":0},
+   "base_stats":{"maxlife":1440,"pow":16,...}}]}
+
+// GET /api/species?q=&faction=&category=&offset=&limit=
+{"total":264,"items":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1,
+  "team_count":20,"gray_zone_team_count":6,"orphan_team_count":3,"capturable":true,
+  "tags":["契约捕获"]}]}
+// category: all|normal|grayzone|orphan
+
+// GET /api/species/{codex_no}?offset=&limit=&q=
+{"species":{...},"total":N,"offset":0,"limit":60,"teams":[...分页 team_summary...]}
+
+// GET /api/grayzone/areas -> {"areas":[{"id":"共生净土","title":"共生净土","stage_count":240,"team_count":1104,"species_count":150}]}
+// GET /api/grayzone/teams?area=&offset=&limit=&q= -> {"total":1104,"offset":0,"items":[team_summary...]}
+// GET /api/search?q= -> {"teams":[team_summary],"stages":[{id,title,code,chapter_title}],"species":[...]}
+```
+
+### 2.4 可收藏怪种口径
+
+- 怪种 = `enemy_illustration.id`（= codex 编号）；264 个 = 所有出现在「可收藏且有效」队伍里的 codex。
+- `enemy_full_model.csv` 的 `codex_no` 映射 type→codex；名称用 `enemy_illustration` 行的文本 key 解析。
+- `category`: `normal` = 有固定关卡（非灰域、非孤儿）、`grayzone` = 只出现在灰域、`orphan` = 只出现在无固定关卡。
+- 队伍 13700 条（有编制的可收藏队伍），只做展示，不做注入合法性以外的过滤。
+- **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。
+
+---
+
+## 3. gflh.py 契约（gflh 任务实现）
+
+```python
+MAX_TARGETS = 35
+DEFAULT_CREDS = ROOT/"dataMiner/derived/targetforge/creds_latest.json"
+CAPTURE_PORT = 18080   # 固定，别用 8080（另一个 bot 占用）
+STATIC_KEY = "yundoudou"
+API_ADD = "Targettrain/addCollect"; API_DEL = "Targettrain/delCollect"
+
+def player_status() -> dict
+# {"game_running":true,"pid":12345,"game_window_title":"少女前线",
+#  "system_proxy":"127.0.0.1:18080"|None,"gflzirc_ok":true}
+
+def capture_status() -> dict
+# {"state":"idle|starting|running|stopped|error","port":18080,
+#  "proxy_active":bool,"system_proxy_on":bool,"auto_restore_proxy":bool,
+#  "uid":"100000001"|None,"sign_set":true,"base_url":"...",
+#  "targets_count":30,"login_captured":true,"targets_captured":true,
+#  "started_at":iso|null,"elapsed_s":12.3,"creds_path":null,
+#  "logs":[{"t":iso,"level":"info|warn|error","text":"..."}...最多200]}
+def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
+                  auto_restore_proxy: bool = True) -> dict  # 立即返回 status
+def capture_stop() -> dict    # 停代理 + 恢复系统代理 + 写 creds_latest.json
+def capture_restart_game() -> dict
+# 要求 capture 正在运行：设置系统代理 → taskkill GrilsFrontLine.exe → steam://rungameid/3347970
+# 返回 {"ok":true,"steps":["设置系统代理 127.0.0.1:18080","强杀游戏","重新启动游戏"],"hint":"..."}
+
+def list_creds() -> list[dict]  # [{name,path,updated_at,uid,base_url,targets_count}]（不返回 sign）
+def current_targets(source: str = "auto") -> dict
+# source: auto|creds|state
+# {"source":"creds","creds_file":"creds_latest.json","uid":"100000001",
+#  "base_url":"http://...", "captured_at":"...","targets":[{"order":1,"team":770007},...],
+#  "duplicate_orders":{"3":[a,b]}, "max_targets":35, "warnings":["..."]}
+
+def plan(mode: str, draft_team_ids: list[int], *, current: dict, max_targets: int = 35) -> dict
+# mode: append|replace|rebuild|clear
+# {"mode":"replace","deletes":[{"order":1,"team":770007}],"adds":[{"order":1,"team":6549244}],
+#  "kept":[{"order":6,"team":123}],"skipped":[{"team":x,"reason":"..."}],
+#  "final":[{"order":1,"team":6549244}],"warnings":["..."],"valid":true,
+#  "payloads":{"add":[{"enemy_team_id":..,"fight_type":0,"fight_coef":"","fight_environment_group":"","order_id":..}],
+#              "del":[...]}}
+
+def execute(mode: str, draft_team_ids: list[int], *, creds_file: str | None = None,
+            dry_run: bool = False, log=None, cancel=None) -> dict
+# 同步执行（app.py 放线程池跑）。log(level, text)；cancel() -> bool。
+# 返回 {"ok":true,"mode":..,"deleted":n,"added":n,"failed":[{"step","team","error"}],
+#       "final":[{"order","team"}],"creds_file":"...","restart_required":true}
+# 内部使用 scripts/gflh_target_train.py 的 add_payload/del_payload/plan_add/update_state，
+# 本地状态写 dataMiner/derived/target_injection_state.json（复用现有逻辑，别重复实现）。
+
+def restart_game(*, wait_ready: bool = True) -> dict  # 大退重登（无代理）
+def set_system_proxy(enable: bool, addr: str = f"127.0.0.1:{CAPTURE_PORT}") -> dict
+```
+
+规则：
+- **不自动联网/不碰游戏进程**，除非对应 endpoint 被调用。
+- 测试必须 mock `GFLClient`/`GFLProxy`/`subprocess`，禁止真的启代理/杀游戏。
+- 错误提示要带可操作建议（error:300 → 「队伍不可收藏或重复」；sign 过期 → 「重新登录抓取」）。
+- capture 抓到 `Index/index` 的 `targettrain_collect_user_info` 后落 `creds_latest.json`：
+  `{"uid","sign","base_url","enemies":[...],"orders":[...],"urls":[...],"captured_at":iso}`。
+- 依赖 `gflzirc`（系统 Python 已装 0.4.4）：`from gflzirc import GFLClient, GFLProxy, set_windows_proxy`。
+
+---
+
+## 4. app.py 路由（Lead 实现，前端按这个写）
+
+静态：`/` → `static/index.html`，`/static/...` 原样。
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/api/health` | 应用/数据/game/gflzirc 状态 |
+| GET | `/api/chapters` | 章节分组 |
+| GET | `/api/chapters/{id}` | 章节详情 + 关卡（灰域返回 areas） |
+| GET | `/api/stages/{mission_id}` | 关卡 + 队伍列表 |
+| GET | `/api/teams/{team_id}` | 队伍详情 |
+| GET | `/api/grayzone/areas` | 灰域区域 |
+| GET | `/api/grayzone/teams?area=&offset=&limit=&q=` | 区域队伍分页 |
+| GET | `/api/species?q=&faction=&category=&offset=&limit=` | 怪种列表 |
+| GET | `/api/species/{codex_no}` | 怪种 + 所有队伍 |
+| GET | `/api/search?q=` | 全局搜索 |
+| GET | `/api/current?source=auto` | 当前靶机（真实列表） |
+| GET | `/api/creds` | 可用凭证列表 |
+| GET | `/api/player` | 游戏进程/系统代理状态 |
+| GET | `/api/sequence` | `{"draft":[team_summary...],"count":n,"max":35,"updated_at":...}` |
+| POST | `/api/sequence` | `{"action":"add|add_many|remove|move|set|clear|import_current","team_id"|"team_ids"|"from"|"to"}` |
+| POST | `/api/execute/preview` | `{"mode":"append|replace|rebuild|clear","source":"auto|creds|state"}` → plan |
+| POST | `/api/execute` | 同上 + `{"dry_run":bool,"creds_file":...}` → `{"job_id":...}` |
+| GET | `/api/jobs/{job_id}` | `{"id","kind","state":"running|done|error","logs":[...],"result":...,"error":...}` |
+| POST | `/api/jobs/{job_id}/cancel` | 取消 execute |
+| GET | `/api/capture/status` | |
+| POST | `/api/capture/start` | `{"port":18080,"set_proxy":true,"auto_restore_proxy":true}` |
+| POST | `/api/capture/stop` | |
+| POST | `/api/capture/restart_game` | 设置代理并重启游戏（抓 sign 用） |
+| POST | `/api/creds/load` | `{"name":"creds_xxx.json"}` 复制为 creds_latest.json 并返回 current_targets |
+| POST | `/api/game/restart` | 注入后大退重登 |
+| POST | `/api/catalog/refresh` | 后台重建 catalog → job |
+| GET/POST | `/api/tutorial` | `{"completed":[step_id...],"dismissed":false}` |
+| GET/POST | `/api/settings` | capture_port / auto_restore_proxy / preferred_creds |
+| GET | `/api/meta` | 版本、数据时间、数量 |
+
+错误统一：HTTP 4xx/5xx + `{"error":"人类可读","detail":"...","hint":"..."}`。
+所有接口本地绑定 127.0.0.1；`/api/*` 返回 JSON UTF-8，`Cache-Control: no-store`。

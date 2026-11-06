@@ -1,0 +1,436 @@
+/* main.js —— 应用启动 / 路由 / 顶栏 / 全局交互 */
+import { api, IS_MOCK } from "./api.js";
+import {
+  store,
+  refreshHealth,
+  refreshSequence,
+  tryRefreshCurrent,
+  loadTutorial,
+  loadChapters,
+  startHealthPolling,
+  addTeam,
+} from "./store.js";
+import {
+  icon,
+  toast,
+  toastOk,
+  toastErr,
+  showBuildOverlay,
+  hideBuildOverlay,
+  handleViewError,
+  emptyState,
+} from "./ui.js";
+import { esc, fmtNum, fmtPower, fmtDate, timeAgo, navigate, parseRoute, debounce, bindSearch } from "./util.js";
+import { initSequencePanel } from "./components/sequence-panel.js";
+import { openTeamDrawer } from "./components/team-drawer.js";
+import { maybeShowTutorialOverlay } from "./components/tutorial-overlay.js";
+
+/* 视图 */
+import * as overview from "./views/overview.js";
+import * as chapters from "./views/chapters.js";
+import * as chapterDetail from "./views/chapter-detail.js";
+import * as stage from "./views/stage.js";
+import * as grayzone from "./views/grayzone.js";
+import * as species from "./views/species.js";
+import * as speciesDetail from "./views/species-detail.js";
+import * as teamPage from "./views/team-page.js";
+import * as sequencePage from "./views/sequence-page.js";
+import * as capture from "./views/capture.js";
+import * as tutorialPage from "./views/tutorial-page.js";
+
+const ROUTES = [
+  { pattern: /^\/$/, view: overview, nav: "overview", title: "总览" },
+  { pattern: /^\/overview$/, view: overview, nav: "overview", title: "总览" },
+  { pattern: /^\/chapters$/, view: chapters, nav: "chapters", title: "关卡图鉴" },
+  { pattern: /^\/chapters\/([^/]+)$/, view: chapterDetail, nav: "chapters", param: "id", title: "章节详情" },
+  { pattern: /^\/stages\/([^/]+)$/, view: stage, nav: "chapters", param: "id", title: "关卡队伍" },
+  { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", param: "area", title: "灰域区域" },
+  { pattern: /^\/species$/, view: species, nav: "species", title: "怪种图鉴" },
+  { pattern: /^\/species\/([^/]+)$/, view: speciesDetail, nav: "species", param: "codex", title: "怪种详情" },
+  { pattern: /^\/teams\/([^/]+)$/, view: teamPage, nav: "chapters", param: "id", title: "队伍详情" },
+  { pattern: /^\/sequence$/, view: sequencePage, nav: "sequence", title: "序列编排" },
+  { pattern: /^\/capture$/, view: capture, nav: "capture", title: "登录抓取" },
+  { pattern: /^\/tutorial$/, view: tutorialPage, nav: "tutorial", title: "使用教程" },
+];
+
+const viewEl = () => document.getElementById("view");
+let currentRoute = null;
+let routeToken = 0;
+let firstBoot = true;
+
+/* ================================================================== */
+/* 启动                                                               */
+/* ================================================================== */
+async function boot() {
+  renderNavCounts();
+  initSequencePanel(document.getElementById("sequence-panel"));
+  initTopbar();
+  bindGlobalEvents();
+
+  // 先注册全局事件，保证基础数据首次加载时顶栏/导航角标就能同步刷新
+  store.on("health", (payload) => {
+    updateTopbar(payload);
+    updateNavCounts(payload);
+    renderNavCounts();
+  });
+  store.on("sequence", () => renderNavCounts());
+  store.on("current", () => renderNavCounts());
+
+  // 初次健康检查
+  let health = null;
+  try {
+    health = await refreshHealth();
+  } catch (err) {
+    health = null;
+  }
+  updateTopbar(health);
+  updateNavCounts(health);
+
+  const catalogReady = health?.catalog?.state === "ready";
+  if (!catalogReady && health) {
+    showBuildOverlay(health?.catalog?.detail || health?.catalog?.state || "", async () => {
+      await Promise.allSettled([refreshHealth(), refreshSequence(), tryRefreshCurrent(), loadChapters()]);
+      updateTopbar(store.health);
+      renderRoute();
+    });
+  }
+
+  // 并行拉取基础数据（catalog 未就绪时部分接口 503，静默失败）
+  await Promise.allSettled([
+    refreshSequence(),
+    tryRefreshCurrent(),
+    loadTutorial(),
+    loadChapters(),
+  ]);
+  updateTopbar(store.health);
+  updateNavCounts(store.health);
+  renderNavCounts();
+  firstBoot = false;
+  renderRoute();
+
+  if (catalogReady || IS_MOCK) {
+    setTimeout(() => maybeShowTutorialOverlay(), 500);
+  }
+
+  // 顶栏状态轮询
+  startHealthPolling(15000);
+  store.registerCleanup(() => {});
+  firstBoot = false;
+}
+
+/* ================================================================== */
+/* 顶栏                                                               */
+/* ================================================================== */
+function initTopbar() {
+  const searchInput = document.getElementById("global-search");
+  if (searchInput) {
+    bindSearch(searchInput, (value) => runSearch(value, 260));
+    searchInput.addEventListener("focus", () => {
+      if (searchInput.value.trim()) runSearch(searchInput.value.trim(), 0);
+    });
+    document.getElementById("topbar-refresh")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await Promise.allSettled([refreshHealth(), refreshSequence(), tryRefreshCurrent()]);
+        updateTopbar(store.health);
+        toastOk("状态已刷新");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    document.getElementById("topbar-tutorial")?.addEventListener("click", async () => {
+      const { showTutorialOverlay } = await import("./components/tutorial-overlay.js");
+      showTutorialOverlay();
+    });
+  }
+  const mockFlag = document.getElementById("mock-flag");
+  if (mockFlag && IS_MOCK) mockFlag.classList.remove("hidden");
+
+  document.getElementById("nav-execute")?.addEventListener("click", async () => {
+    const { openExecuteModal } = await import("./components/execute-modal.js");
+    openExecuteModal();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "/" && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      searchInput?.focus();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".searchbox")) {
+      const drop = document.getElementById("search-drop");
+      if (drop) drop.innerHTML = "";
+    }
+  });
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName?.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+}
+
+export function updateTopbar(health) {
+  if (!health) {
+    setStatus("game", "warn", "读取中…");
+    setStatus("proxy", "ok", "—");
+    setStatus("data", "warn", "读取中…");
+    setStatus("targets", "ok", "—");
+    return;
+  }
+  const game = health.game || {};
+  setStatus(
+    "game",
+    game.game_running ? "ok" : "warn",
+    game.game_running ? `运行中 · PID ${game.pid ?? "—"}` : "未运行",
+    game.game_running ? "" : "gamepad",
+  );
+  setStatus("proxy", game.system_proxy ? "warn" : "ok", game.system_proxy || "未开启");
+
+  const catalog = health.catalog || {};
+  if (catalog.state === "ready" && catalog.built_at) {
+    setStatus("data", "ok", `${fmtDate(catalog.built_at)}`, `数据构建 ${timeAgo(catalog.built_at)}`);
+  } else if (catalog.state === "building") {
+    setStatus("data", "warn", "解析中…");
+  } else if (catalog.state === "error") {
+    setStatus("data", "err", "解析失败");
+  } else {
+    setStatus("data", "warn", "加载中…");
+  }
+  const navDataTime = document.getElementById("nav-data-time");
+  if (navDataTime) navDataTime.textContent = catalog.built_at ? fmtDate(catalog.built_at) : "—";
+
+  const targets = store.current?.targets || [];
+  setStatus("targets", targets.length ? "cyan" : "warn", targets.length ? `${targets.length} / 35` : "未抓取");
+}
+
+function setStatus(key, cls, value, title) {
+  const node = document.querySelector(`[data-status="${key}"]`);
+  if (!node) return;
+  node.className = `si-value ${cls || ""}`;
+  node.textContent = value;
+  if (title) node.title = title;
+}
+
+function updateNavCounts(health) {
+  const counts = health?.catalog?.counts || {};
+  setNavCount("chapters", counts.chapters);
+  setNavCount("species", counts.species);
+}
+
+function renderNavCounts() {
+  const counts = store.health?.catalog?.counts || {};
+  setNavCount("chapters", counts.chapters);
+  setNavCount("species", counts.species);
+  const seq = store.sequence;
+  const seqEl = document.querySelector('[data-nav-count="sequence"]');
+  if (seqEl && seq) seqEl.textContent = `${seq.count}`;
+}
+
+function setNavCount(key, value) {
+  const el = document.querySelector(`[data-nav-count="${key}"]`);
+  if (el && value !== undefined && value !== null) el.textContent = String(value);
+}
+
+/* ================================================================== */
+/* 全局搜索                                                           */
+/* ================================================================== */
+const runSearch = debounce(async (value, wait = 0) => {
+  const drop = document.getElementById("search-drop");
+  if (!drop) return;
+  if (!value || value.length < 1) {
+    drop.innerHTML = "";
+    return;
+  }
+  try {
+    const data = await api.search(value, 20);
+    const teams = data.teams || [];
+    const stages = data.stages || [];
+    const speciesList = data.species || [];
+    if (!teams.length && !stages.length && !speciesList.length) {
+      drop.innerHTML = `<div class="sd-empty">没有找到「${esc(value)}」相关结果</div>`;
+      return;
+    }
+    const groups = [];
+    if (stages.length) {
+      groups.push(`<div class="sd-group-title">关卡</div>${stages
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <div class="sd-item" data-search-nav="/stages/${esc(item.id)}">
+          <span class="badge amber mono">${esc(item.code || item.id)}</span>
+          <span class="sd-main"><span class="sd-title">${esc(item.title || "")}</span><span class="sd-sub">${esc(item.chapter_title || "")}</span></span>
+        </div>`,
+        )
+        .join("")}`);
+    }
+    if (speciesList.length) {
+      groups.push(`<div class="sd-group-title">怪种</div>${speciesList
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <div class="sd-item" data-search-nav="/species/${esc(item.codex_no)}">
+          <span class="badge cyan mono">#${String(item.codex_no).padStart(3, "0")}</span>
+          <span class="sd-main"><span class="sd-title">${esc(item.name)}</span><span class="sd-sub">${esc(item.faction || "")} · ${esc(String(item.team_count ?? ""))} 支队伍</span></span>
+        </div>`,
+        )
+        .join("")}`);
+    }
+    if (teams.length) {
+      groups.push(`<div class="sd-group-title">队伍</div>${teams
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <div class="sd-item" data-search-nav="/teams/${esc(item.id)}">
+          <span class="badge mono">#${esc(item.id)}</span>
+          <span class="sd-main"><span class="sd-title">效能 ${fmtPower(item.power)}</span><span class="sd-sub">${esc(item.faction || "")} · ${esc(String(item.units ?? ""))} 单位</span></span>
+        </div>`,
+        )
+        .join("")}`);
+    }
+    drop.innerHTML = groups.join("");
+  } catch (err) {
+    drop.innerHTML = `<div class="sd-empty">搜索失败：${esc(err.message)}</div>`;
+  }
+}, 180);
+
+/* ================================================================== */
+/* 路由                                                               */
+/* ================================================================== */
+function matchRoute(path) {
+  for (const route of ROUTES) {
+    const match = route.pattern.exec(path);
+    if (match) return { route, match };
+  }
+  return null;
+}
+
+function setNavActive(navId) {
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.nav === navId);
+  });
+}
+
+export async function renderRoute() {
+  const { path, query } = parseRoute();
+  const matched = matchRoute(path);
+  const token = ++routeToken;
+
+  if (!matched) {
+    setNavActive("");
+    const el = viewEl();
+    el.innerHTML = emptyState({
+      iconName: "compass",
+      title: "页面不存在",
+      desc: `没有找到路径 ${path}，请从左侧导航重新进入。`,
+      actionText: "回到总览",
+      actionId: "goto-overview",
+    });
+    el.querySelector("#goto-overview")?.addEventListener("click", () => navigate("/overview"));
+    return;
+  }
+
+  const { route, match } = matched;
+  currentRoute = route;
+  setNavActive(route.nav);
+  const params = {};
+  if (route.param) {
+    let raw = match[1];
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {
+      /* keep raw */
+    }
+    params[route.param] = raw;
+  }
+  const el = viewEl();
+  if (!el) return;
+  store.runCleanups();
+  el.innerHTML = "";
+  document.title = `${route.title} · 靶机工坊 TargetForge`;
+  const mainEl = document.querySelector(".main");
+  if (mainEl) mainEl.scrollTop = 0;
+  try {
+    await route.view.render(el, { params, query });
+  } catch (err) {
+    if (token !== routeToken) return;
+    handleViewError(el, err, () => renderRoute());
+  }
+}
+
+/* ================================================================== */
+/* 全局事件                                                           */
+/* ================================================================== */
+function bindGlobalEvents() {
+  window.addEventListener("hashchange", () => {
+    if (firstBoot) return;
+    renderRoute();
+  });
+  document.addEventListener("click", async (event) => {
+    const navEl = event.target.closest("[data-nav]");
+    if (navEl) {
+      event.preventDefault();
+      navigate(navEl.dataset.nav);
+      return;
+    }
+    const searchNav = event.target.closest("[data-search-nav]");
+    if (searchNav) {
+      const drop = document.getElementById("search-drop");
+      if (drop) drop.innerHTML = "";
+      const input = document.getElementById("global-search");
+      if (input) input.value = "";
+      navigate(searchNav.dataset.searchNav);
+      return;
+    }
+    const addEl = event.target.closest("[data-add-team]");
+    if (addEl) {
+      event.preventDefault();
+      event.stopPropagation();
+      const teamId = Number(addEl.dataset.addTeam);
+      addEl.disabled = true;
+      try {
+        const sequence = await addTeam(teamId);
+        toastOk("已加入序列", `队伍 #${teamId} · 当前序列 ${sequence.count}/${sequence.max}`);
+      } catch (err) {
+        toastErr("加入失败", err.message);
+      } finally {
+        addEl.disabled = false;
+      }
+      return;
+    }
+    const teamEl = event.target.closest("[data-team-detail]");
+    if (teamEl && !event.target.closest(".seq-actions") && !event.target.closest("[data-seq-act]")) {
+      event.preventDefault();
+      try {
+        sessionStorage.setItem("tf:last-list", window.location.hash.replace(/^#/, "") || "/chapters");
+      } catch {
+        /* ignore */
+      }
+      openTeamDrawer(Number(teamEl.dataset.teamDetail));
+      return;
+    }
+  });
+
+  // 记录列表页来源，用于详情页「返回」
+  window.addEventListener("hashchange", () => {
+    const path = (window.location.hash || "#/").replace(/^#/, "");
+    if (/^\/(chapters|species|stages|grayzone)(\/|$)/.test(path)) {
+      try {
+        sessionStorage.setItem("tf:last-list", path);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+}
+
+/* ================================================================== */
+/* 启动                                                               */
+/* ================================================================== */
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}

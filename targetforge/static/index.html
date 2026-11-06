@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>靶机工坊 TargetForge</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5a524' stroke-width='1.8'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M12 2v4M12 18v4M2 12h4M18 12h4'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="app">
+  <!-- ============ 顶部状态条 ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="17" cy="17" r="12.5" stroke-dasharray="2.5 4" opacity=".55"/>
+          <circle cx="17" cy="17" r="8"/>
+          <circle cx="17" cy="17" r="3" fill="currentColor" stroke="none"/>
+          <path d="M17 1.5v5M17 27.5v5M1.5 17h5M27.5 17h5"/>
+          <path d="M25.5 8.5 29 5M8.5 8.5 5 5M25.5 25.5 29 29M8.5 25.5 5 29" opacity=".5"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-title">靶机工坊 <em>TARGET FORGE</em></span>
+        <span class="brand-sub">STC TARGET INJECTION · LOCAL</span>
+      </span>
+    </div>
+
+    <div class="statusbar">
+      <div class="status-item" title="游戏进程状态">
+        <span class="si-label">游戏进程</span>
+        <span class="si-value" data-status="game">读取中…</span>
+      </div>
+      <div class="status-item" title="系统代理状态">
+        <span class="si-label">系统代理</span>
+        <span class="si-value" data-status="proxy">—</span>
+      </div>
+      <div class="status-item" title="数据构建时间">
+        <span class="si-label">数据时间</span>
+        <span class="si-value" data-status="data">—</span>
+      </div>
+      <div class="status-item" title="当前抓到的收藏标靶数量">
+        <span class="si-label">已抓靶机</span>
+        <span class="si-value" data-status="targets">—</span>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <span class="badge amber mono hidden" id="mock-flag">MOCK 数据</span>
+      <div class="searchbox">
+        <span class="search-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></svg>
+        </span>
+        <input id="global-search" type="text" placeholder="搜索关卡 / 怪种 / 队伍…" autocomplete="off" spellcheck="false" aria-label="全局搜索">
+        <span class="kbd" aria-hidden="true">/</span>
+        <div class="search-drop" id="search-drop"></div>
+      </div>
+      <button class="btn btn-icon btn-ghost" id="topbar-refresh" type="button" title="刷新状态" aria-label="刷新状态">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 4v7h-7"/></svg>
+      </button>
+      <button class="btn btn-icon btn-ghost" id="topbar-tutorial" type="button" title="新手引导" aria-label="新手引导">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ 主体 ============ -->
+  <div class="shell">
+    <nav class="sidenav" aria-label="主导航">
+      <div class="nav-section-label">主菜单 // MENU</div>
+      <div class="nav">
+        <button class="nav-item" type="button" data-nav="/overview">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </span>
+          <span class="nav-label">总览</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="/chapters">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>
+          </span>
+          <span class="nav-label">关卡图鉴</span>
+          <span class="nav-count" data-nav-count="chapters">—</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="/species">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          </span>
+          <span class="nav-label">怪种图鉴</span>
+          <span class="nav-count" data-nav-count="species">—</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="/sequence">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+          </span>
+          <span class="nav-label">序列编排</span>
+          <span class="nav-count" data-nav-count="sequence">0</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="/capture">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h8M18 12v4M15 12v3"/></svg>
+          </span>
+          <span class="nav-label">登录抓取</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="/tutorial">
+          <span class="nav-ico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></svg>
+          </span>
+          <span class="nav-label">使用教程</span>
+        </button>
+      </div>
+
+      <div class="nav-spacer"></div>
+
+      <button class="nav-cta" type="button" id="nav-execute">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M7 4.5v15l13-7.5-13-7.5Z"/></svg>
+        <span>
+          执行注入
+          <span class="cta-sub">EXECUTE · PREVIEW</span>
+        </span>
+      </button>
+
+      <div class="nav-meta">
+        <div class="nav-meta-row"><span>序列上限</span><b>35</b></div>
+        <div class="nav-meta-row"><span>数据时间</span><b id="nav-data-time">—</b></div>
+        <div class="nav-meta-row"><span>版本</span><b>v1.0.0</b></div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <div id="view" class="view"></div>
+    </main>
+
+    <aside class="seq-panel" id="sequence-panel" aria-label="序列面板"></aside>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
