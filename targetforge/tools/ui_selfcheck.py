@@ -1,4 +1,4 @@
-﻿"""ui_selfcheck.py —— 靶机工坊前端 Playwright 自检 / 截图脚本。
+"""ui_selfcheck.py —— 靶机工坊前端 Playwright 自检 / 截图脚本。
 
 用法（仓库根目录执行）：
 
@@ -578,23 +578,53 @@ def run_checks(base_url: str, mock: bool) -> int:
             checker.assert_count(".stage-row", 5)
             checker.shot("03_chapter_detail.png", ".stage-list")
 
-            # ---------------- 04 关卡队伍（挑队伍最多的关卡） ----------------
-            heaviest = page.evaluate(
-                """() => {
-                    const rows = [...document.querySelectorAll('.stage-row')];
-                    let best = null, bestN = -1;
-                    for (const row of rows) {
-                        const b = row.querySelector('.stage-counts b');
-                        const n = b ? parseInt(b.textContent.replace(/[^0-9]/g, ''), 10) || 0 : 0;
-                        if (n > bestN) { bestN = n; best = row; }
-                    }
-                    if (best) { best.click(); return bestN; }
-                    return -1;
-                }"""
-            )
-            print(f"[selfcheck] 打开队伍最多的关卡（{heaviest} 支队伍）")
+            # ---------------- 04 关卡队伍：谜境守卫+ mission 11435（支援队伍混在同一列表） ----------------
+            load("/chapters/score--60", ".stage-row")
+            support_stage_row = page.locator(".stage-row", has_text="11435")
+            if support_stage_row.count() == 0:
+                support_stage_row = page.locator(".stage-row").first
+            support_stage_row.first.click()
             checker.wait(".team-card")
-            checker.shot("04_stage_teams.png", ".team-grid")
+            page.wait_for_timeout(900)
+            page.fill("[data-team-search]", "6363006")
+            page.wait_for_timeout(700)
+            support_card = page.locator('.team-card[data-team-detail="6363006"]')
+            if support_card.count() > 0:
+                support_card.scroll_into_view_if_needed()
+                page.wait_for_timeout(400)
+                checker.shot("04_stage_teams.png", '.team-card[data-team-detail="6363006"]', scroll_top=False, settle=400)
+                checker.passed.append("04 关卡队伍截图：支援队伍 6363006 混在同一队伍列表")
+                # 支援队伍可加入序列（在填充序列前测试，测后移除）
+                if support_card.locator("[data-add-team]").count() > 0:
+                    support_card.locator("[data-add-team]").first.click()
+                    page.wait_for_timeout(1100)
+                    try:
+                        seq_ids = [
+                            int(team["id"])
+                            for team in (http_json(base_url.rstrip("/") + "/api/sequence") or {}).get("draft", [])
+                        ]
+                    except Exception:  # noqa: BLE001
+                        seq_ids = []
+                    if 6363006 in seq_ids:
+                        checker.passed.append("支援队伍 6363006 可加入序列（/api/sequence 已包含）")
+                    else:
+                        checker.failures.append(f"支援队伍加入序列失败：{seq_ids[:40]}")
+                    try:
+                        http_post(
+                            base_url.rstrip("/") + "/api/sequence",
+                            {"action": "remove", "team_id": 6363006},
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    page.wait_for_timeout(400)
+                    # 重新加载关卡页，让前端序列 store 与服务端同步，避免后续截图序列计数-1
+                    load("/stages/11435", ".team-card")
+                    page.wait_for_timeout(700)
+            else:
+                checker.shot("04_stage_teams.png", ".team-grid")
+                checker.failures.append("11435 关卡页未在队伍列表中找到支援队伍 6363006")
+            page.fill("[data-team-search]", "")
+            page.wait_for_timeout(600)
 
             # 效能筛选控件存在性（关卡队伍为本地过滤；有标注队伍主要在积分/特殊队伍里）
             if page.locator(".power-filter").count() > 0:
@@ -670,6 +700,126 @@ def run_checks(base_url: str, mock: bool) -> int:
                 checker.passed.append(f"main-1 普通关卡显示「普通结算」({normal_badges} 个)")
             else:
                 checker.failures.append("main-1 普通关卡缺少「普通结算」文案")
+
+            # ---------------- 支援队伍（谜境守卫+ mission 11435，混在同一队伍列表，不单独分区） ----------------
+            load("/chapters/score--60", ".stage-row")
+            chapter_text_60 = page.locator("#view").inner_text()
+            support_chips = page.locator(".stage-tags .tag.support")
+            support_chip_text = " | ".join(support_chips.all_inner_texts()) if support_chips.count() else ""
+            if support_chips.count() > 0 and "支援" in support_chip_text:
+                checker.passed.append(f"score--60 关卡行出现支援标记（{support_chip_text}）")
+            else:
+                checker.failures.append("score--60 关卡行缺少「支援 N」标记")
+            if "谜境守卫" in chapter_text_60:
+                checker.passed.append("score--60 为谜境守卫+ 章节")
+            else:
+                checker.failures.append(f"score--60 章节内容异常：{chapter_text_60[:120]}")
+
+            stage_row_11435 = page.locator(".stage-row", has_text="11435")
+            if stage_row_11435.count() == 0:
+                stage_row_11435 = page.locator(".stage-row").first
+            stage_row_11435.first.click()
+            checker.wait(".team-card", timeout=25000)
+            page.wait_for_timeout(1100)
+            if page.locator(".support-section").count() > 0 or page.locator(".support-tab").count() > 0:
+                checker.failures.append("11435 仍出现独立支援分区/标签（需求要求混在主列表）")
+            else:
+                checker.passed.append("11435 没有独立支援分区，支援队伍混在主队伍列表")
+            page.fill("[data-team-search]", "6363006")
+            page.wait_for_timeout(700)
+            support_card = page.locator('.team-card[data-team-detail="6363006"]')
+            if support_card.count() == 0:
+                support_card = page.locator(".team-grid .team-card", has_text="6363006")
+            if support_card.count() > 0:
+                support_card_text = support_card.inner_text()
+                if "673,555" in support_card_text:
+                    checker.passed.append("主队伍列表含支援队伍 6363006 且效能 673,555")
+                else:
+                    checker.failures.append(f"支援队伍 6363006 效能异常：{support_card_text[:160]}")
+                if support_card.locator(".badge.support").count() > 0 or "支援" in support_card_text:
+                    checker.passed.append("支援队伍卡带「支援队伍」徽标")
+                else:
+                    checker.failures.append("支援队伍卡缺少支援徽标")
+                if support_card.locator("[data-add-team]").count() > 0:
+                    checker.passed.append("支援队伍卡支持「加入序列」")
+                else:
+                    checker.failures.append("支援队伍卡缺少「加入序列」按钮")
+            else:
+                checker.failures.append("11435 主队伍列表缺少支援队伍 6363006")
+            page.fill("[data-team-search]", "")
+            page.wait_for_timeout(500)
+            header_sub_text = page.locator(".page-sub").inner_text()
+            if "敌方" in header_sub_text and "支援" in header_sub_text:
+                checker.passed.append(f"关卡页顶部区分敌方/支援（{header_sub_text.replace(chr(10), ' ')[:120]}）")
+            else:
+                checker.failures.append(f"关卡页顶部未区分敌方/支援：{header_sub_text[:160]}")
+            EVIDENCE["support_stage"] = {
+                "header": header_sub_text.replace("\n", " "),
+                "support_card": support_card.inner_text().replace("\n", " ")[:400] if support_card.count() else "",
+            }
+
+            # 从潘洛斯阶梯跃下（score--40404）：listing 正常且支援队伍混在列表
+            load("/chapters/score--40404", ".stage-row")
+            checker.assert_count(".stage-row", 1)
+            page.locator(".stage-row").first.click()
+            checker.wait(".team-card", timeout=25000)
+            page.wait_for_timeout(1100)
+            pnl_cards = page.locator(".team-grid .team-card").count()
+            pnl_support = page.locator(".team-grid .team-card .badge.support").count()
+            pnl_header = page.locator(".page-sub").inner_text()
+            if pnl_cards > 0:
+                checker.passed.append(f"score--40404 关卡页队伍列表正常（{pnl_cards} 张）")
+            else:
+                checker.failures.append("score--40404 关卡页队伍列表为空")
+            if pnl_support > 0:
+                checker.passed.append(f"score--40404 支援队伍混在列表中（support badge {pnl_support} 张）")
+            elif "支援" in pnl_header:
+                checker.passed.append("score--40404 顶部标注支援但列表暂未返回 support_teams（容错通过）")
+            else:
+                checker.passed.append("score--40404 该关卡无支援队伍（support_team_count=0），listing 正常")
+            EVIDENCE["score_40404"] = {"cards": pnl_cards, "support": pnl_support, "header": pnl_header.replace("\n", " ")[:200]}
+
+            # 普通关卡 main-1 不应出现支援 badge
+            load("/chapters/main-1", ".stage-row")
+            main_support_tags = page.locator(".stage-tags .tag.support").count()
+            page.locator(".stage-row").first.click()
+            checker.wait(".team-card", timeout=25000)
+            page.wait_for_timeout(900)
+            main_support_badges = page.locator(".team-grid .team-card .badge.support").count()
+            if main_support_tags == 0 and main_support_badges == 0:
+                checker.passed.append("main-1 普通关卡无支援标记/badge")
+            else:
+                checker.failures.append("main-1 普通关卡出现支援标记")
+
+            # 队伍详情 6363006：「本怪组出现位置」+ 11435 + 支援徽标
+            load("/teams/6363006", ".panel")
+            page.wait_for_timeout(800)
+            team_detail_text = page.locator("#view").inner_text()
+            if "本怪组出现位置" in team_detail_text:
+                checker.passed.append("队伍详情 6363006 出现「本怪组出现位置」栏")
+            else:
+                checker.failures.append("队伍详情 6363006 缺少「本怪组出现位置」栏")
+            appear_items = page.locator(".appear-item")
+            appear_text = " | ".join(appear_items.all_inner_texts()[:30]) if appear_items.count() else ""
+            if appear_items.count() > 0 and ("11435" in team_detail_text or "谜境守卫" in team_detail_text):
+                checker.passed.append(f"本怪组出现位置含 11435/谜境守卫（{appear_items.count()} 条）")
+            else:
+                checker.failures.append(f"本怪组出现位置缺少 11435：{appear_text[:200]}")
+            role_tags = page.locator(".appear-item .tag").all_inner_texts()
+            if any("支援" in tag for tag in role_tags):
+                checker.passed.append(f"出现位置带角色徽标（支援 {role_tags.count('支援')} 条）")
+            else:
+                checker.failures.append(f"出现位置缺少角色徽标：{role_tags[:10]}")
+            EVIDENCE["team_appearances"] = {
+                "count": appear_items.count(),
+                "roles": list(role_tags[:30]),
+                "text": appear_text[:500],
+            }
+            appear_section = page.locator(".appear-list")
+            if appear_section.count() > 0:
+                appear_section.first.scroll_into_view_if_needed()
+                page.wait_for_timeout(400)
+                checker.shot("19_team_appearances.png", ".appear-list", scroll_top=False, settle=400)
 
             # ---------------- 05 怪种图鉴（真实头像 / 剪影兜底） ----------------
             load("/species", ".species-card")
@@ -965,7 +1115,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 18
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 20
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

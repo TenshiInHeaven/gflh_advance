@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { store, addTeam } from "../store.js";
 import { icon, openDrawer, toast, toastErr, toastOk, setBusy, errorState, skeletonRows, speciesIconHtml } from "../ui.js";
-import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay } from "../util.js";
+import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay, isSupportTeam } from "../util.js";
 
 const unitName = (member) => member.name || member.code || "未知单位";
 
@@ -14,6 +14,7 @@ function statCell(value, { digits = 1, cls = "", title = "" } = {}) {
 export function teamDetailBodyHtml(detail) {
   const fc = factionColor(detail.faction);
   const powerDisp = powerDisplay(detail.power, detail.power_known);
+  const support = isSupportTeam(detail);
   const params = detail.params || {};
   const members = detail.members || [];
   const appearances = detail.appearances || [];
@@ -103,20 +104,28 @@ export function teamDetailBodyHtml(detail) {
     </div>
     <div class="param-note">数值为按队伍等级缩放后的展示口径；「力场」即 def（伤害减免值）。</div>
 
-    <div class="subhead">${icon("map", 12)} 关卡出处 <span class="badge mono">${appearances.length}${appearances.length >= 24 ? "+" : ""}</span></div>
+    <div class="subhead">${icon("map", 12)} 本怪组出现位置 <span class="badge mono">${appearances.length}${appearances.length >= 24 ? "+" : ""}</span><span class="subhead-hint">同一怪组可能在多个关卡/活动中以敌方或支援身份出现</span></div>
     <div class="appear-list">
       ${
         appearances.length
           ? appearances
-              .map(
-                (item) => `
+              .map((item) => {
+                const role =
+                  item.role === "support" || item.support || item.is_support || item.support_team
+                    ? "support"
+                    : item.role === "enemy" || item.enemy
+                      ? "enemy"
+                      : support
+                        ? "support"
+                        : "enemy";
+                return `
           <button class="appear-item" type="button" data-stage-detail="${esc(item.mission_id)}">
             <span class="ai-code">${esc(item.code || item.mission_id)}</span>
-            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")}</span>
+            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")} <span class="tag ${role === "support" ? "support" : "enemy"}">${role === "support" ? "支援" : "敌方"}</span></span>
             <span class="ai-diff">${item.difficulty ? `难度 ${fmtNum(item.difficulty)}` : ""}</span>
             ${icon("chevronRight", 12)}
-          </button>`,
-              )
+          </button>`;
+              })
               .join("")
           : '<div class="appear-empty">该队伍没有固定关卡出处（灰域 / 活动临时队伍）</div>'
       }
@@ -145,12 +154,14 @@ export function teamDetailBodyHtml(detail) {
 export function teamDetailHeadHtml(detail) {
   const fc = factionColor(detail.faction);
   const powerDisp = powerDisplay(detail.power, detail.power_known);
+  const support = isSupportTeam(detail);
   const flags = [];
+  if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
   if (detail.gray_zone) flags.push('<span class="badge cyan">灰域队伍</span>');
   if (detail.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
   return `
     <div class="drawer-title-row">
-      <span class="drawer-title">#${esc(detail.id)}<small>ENEMY TEAM</small></span>
+      <span class="drawer-title">#${esc(detail.id)}<small>${support ? "SUPPORT TEAM" : "ENEMY TEAM"}</small></span>
       <button class="modal-close" type="button" data-close-drawer style="margin-left:auto" aria-label="关闭">${icon("close", 17)}</button>
     </div>
     <div class="drawer-tags">

@@ -41,6 +41,14 @@ v1.2 变化（用户实测反馈）
    mission id 列表；同 mission 多行优先 ``type=10`` 常驻积分榜，其次 ``type=6``）。
    这样前端/分析工具可以真正读懂"结算形式"，而不是靠活动名里有没有「+」。
 
+7. **支援队伍（v1.4）**：除 ``spot.enemy_team_id`` / ``boss_team_id``（敌方）外，
+   ``spot.ally_team_id`` 指向**支援队伍**（有槽位即收，可收藏/不可收藏都收）。
+   stage 详情多了 ``support_teams``（team_summary + ``role:"support"``、
+   ``support_count``、``collectable``）与 ``support_team_count``；章节详情的
+   stage 行带 ``support_team_count``。支援链接也计入队伍出处（``appearances[].role``）
+   与 ``roles``（enemy/support）；只有敌方+支援都无链接的可收藏队伍才进 orphan
+   （orphan 从 4381 降到 3802）。stage 的 ``team_count``/敌方 ``teams`` 列表不变。
+
 设计取舍
 --------
 catalog.json 不存"前端完整详情"，而是存**查询所需的紧凑索引**：
@@ -94,7 +102,7 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 #: mission 文本 key 前缀：``mission-{10000000 + mission_id}``
 MISSION_TEXT_BASE = 10_000_000
@@ -129,10 +137,10 @@ SCORE_SPECIAL_CAMPAIGNS: frozenset[int] = frozenset({-40401, -40402, -40403, -40
 #: 模拟作战的固定 mission id 段（1104..1106 的 map_res 是 OPS5_Y，1701..1745 是靶场系列）
 SIMULATION_ID_RANGES: tuple[tuple[int, int], ...] = ((1101, 1106), (1701, 1745))
 
-#: 章节列表里关卡摘要的字段（v1.3 加 settlement；contract 基础字段 + 结算结构化）
+#: 章节列表里关卡摘要的字段（v1.3 加 settlement；v1.4 加 support_team_count）
 STAGE_LIST_KEYS = (
     "id", "title", "code", "difficulty", "recommend_level",
-    "team_count", "species_count", "tags", "order", "settlement",
+    "team_count", "support_team_count", "species_count", "tags", "order", "settlement",
 )
 
 #: 队伍详情里展示的数值键（contract §2.3 示例；只展示参数，不含技能）
@@ -768,6 +776,27 @@ def _build_payload() -> dict:
         chapter["stage_ids"].append(mission_id)
         mid_chapter[mission_id] = chapter_id
 
+    # ---- 支援队伍链接（spot.ally_team_id；只收"该队伍有槽位"的，支援与敌方分开） --
+    support_team_missions: dict[int, set[int]] = defaultdict(set)
+    support_mission_teams: dict[int, list[int]] = defaultdict(list)
+    support_row_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    all_support_team_ids: set[int] = set()
+    for row in tables["spot"]:
+        team_id = _int(row.get("ally_team_id"))
+        mission_id = _int(row.get("mission_id"))
+        if team_id > 0:
+            all_support_team_ids.add(team_id)
+        if team_id <= 0 or mission_id <= 0 or not slots_by_team.get(team_id):
+            continue
+        support_team_missions[team_id].add(mission_id)
+        if team_id not in support_mission_teams[mission_id]:
+            support_mission_teams[mission_id].append(team_id)
+        support_row_counts[mission_id][team_id] += 1
+    stage_mission_ids = set(mission_teams)
+
+    def _is_gray_mission(mission_id: int) -> bool:
+        return _int((missions.get(mission_id) or {}).get("campaign")) == -404
+
     # ---- 队伍记录（详情数值按需计算，这里只存紧凑索引） ----------------
     team_records: list[dict] = []
     team_species: dict[int, set[int]] = {}
@@ -830,21 +859,33 @@ def _build_payload() -> dict:
             ])
 
         appearances = sorted(team_missions.get(team_id, ()))
-        gray_mission_ids = [mid for mid in appearances
-                            if _int((missions.get(mid) or {}).get("campaign")) == -404]
-        gray_set = set(gray_mission_ids)
-        non_gray = [mid for mid in appearances if mid not in gray_set]
+        support_appearances = sorted(support_team_missions.get(team_id, ()))
+        enemy_stage = [mid for mid in appearances if mid in stage_mission_ids]
+        support_stage = [mid for mid in support_appearances if mid in stage_mission_ids]
+        stage_appearances = enemy_stage + [mid for mid in support_stage
+                                           if mid not in set(enemy_stage)]
+        # 代表出处：优先敌方固定关卡，其次支援固定关卡
         rep_stage = None
-        if non_gray:
-            rep_stage = min(
-                non_gray,
-                key=lambda mid: (_int((missions.get(mid) or {}).get("order")), mid),
-            )
-        is_gray = bool(gray_mission_ids)
-        is_orphan = not appearances
-        team_flags[team_id] = {"fixed": bool(non_gray), "gray": is_gray,
-                               "orphan": is_orphan}
-        team_gray_mission_count[team_id] = len(gray_mission_ids)
+        for pool in (enemy_stage, support_stage):
+            non_gray = [mid for mid in pool if not _is_gray_mission(mid)]
+            if non_gray:
+                rep_stage = min(
+                    non_gray,
+                    key=lambda mid: (_int((missions.get(mid) or {}).get("order")), mid),
+                )
+                break
+        is_gray = any(_is_gray_mission(mid) for mid in stage_appearances)
+        is_orphan = not appearances and not support_appearances
+        roles: list[str] = []
+        if appearances:
+            roles.append("enemy")
+        if support_appearances:
+            roles.append("support")
+        team_flags[team_id] = {
+            "fixed": any(not _is_gray_mission(mid) for mid in stage_appearances),
+            "gray": is_gray,
+            "orphan": is_orphan,
+        }
         team_species[team_id] = species
 
         if faction_counter:
@@ -873,6 +914,9 @@ def _build_payload() -> dict:
             "species": sorted(species),
             "members": slots,
             "appearances": appearances,
+            "support_appearances": support_appearances,
+            "roles": roles,
+            "collectable": True,
             "gray_zone": is_gray,
             "orphan": is_orphan,
             "rep_stage": rep_stage,
@@ -880,6 +924,76 @@ def _build_payload() -> dict:
             "use_building": str(team_row.get("use_building") or ""),
             "batch_max": batch_max,
         })
+
+    # ---- 不可收藏的支援队伍（仅用于 stage.support_teams 展示） ----------
+    support_only_records: list[dict] = []
+
+    def build_support_only_record(team_id: int) -> dict:
+        team_row = teams_by_id.get(team_id) or {}
+        raw_slots = sorted(
+            slots_by_team.get(team_id, []),
+            key=lambda item: (_float(item.get("coordinator_x")),
+                              -_float(item.get("coordinator_y"))),
+        )
+        slots: list[list] = []
+        species: set[int] = set()
+        faction_counter: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
+        hp_total = 0.0
+        has_boss = False
+        for slot in raw_slots:
+            type_id = _int(slot.get("enemy_character_type_id"))
+            level = _int(slot.get("level"))
+            number = max(1, _int(slot.get("number"), 1))
+            used_type_ids.add(type_id)
+            type_slot_counts[type_id] += 1
+            codex = type_codex.get(type_id, 0)
+            if codex:
+                species.add(codex)
+            faction = type_faction.get(type_id) or ""
+            if faction:
+                faction_counter[faction][0] += 1
+                faction_counter[faction][1] += max(
+                    1.0, _float((type_rows.get(type_id) or {}).get("maxlife")))
+            if type_boss.get(type_id):
+                has_boss = True
+            attributes = scaled_attributes(type_id, level)
+            if attributes is not None:
+                hp_total += attributes.get("maxlife") * number
+            slots.append([
+                type_id, level, number, _json_num(_float(slot.get("def_percent"))),
+                _int(slot.get("batch")), _json_num(_float(slot.get("coordinator_x"))),
+                _json_num(_float(slot.get("coordinator_y"))),
+            ])
+        faction_name = (max(faction_counter,
+                           key=lambda name: (faction_counter[name][0],
+                                             faction_counter[name][1]))
+                        if faction_counter else "其它")
+        support_appearances = sorted(support_team_missions.get(team_id, ()))
+        power = _int(team_row.get("effect_ext"))
+        return {
+            "id": team_id,
+            "power": power,
+            "power_known": power != 0,
+            "units": len(slots),
+            "hp_total": int(round(hp_total)),
+            "faction": faction_name,
+            "tags": (["BOSS"] if has_boss else []),
+            "species": sorted(species),
+            "members": slots,
+            "appearances": [],
+            "support_appearances": support_appearances,
+            "roles": ["support"],
+            "collectable": False,
+            "gray_zone": any(_is_gray_mission(mid) for mid in support_appearances),
+            "orphan": False,
+            "rep_stage": None,
+            "fight_type": _int(team_row.get("fight_type")),
+            "use_building": str(team_row.get("use_building") or ""),
+            "batch_max": 0,
+        }
+
+    for team_id in sorted(set(support_team_missions) - collectable):
+        support_only_records.append(build_support_only_record(team_id))
 
     # ---- 类型标签 + 图标（成员/怪种展示用；不含任何技能信息） ----------
     icon_file_set = _icon_files()
@@ -1011,6 +1125,7 @@ def _build_payload() -> dict:
             "difficulty": difficulty,
             "recommend_level": recommend_level,
             "team_count": len(team_ids),
+            "support_team_count": len(support_mission_teams.get(mission_id, [])),
             "species_count": len(species_union),
             "tags": tags,
             "order": order,
@@ -1255,6 +1370,7 @@ def _build_payload() -> dict:
         "chapters": len(chapters_payload),
         "stages": len(mission_teams),
         "teams": len(team_records),
+        "support_teams": len(support_team_missions),
         "species": len(species_items),
         "missions": len(missions),
     }
@@ -1295,6 +1411,16 @@ def _build_payload() -> dict:
             "rank_matched_stages": sum(1 for mid in score_mission_ids
                                        if mid in mission_rank),
         },
+        "support": {
+            "team_ids": len(all_support_team_ids),
+            "with_slots": len(support_team_missions),
+            "collectable": sum(1 for team_id in support_team_missions
+                               if team_id in collectable),
+            "missions_with_support": len(support_mission_teams),
+            "stage_support_links": sum(len(tids) for mid, tids in
+                                       support_mission_teams.items()
+                                       if mid in stage_mission_ids),
+        },
         "client_text": _source_file_info(TEXT_FILE),
         "enemy_full_model": _source_file_info(MODEL_FILE),
         "icons": icons_meta,
@@ -1313,6 +1439,11 @@ def _build_payload() -> dict:
         "stage_ids": listed_stage_ids,
         "stages": stage_records,
         "stage_teams": {str(mid): sorted(tids) for mid, tids in mission_teams.items()},
+        "stage_support_teams": {
+            str(mid): [[team_id, support_row_counts[mid][team_id]] for team_id in tids]
+            for mid, tids in support_mission_teams.items()
+            if mid in stage_mission_ids and tids
+        },
         "grayzone": {
             "chapter_id": "grayzone",
             "areas": areas,
@@ -1321,6 +1452,7 @@ def _build_payload() -> dict:
         },
         "orphan_team_ids": orphan_team_ids,
         "teams": team_records,
+        "support_team_records": support_only_records,
         "types": type_info,
         "species": species_items,
         "score_campaigns": sorted(score_campaigns),
@@ -1442,8 +1574,18 @@ class Catalog:
             int(key): [int(team) for team in value]
             for key, value in (payload.get("stage_teams") or {}).items()
         }
+        # v1.4 支援队伍：stage → [(team_id, support_count)]
+        self._stage_support_teams: dict[int, list[tuple[int, int]]] = {
+            int(key): [(int(pair[0]), int(pair[1])) for pair in value]
+            for key, value in (payload.get("stage_support_teams") or {}).items()
+        }
         self._teams: dict[int, dict] = {
             int(team["id"]): team for team in payload.get("teams") or []
+        }
+        # 不可收藏的支援队伍只用于 stage.support_teams 展示（不进 team() 查询）
+        self._support_records: dict[int, dict] = {
+            int(team["id"]): team
+            for team in payload.get("support_team_records") or []
         }
         self._team_ids: list[int] = sorted(self._teams)
         self._types: dict[int, dict] = {
@@ -1512,12 +1654,24 @@ class Catalog:
         payload = dict(stage)
         payload["chapter_title"] = chapter.get("title") if chapter else ""
         payload["category"] = chapter.get("category") if chapter else ""
+        support_links = self._stage_support_teams.get(mission_id, [])
+        support_items: list[dict] = []
+        for team_id, support_count in support_links:
+            summary = self._team_summary(team_id)
+            if summary is None:
+                continue
+            item = dict(summary)
+            item["role"] = "support"
+            item["support_count"] = support_count
+            support_items.append(item)
         return {
             "stage": payload,
             "teams": [summary for summary in
                       (self._team_summary(team_id)
                        for team_id in self._stage_teams.get(mission_id, []))
                       if summary is not None],
+            "support_teams": support_items,
+            "support_team_count": len(support_links),
         }
 
     # -- 灰域 ---------------------------------------------------------
@@ -1578,6 +1732,8 @@ class Catalog:
             "hp_total": record["hp_total"],
             "faction": record["faction"],
             "tags": list(record.get("tags") or []),
+            "roles": list(record.get("roles") or []),
+            "collectable": bool(record.get("collectable", True)),
             "gray_zone": record["gray_zone"],
             "orphan": record["orphan"],
             "params": {
@@ -1587,7 +1743,7 @@ class Catalog:
                 "use_building": record.get("use_building", ""),
                 "batch_max": record.get("batch_max", 0),
                 "gray_zone_missions": sum(1 for entry in appearances if entry["gray_zone"]),
-                "mission_count": len(record.get("appearances") or []),
+                "mission_count": len(appearances),
                 "note": "数值按队伍等级缩放（单位实测口径）；effect_ext=0 表示客户端未标注效能",
             },
             "appearances": appearances[:24],
@@ -1853,7 +2009,7 @@ class Catalog:
             team_id = int(team_id)
         except (TypeError, ValueError):
             return None
-        record = self._teams.get(team_id)
+        record = self._teams.get(team_id) or self._support_records.get(team_id)
         if record is None:
             return None
         species = []
@@ -1884,6 +2040,8 @@ class Catalog:
             "hp_total": record["hp_total"],
             "faction": record["faction"],
             "tags": list(record.get("tags") or []),
+            "roles": list(record.get("roles") or []),
+            "collectable": bool(record.get("collectable", True)),
             "species": species,
             "members": self._team_members_groups(record)[:6],
             "gray_zone": record["gray_zone"],
@@ -1892,18 +2050,27 @@ class Catalog:
         }
 
     def _appearances(self, record: dict) -> list[dict]:
-        entries = []
+        """敌方 + 支援出处合并；每条带 ``role``（enemy/support）与 ``roles`` 列表。"""
+        role_map: dict[int, set[str]] = defaultdict(set)
         for mission_id in record.get("appearances") or []:
-            stage = self._stages.get(mission_id)
-            if stage is None:
-                continue
+            if mission_id in self._stages:
+                role_map[mission_id].add("enemy")
+        for mission_id in record.get("support_appearances") or []:
+            if mission_id in self._stages:
+                role_map[mission_id].add("support")
+        entries = []
+        for mission_id, roles in role_map.items():
+            stage = self._stages[mission_id]
             gray = bool(stage.get("gray_zone")) or stage.get("chapter_id") == "grayzone"
-            entries.append((1 if gray else 0, _int(stage.get("order")), mission_id))
+            primary = 0 if "enemy" in roles else 1
+            entries.append((1 if gray else 0, _int(stage.get("order")), primary, mission_id))
         entries.sort()
         out: list[dict] = []
-        for _, _, mission_id in entries:
+        for _, _, _, mission_id in entries:
             stage = self._stages[mission_id]
             chapter = self._chapters.get(stage.get("chapter_id") or "")
+            roles = sorted(role_map[mission_id],
+                           key=lambda value: 0 if value == "enemy" else 1)
             out.append({
                 "mission_id": mission_id,
                 "chapter_id": stage.get("chapter_id"),
@@ -1912,6 +2079,8 @@ class Catalog:
                 "code": stage.get("code"),
                 "difficulty": stage.get("difficulty", 0),
                 "gray_zone": bool(stage.get("gray_zone")),
+                "role": "enemy" if "enemy" in roles else "support",
+                "roles": roles,
             })
         return out
 

@@ -26,6 +26,24 @@ export function fmtFloat(n, digits = 1, fallback = "—") {
   return num.toFixed(digits);
 }
 
+/** 支援队伍判定：team.roles 含 support / team.support=true / 后端 support 标记 */
+export function isSupportTeam(team) {
+  if (!team || typeof team !== "object") return false;
+  if (team.support === true || team.is_support === true) return true;
+  const roles = team.roles;
+  if (Array.isArray(roles)) return roles.map((item) => String(item).toLowerCase()).includes("support");
+  if (typeof roles === "string") return roles.toLowerCase().includes("support");
+  return false;
+}
+
+/** stage / stage detail 里的支援队伍数量（字段缺失时回退数组长度） */
+export function supportCountOf(stage, fallbackList) {
+  if (stage && Number.isFinite(Number(stage.support_team_count))) return Number(stage.support_team_count);
+  if (Array.isArray(fallbackList)) return fallbackList.length;
+  if (stage && Array.isArray(stage.support_teams)) return stage.support_teams.length;
+  return 0;
+}
+
 /** 效能展示口径：0 = 未标注；负值来自积分关卡数据（可能为负） */
 export function powerDisplay(power, powerKnown) {
   const num = Number(power);

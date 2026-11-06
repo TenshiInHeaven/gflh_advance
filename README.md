@@ -26,6 +26,10 @@
 |---|---|
 | ![积分结算](docs/screenshots/score-settlement.jpg) | ![结算形式](docs/screenshots/score-teams.jpg) |
 
+| 谜境守卫+：敌方 30 · 支援 17 合并列表 | 本怪组出现位置（支援队 6363006 → 谜境守卫+） |
+|---|---|
+| ![关卡队伍](docs/screenshots/stage-teams.jpg) | ![本怪组出现位置](docs/screenshots/team-appearances.jpg) |
+
 ## 功能
 
 - **关卡图鉴**：**7 组 121 章 2345 关**——主线 / 活动（含往期复刻、特殊作战）/ **积分关卡** / 教学 / 模拟作战 / 灰域探查 / 无固定关卡。
@@ -33,6 +37,10 @@
   章节卡 → 关卡列表 → 该关可收藏队伍，支持「整关全部加入序列」。
 - **结算形式**：每个关卡显示结算类型——**积分结算**（`event_score` 模式/参数数量、`score_prize` 积分奖励、`rank` 常驻积分榜）
   或**普通结算**；由 STC 结算字段决定，不靠名字/加号猜。可用 `targetforge/tools/analyze_score_stages.py` 复跑分析。
+- **支援队伍（每关不同）**：把 `spot.ally_team_id` 的支援梯队按归属关系并入对应关卡队伍列表
+  （顶部显示「敌方 X · 支援 Y」，支援卡带「支援队伍」徽标，同样可加入序列）；队伍详情新增
+  **「本怪组出现位置」**，同一怪组在多个关卡以敌方/支援身份出现时全部列出
+  （如谜境守卫+ 的支援队 6363006，效能 673,555、24 单位）。
 - **怪种图鉴**：264 个图鉴怪种，每只怪都有从**本机游戏资源提取的真实头像**（透明底 160px）；
   按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（筛「灰域」得到所有在灰域出现过的怪种，含灰域 BOSS）；
   怪种详情列出所有怪组并分页。
@@ -51,7 +59,7 @@
 - **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、11 条 FAQ、安全须知。
 
 数据规模（以当前国服客户端为例）：7 组 121 章（活动 73 + 积分关卡 25）/ 2345 关 / 13,700 支可收藏队伍 / 264 个可收藏怪种 /
-灰域 14 区域 3352 队 / 无固定关卡 4381 队。
+灰域 14 区域 3352 队 / 无固定关卡 4381 队（含支援队伍后 3802 队）/ 支援梯队 864 支（818 可收藏，329 个关卡有支援链接）。
 
 ## 前置依赖
 
@@ -142,13 +150,13 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 128 个单测（app / catalog / gflh）
+python -m unittest discover -s targetforge/tests -t .      # 129 个单测（app / catalog / gflh）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（29 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 19 张截图
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 20 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
 ```
 
-前端自检结果：127 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：159 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
@@ -186,6 +194,16 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.4.0（2026-11-07）
+
+- **支援队伍归属关系**：读取 `spot.ally_team_id`，把每关的支援梯队并入该关卡队伍列表（敌方 X · 支援 Y），
+  支援卡带「支援队伍」徽标、同样可加入序列；解决「谜境守卫+ 的 67.3w 效能支援队 6363006 看不到」的问题。
+- **本怪组出现位置**：队伍详情列出全部 appearances，标注该怪组在每关是以「敌方」还是「支援」身份出现；
+  可收藏怪组被复用/多关卡出现时一目了然。
+- 支援队伍数据：864 支有槽位（818 可收藏）、329 个关卡有支援链接（824 条）；orphan 4381 → 3802；
+  物种非互斥 flag：normal 250 / grayzone 68 / orphan 204。
+- 版本号 v1.4.0（catalog schema=4）。
 
 ### v1.3.0（2026-11-06）
 

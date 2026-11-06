@@ -10,6 +10,8 @@
   混合活动（思域迷航）拆成 event+score 两章，全积分 campaign 只有 score 章；
 * **stage.settlement**：event_score {mode,params} / score_prize {raw,tiers} /
   rank {id,name,title,type,score_rewards}（rank type=10 优先 type=6）；
+* **支援队伍（v1.4）**：spot.ally_team_id → stage.support_teams/support_team_count、
+  team.roles（enemy/support）、支援出处、orphan 4381→3802；
 * 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
@@ -35,6 +37,8 @@ from targetforge.datapaths import CATALOG_FILE as DATA_CATALOG_FILE  # noqa: E40
 from targetforge.datapaths import ICON_DIR as DATA_ICON_DIR  # noqa: E402
 
 EXPECT_TEAMS = 13700
+EXPECT_SUPPORT_TEAMS = 864
+EXPECT_ORPHAN_TEAMS = 3802
 EXPECT_SPECIES = 264
 EXPECT_STAGES = 2345
 EXPECT_MISSIONS_IN_TABLE = 3986
@@ -67,12 +71,14 @@ CHAPTER_KEYS = {"id", "category", "kind", "title", "subtitle", "stage_count",
                 "team_count", "species_count", "difficulty_min", "difficulty_max",
                 "tags"}
 STAGE_LIST_KEYS = {"id", "title", "code", "difficulty", "recommend_level",
-                   "team_count", "species_count", "tags", "order", "settlement"}
+                   "team_count", "support_team_count", "species_count", "tags",
+                   "order", "settlement"}
 TEAM_SUMMARY_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
-                     "tags", "species", "members", "gray_zone", "orphan", "stage"}
+                     "tags", "roles", "collectable", "species", "members",
+                     "gray_zone", "orphan", "stage"}
 TEAM_DETAIL_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
-                    "tags", "gray_zone", "orphan", "params", "appearances",
-                    "species", "members"}
+                    "tags", "roles", "collectable", "gray_zone", "orphan", "params",
+                    "appearances", "species", "members"}
 STAT_KEYS = {"maxlife", "pow", "hit", "dodge", "armor", "armor_piercing", "range",
              "speed", "shield", "def", "crit", "crit_dmg", "tenacity"}
 SPECIES_ITEM_KEYS = {"codex_no", "name", "faction", "type", "capturable", "tags",
@@ -112,6 +118,7 @@ class CatalogDataTest(unittest.TestCase):
     def test_counts(self):
         counts = self.catalog.counts
         self.assertEqual(counts["teams"], EXPECT_TEAMS)
+        self.assertEqual(counts["support_teams"], EXPECT_SUPPORT_TEAMS)
         self.assertEqual(counts["species"], EXPECT_SPECIES)
         self.assertEqual(counts["stages"], EXPECT_STAGES)
         self.assertEqual(counts["missions"], EXPECT_MISSIONS_IN_TABLE)
@@ -129,12 +136,18 @@ class CatalogDataTest(unittest.TestCase):
         settlement_meta = self.meta["sources"]["settlement"]
         self.assertEqual(settlement_meta["score_stages"], EXPECT_SCORE_STAGES)
         self.assertEqual(settlement_meta["rank_matched_stages"], 25)
-        # 图标覆盖率报告（sources.icons）
+        support_meta = self.meta["sources"]["support"]
+        self.assertEqual(support_meta["with_slots"], EXPECT_SUPPORT_TEAMS)
+        self.assertEqual(support_meta["collectable"], 818)
+        self.assertEqual(support_meta["missions_with_support"], 329)
+        self.assertEqual(support_meta["stage_support_links"], 824)
+        # 图标覆盖率报告（sources.icons）；支援队伍类型也会进 types（v1.4 后 282→301 个 code）
         icons = self.meta["sources"]["icons"]
         for key in ("files", "codes_needed", "codes_covered",
                     "species_total", "species_covered"):
             self.assertIn(key, icons)
-        self.assertEqual(icons["codes_needed"], 282)
+        self.assertGreaterEqual(icons["codes_needed"], 282)
+        self.assertEqual(icons["codes_needed"], 301)
 
     # -- 章节 7 组 ----------------------------------------------------
     def test_chapter_groups(self):
@@ -421,7 +434,9 @@ class CatalogDataTest(unittest.TestCase):
     def test_stage_detail(self):
         detail = self.catalog.stage(5)
         self.assertIsNotNone(detail)
-        self.assertEqual(set(detail), {"stage", "teams"})
+        # 章节详情行 / stage 详情现在都带支援字段
+        self.assertEqual(set(detail),
+                         {"stage", "teams", "support_teams", "support_team_count"})
         stage = detail["stage"]
         self.assertEqual(stage["id"], 5)
         self.assertEqual(stage["title"], "演习训练")
@@ -455,6 +470,8 @@ class CatalogDataTest(unittest.TestCase):
         self.assertTrue(team["power_known"])
         self.assertEqual(team["params"]["power_known"], True)
         self.assertEqual(team["units"], 10)
+        self.assertEqual(team["roles"], ["enemy"])
+        self.assertTrue(team["collectable"])
         for member in team["members"]:
             self.assertEqual(set(member["stats"]), STAT_KEYS)
             self.assertEqual(set(member["base_stats"]), STAT_KEYS)
@@ -472,6 +489,8 @@ class CatalogDataTest(unittest.TestCase):
             self.assertEqual(set(summary), TEAM_SUMMARY_KEYS)
             self.assertIsInstance(summary["power_known"], bool)
             self.assertEqual(summary["power_known"], summary["power"] != 0)
+            self.assertIsInstance(summary["roles"], list)
+            self.assertIsInstance(summary["collectable"], bool)
             for species in summary["species"]:
                 self.assertEqual(set(species), {"codex_no", "name", "icon"})
             for member in summary["members"]:
@@ -479,16 +498,79 @@ class CatalogDataTest(unittest.TestCase):
             if summary["stage"] is not None:
                 self.assertEqual(set(summary["stage"]),
                                  {"chapter_id", "title", "stage_title", "code"})
-        # 6549244 无出处（orphan）但效能已标注
+        # 6549244 无出处（orphan）但效能已标注；660011 是敌方队伍
         self.assertTrue(summaries[0]["power_known"])
         self.assertIsNone(summaries[0]["stage"])
+        self.assertEqual(summaries[0]["roles"], [])
+        self.assertEqual(summaries[1]["roles"], ["enemy"])
 
     def test_orphan_chapter_full_teams(self):
         chapter = self.catalog.chapter("orphan")
         self.assertEqual(chapter["chapter"]["category"], "orphan")
         self.assertEqual(len(chapter["teams"]), chapter["chapter"]["team_count"])
-        self.assertGreater(len(chapter["teams"]), 4000)
+        # 支援链接把 579 支「只在支援侧出现」的可收藏队伍从 orphan 拉了出来
+        self.assertEqual(len(chapter["teams"]), EXPECT_ORPHAN_TEAMS)
+        self.assertGreater(len(chapter["teams"]), 3000)
         self.assertTrue(all("power_known" in team for team in chapter["teams"]))
+
+    def test_support_teams(self):
+        """v1.4：spot.ally_team_id → stage.support_teams（谜境守卫+ 67.3w 支援队）。"""
+        detail = self.catalog.stage(11435)
+        self.assertIsNotNone(detail)
+        self.assertEqual(set(detail),
+                         {"stage", "teams", "support_teams", "support_team_count"})
+        # 敌方队伍列表/team_count 不变，支援队伍单独列
+        self.assertEqual(detail["stage"]["team_count"], 30)
+        self.assertNotIn(6363006, {team["id"] for team in detail["teams"]})
+        self.assertEqual(detail["support_team_count"], 17)
+        self.assertEqual(len(detail["support_teams"]), 17)
+        support = {team["id"]: team for team in detail["support_teams"]}
+        self.assertIn(6363006, support)
+        self.assertIn(6363008, support)
+        target = support[6363006]
+        self.assertEqual(target["power"], 673555)          # 67.3w 效能
+        self.assertTrue(target["power_known"])
+        self.assertTrue(target["collectable"])
+        self.assertEqual(target["role"], "support")
+        self.assertEqual(target["roles"], ["support"])
+        self.assertGreaterEqual(target["support_count"], 1)
+        self.assertEqual(target["units"], 24)
+        self.assertEqual(support[6363008]["power"], 677959)
+        for item in detail["support_teams"]:
+            self.assertIn("collectable", item)
+            self.assertIn("role", item)
+            self.assertIn("support_count", item)
+        # 章节详情的 stage 行也带 support_team_count
+        row = next(stage for stage in self.catalog.chapter("score--60")["stages"]
+                   if stage["id"] == 11435)
+        self.assertEqual(row["support_team_count"], 17)
+        # team 详情可反查支援出处（role=support），且不再 orphan
+        team = self.catalog.team(6363006)
+        self.assertIsNotNone(team)
+        self.assertEqual(team["roles"], ["support"])
+        self.assertFalse(team["orphan"])
+        appearance = next(entry for entry in team["appearances"]
+                          if entry["mission_id"] == 11435)
+        self.assertEqual(appearance["role"], "support")
+        # 有敌方+支援双链接的可收藏队伍 roles = ["enemy","support"]
+        both = next((record for record in self.catalog._teams.values()
+                     if record.get("roles") == ["enemy", "support"]), None)
+        self.assertIsNotNone(both)
+        # 不可收藏的支援队伍也展示（collectable=False），但不进 team() 查询
+        found = None
+        for mission_id, links in self.catalog._stage_support_teams.items():
+            for team_id, _count in links:
+                if team_id in self.catalog._support_records:
+                    found = (mission_id, team_id)
+                    break
+            if found:
+                break
+        self.assertIsNotNone(found)
+        mission_id, team_id = found
+        items = self.catalog.stage(mission_id)["support_teams"]
+        non_collectable = [item for item in items if not item["collectable"]]
+        self.assertTrue(non_collectable)
+        self.assertIsNone(self.catalog.team(team_id))
 
     # -- 怪种 ---------------------------------------------------------
     def test_species_flags(self):
@@ -503,9 +585,10 @@ class CatalogDataTest(unittest.TestCase):
                   for category in ("normal", "grayzone", "orphan")}
         # 非互斥：过滤数之和 > 264
         self.assertGreater(sum(counts.values()), EXPECT_SPECIES)
-        self.assertLessEqual(abs(counts["normal"] - 244), 2)
-        self.assertLessEqual(abs(counts["grayzone"] - 66), 2)
-        self.assertLessEqual(abs(counts["orphan"] - 211), 2)
+        # v1.4 支援链接会让部分物种获得/失去场景 flag（正常 244→250、灰域 66→68、orphan 211→204）
+        self.assertLessEqual(abs(counts["normal"] - 250), 2)
+        self.assertLessEqual(abs(counts["grayzone"] - 68), 2)
+        self.assertLessEqual(abs(counts["orphan"] - 204), 2)
         self.assertEqual(self.catalog.species_list(category="all")["total"],
                          EXPECT_SPECIES)
         # 灰域过滤是「所有在灰域有队伍的物种」：既包含灰域 BOSS 变体，
@@ -650,7 +733,11 @@ class CatalogIconTest(unittest.TestCase):
                          "m4_sopmod_iimod.png")
         self.assertEqual(build_icons.bundle_code_key("Aegis_GA"), "aegisga")
         codes = build_icons.codes_from_catalog()
-        self.assertEqual(len(codes), 282)
+        expected_codes = len({str(info.get("code") or "")
+                              for info in self.catalog._types.values()
+                              if str(info.get("code") or "")})
+        self.assertEqual(len(codes), expected_codes)
+        self.assertGreaterEqual(len(codes), 282)
 
 
 @unittest.skipUnless(_icon_available(), "图标未导出（先跑 tools/build_icons.py）")
@@ -682,7 +769,11 @@ class AppIntegrationTest(unittest.TestCase):
         self.assertEqual(species["teams_total"], self.catalog.species(5)["total"])
         orphan = app.api_chapter("orphan", {"offset": ["20"], "limit": ["5"]})
         self.assertEqual(len(orphan["teams"]), 5)
-        self.assertGreater(orphan["teams_total"], 4000)
+        self.assertEqual(orphan["teams_total"], EXPECT_ORPHAN_TEAMS)
+        # /api/stages/{id} 的支援队伍字段（app.py 直接透传 catalog）
+        stage = app.api_stage(11435)
+        self.assertEqual(stage["support_team_count"], 17)
+        self.assertIn(6363006, {item["id"] for item in stage["support_teams"]})
         grayzone = cat.grayzone_teams(area="共生净土", offset=0, limit=2, q="")
         self.assertEqual(grayzone["total"], 1104)
         body = json.dumps(app.api_chapter("main-1"), ensure_ascii=False,

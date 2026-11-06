@@ -1,6 +1,6 @@
-/* views/stage.js —— 关卡详情：该关的可收藏队伍列表（本地效能筛选/排序） */
+/* views/stage.js —— 关卡详情：该关的可收藏队伍列表（含支援队伍，本地效能筛选/排序） */
 import { api } from "../api.js";
-import { store, addTeams, sequenceStats } from "../store.js";
+import { addTeams, sequenceStats } from "../store.js";
 import {
   icon,
   pageHeadHtml,
@@ -23,12 +23,31 @@ import {
   powerFilterMeta,
   defaultPowerFilter,
 } from "../components/power-filter.js";
-import { esc, fmtNum, navigate, bindSearch } from "../util.js";
+import { esc, fmtNum, navigate, bindSearch, isSupportTeam, supportCountOf } from "../util.js";
 
 const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter() };
 let rootEl = null;
 let loaded = null;
 let filteredTeams = [];
+
+/** 统一队伍列表：敌方在前，支援队伍在后（同一列表展示，不单独分区） */
+function buildTeamList(stageObj, rawTeams, rawSupports) {
+  const dedupe = new Map();
+  const push = (team, support) => {
+    if (!team || team.id === undefined || team.id === null) return;
+    const id = Number(team.id);
+    if (dedupe.has(id)) {
+      if (!support) return;
+      const existing = dedupe.get(id);
+      dedupe.set(id, { ...existing, support: true, roles: existing.roles || ["support"] });
+      return;
+    }
+    dedupe.set(id, { ...team, support: support || isSupportTeam(team), roles: team.roles || (support ? ["support"] : undefined) });
+  };
+  (rawTeams || []).forEach((team) => push(team, isSupportTeam(team)));
+  (rawSupports || []).forEach((team) => push(team, true));
+  return [...dedupe.values()];
+}
 
 export async function render(root, { params }) {
   rootEl = root;
@@ -37,15 +56,26 @@ export async function render(root, { params }) {
   state.faction = "";
   state.filter = defaultPowerFilter();
   const missionId = params.id;
-  root.innerHTML = pageHeadHtml({
-    crumbs: [{ label: "关卡图鉴", nav: "/chapters" }, { label: "关卡" }, { label: `mission #${missionId}` }],
-    title: "关卡队伍",
-    sub: "正在读取关卡数据…",
-  }) + `<div data-body>${skeletonCards(8)}</div>`;
+  root.innerHTML =
+    pageHeadHtml({
+      crumbs: [{ label: "关卡图鉴", nav: "/chapters" }, { label: "关卡" }, { label: `mission #${missionId}` }],
+      title: "关卡队伍",
+      sub: "正在读取关卡数据…",
+    }) + `<div data-body>${skeletonCards(8)}</div>`;
 
   try {
     loaded = await api.stage(missionId);
-    loaded.teams = loaded.teams || [];
+    const stageObj = loaded.stage || {};
+    const rawTeams = Array.isArray(loaded.teams) ? loaded.teams : [];
+    const rawSupport = Array.isArray(loaded.support_teams)
+      ? loaded.support_teams
+      : Array.isArray(stageObj.support_teams)
+        ? stageObj.support_teams
+        : [];
+    loaded.allTeams = buildTeamList(stageObj, rawTeams, rawSupport);
+    loaded.enemyTeams = loaded.allTeams.filter((team) => !isSupportTeam(team));
+    loaded.supportTeams = loaded.allTeams.filter((team) => isSupportTeam(team));
+    loaded.supportCount = supportCountOf(stageObj, loaded.supportTeams) || loaded.supportTeams.length;
     renderPage();
   } catch (err) {
     handleViewError(root, err, () => render(root, { params }));
@@ -54,8 +84,13 @@ export async function render(root, { params }) {
 
 function renderPage() {
   const stage = loaded.stage || {};
-  const teams = loaded.teams || [];
+  const teams = loaded.allTeams || [];
+  const enemyCount = loaded.enemyTeams?.length ?? teams.length;
+  const supportCount = loaded.supportCount ?? 0;
   const factions = [...new Set(teams.map((team) => team.faction).filter(Boolean))];
+  const sideChips = supportCount
+    ? `<span class="team-side-chip enemy">敌方 <b>${enemyCount}</b></span> <span class="team-side-chip support">${icon("shield", 10)} 支援 <b>${supportCount}</b></span>`
+    : `<span class="team-side-chip enemy">队伍 <b>${enemyCount}</b></span>`;
 
   rootEl.innerHTML = `
     ${pageHeadHtml({
@@ -66,7 +101,7 @@ function renderPage() {
       ],
       title: stage.title || "未命名关卡",
       badge: stage.code ? String(stage.code) : `#${stage.id}`,
-      sub: `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · 可收藏队伍 <b class="mono-inline">${teams.length}</b> 支。点卡片看详情，或直接加入右侧序列。`,
+      sub: `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · ${sideChips}${supportCount ? "（支援队伍已并入下方列表，卡面带「支援队伍」徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`,
       actions: `
         <button class="btn btn-ghost" type="button" data-nav-back>${icon("chevronLeft", 14)} 返回章节</button>
         <button class="btn btn-primary" type="button" data-act="add-all">${icon("plus", 14)} 全部加入序列 <span class="mono-inline" style="opacity:.75">(${teams.length})</span></button>
@@ -109,8 +144,9 @@ function renderPage() {
     const start = (state.page - 1) * state.pageSize;
     const pageItems = filtered.slice(start, start + state.pageSize);
 
+    const supportInPage = pageItems.filter((team) => isSupportTeam(team)).length;
     rootEl.querySelector("[data-team-meta]").innerHTML =
-      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍 · 每页 ${state.pageSize}`;
+      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>）` : ""} · 每页 ${state.pageSize}`;
     const pfMeta = rootEl.querySelector("[data-pf-meta]");
     if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, teams.length, total);
 

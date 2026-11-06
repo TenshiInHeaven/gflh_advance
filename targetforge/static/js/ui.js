@@ -1,5 +1,5 @@
 /* ui.js —— 图标 / 蝴蝶 / 弹窗 / 抽屉 / toast / 骨架 / 空态 / 通用卡片渲染 */
-import { esc, fmtNum, fmtPower, fmtTime, factionClass, factionColor, powerDisplay, hash32 } from "./util.js";
+import { esc, fmtNum, fmtPower, fmtTime, factionClass, factionColor, powerDisplay, hash32, isSupportTeam } from "./util.js";
 import { api } from "./api.js";
 
 /* ================================================================== */
@@ -728,16 +728,20 @@ export function teamCardHtml(team, options = {}) {
   const flags = [];
   if (team.gray_zone) flags.push('<span class="badge cyan">灰域</span>');
   if (team.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
+  const support = isSupportTeam(team);
+  if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
   const disp = powerDisplay(team.power, team.power_known);
   const stageLine = team.stage
-    ? `${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
-    : team.gray_zone
-      ? "灰域探查"
-      : team.orphan
-        ? "无固定关卡"
-        : "";
+    ? `${support ? "支援 · " : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
+    : support
+      ? "支援队伍"
+      : team.gray_zone
+        ? "灰域探查"
+        : team.orphan
+          ? "无固定关卡"
+          : "";
   return `
-    <article class="team-card ${selected ? "is-selected" : ""}" style="--fc:${fc}" data-team-detail="${team.id}">
+    <article class="team-card ${selected ? "is-selected" : ""} ${support ? "is-support" : ""}" style="--fc:${fc}" data-team-detail="${team.id}">
       <div class="tc-top">
         <span class="tc-id">队伍 <b>#${esc(team.id)}</b></span>
         <span class="tc-power">${disp.known ? `<b class="${disp.negative ? "neg" : ""}"${disp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${disp.text}</b><span>效能</span>` : '<b class="dim">未标注</b><span>效能</span>'}</span>

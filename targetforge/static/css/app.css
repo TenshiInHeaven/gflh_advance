@@ -3747,6 +3747,77 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .toh-bf { position: absolute; right: 60px; top: 12px; opacity: 0.55; pointer-events: none; }
 
 
+/* 出现位置角色徽标 / 小注 */
+.tag.enemy {
+  color: var(--text-mute);
+  border-color: var(--line);
+  background: rgba(140, 185, 255, 0.04);
+}
+.subhead-hint {
+  margin-left: 8px;
+  color: var(--text-mute);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.appear-item .tag { margin-left: 2px; }
+/* ---------- 28.52 支援队伍（spot.ally_team_id） ---------- */
+.badge.support {
+  color: #7fe9ff;
+  border-color: rgba(127, 233, 255, 0.45);
+  background: rgba(94, 225, 255, 0.12);
+}
+.tag.support {
+  color: #7fe9ff;
+  border-color: rgba(127, 233, 255, 0.38);
+  background: rgba(94, 225, 255, 0.09);
+}
+.team-card.is-support { border-color: rgba(94, 225, 255, 0.22); }
+.team-card.is-support::before { background: var(--cyan); }
+.team-side-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 2px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.team-side-chip b { font-family: var(--font-mono); font-weight: 600; }
+.team-side-chip.enemy { color: var(--text-dim); border: 1px solid var(--line); background: rgba(140, 185, 255, 0.05); }
+.team-side-chip support,
+.team-side-chip.support { color: #7fe9ff; border: 1px solid rgba(94, 225, 255, 0.4); background: rgba(94, 225, 255, 0.1); }
+.support-section { margin-top: 30px; }
+.support-section .section-head h2 { gap: 8px; }
+.support-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: #7fe9ff;
+  border: 1px solid rgba(127, 233, 255, 0.45);
+  background: rgba(94, 225, 255, 0.12);
+}
+.support-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  font-size: 11px;
+  color: var(--text-mute);
+  line-height: 1.65;
+  border-left: 2px solid rgba(127, 233, 255, 0.55);
+  background: rgba(94, 225, 255, 0.04);
+  border-radius: 0 var(--r) var(--r) 0;
+}
+.support-section .team-grid { opacity: 0.98; }
+
 /* ---------- 28.53 关卡结算形式（积分结算 / 普通结算） ---------- */
 .settle-badge {
   display: inline-flex;

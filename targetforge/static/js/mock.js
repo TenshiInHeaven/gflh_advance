@@ -157,7 +157,7 @@ function makeStage(chapterSeed, ordinal, chapter) {
 const GROUP_DEFS = [
   { id: "main", title: "主线", category: "main", count: 13, tag: "主线" },
   { id: "event", title: "活动", category: "event", count: 46, tag: "活动" },
-  { id: "score", title: "积分关卡", category: "score", count: 6, tag: "积分关卡" },
+  { id: "score", title: "积分关卡", category: "score", count: 7, tag: "积分关卡" },
   { id: "tutorial", title: "教学", category: "tutorial", count: 6, tag: "教学" },
   { id: "simulation", title: "模拟作战", category: "simulation", count: 1, tag: "靶场" },
   { id: "grayzone", title: "灰域探查", category: "grayzone", count: 1, tag: "打灰" },
@@ -261,9 +261,9 @@ function buildChapter(groupDef, ordinal) {
     subtitle = `${EVENT_NAMES[(ordinal + 13) % EVENT_NAMES.length]} 特别行动`;
     codePrefix = `S${ordinal + 1}-`;
   } else if (groupDef.id === "score") {
-    const scoreIds = ["score--61", "score--40401", "score--55", "score--45", "score--39", "score--29"];
-    const scoreTitles = ["思域迷航 · 积分关卡", "贝蒂数", "终焉花海+", "飓风营救+", "马蜂窝+", "虚数迷宫+"];
-    const scoreSubs = ["节日活动Ⅴ · 积分关卡", "静风点 · 积分关卡", "终焉花海 · 积分关卡", "有序紊流 · 积分关卡", "坍缩点 · 积分关卡", "深层映射 · 积分关卡"];
+    const scoreIds = ["score--61", "score--40401", "score--55", "score--45", "score--39", "score--29", "score--60"];
+    const scoreTitles = ["思域迷航 · 积分关卡", "贝蒂数", "终焉花海+", "飓风营救+", "马蜂窝+", "虚数迷宫+", "谜境守卫+"];
+    const scoreSubs = ["节日活动Ⅴ · 积分关卡", "静风点 · 积分关卡", "终焉花海 · 积分关卡", "有序紊流 · 积分关卡", "坍缩点 · 积分关卡", "深层映射 · 积分关卡", "偏振光 · 积分关卡"];
     chapterId = scoreIds[ordinal % scoreIds.length];
     title = scoreTitles[ordinal % scoreTitles.length];
     subtitle = scoreSubs[ordinal % scoreSubs.length];
@@ -293,7 +293,9 @@ function buildChapter(groupDef, ordinal) {
         : groupDef.id === "orphan"
           ? 0
           : groupDef.id === "score"
-            ? randInt(rng, 4, 10)
+            ? chapterId === "score--60"
+              ? 1
+              : randInt(rng, 4, 10)
             : randInt(rng, 8, 24);
   const teamCount =
     groupDef.id === "grayzone" ? 3352 : groupDef.id === "orphan" ? 4381 : stageCount * randInt(rng, 14, 30);
@@ -360,6 +362,23 @@ function getAreas() {
 
 function chapterStages(chapter) {
   if (chapter.category === "orphan") return [];
+  if (chapter.id === "score--60") {
+    return [
+      {
+        id: 11435,
+        title: "谜境守卫+",
+        code: "-60-1",
+        difficulty: 32000,
+        recommend_level: 120,
+        team_count: 30,
+        species_count: 18,
+        tags: ["普通"],
+        order: 0,
+        settlement: mockSettlement(chapter, "11435"),
+        support_team_count: 1,
+      },
+    ];
+  }
   if (state.stagesByChapter.has(chapter.id)) return state.stagesByChapter.get(chapter.id);
   const stages = [];
   const chapterSeed = hash32(`chapter-uid:${chapter.id}`);
@@ -405,13 +424,18 @@ function makeTeamSummary(teamId, options = {}) {
   const grayZone = options.gray_zone ?? false;
   const orphan = options.orphan ?? false;
   const units = randInt(rng, 4, 9);
+  const supportTeam = Number(teamId) === 6363006;
   // 只有积分关卡/部分特殊队伍有标注效能（约 18%），其余为 0 = 未标注；偶发负值
   const knownRoll = rng();
-  const powerKnown = options.power_known ?? knownRoll < 0.18;
-  const power = powerKnown
-    ? (rng() < 0.12 ? -randInt(rng, 100, 4200) : randInt(rng, 18000, 176000))
-    : 0;
-  const hpTotal = Math.round(randInt(rng, 9000, 150000) * (units / 6));
+  const powerKnown = supportTeam || (options.power_known ?? knownRoll < 0.18);
+  const power = supportTeam
+    ? 673555
+    : powerKnown
+      ? (rng() < 0.12 ? -randInt(rng, 100, 4200) : randInt(rng, 18000, 176000))
+      : 0;
+  const hpTotal = supportTeam
+    ? 372000
+    : Math.round(randInt(rng, 9000, 150000) * (units / 6));
   const speciesCount = randInt(rng, 2, 8);
   const species = [];
   const usedCodex = new Set();
@@ -457,9 +481,10 @@ function makeTeamSummary(teamId, options = {}) {
     id: teamId,
     power,
     power_known: powerKnown,
-    units,
+    units: supportTeam ? 9 : units,
     hp_total: hpTotal,
-    faction,
+    faction: supportTeam ? "铁血" : faction,
+    roles: supportTeam || options.support ? ["support"] : ["enemy"],
     tags: options.tags || tagsFor(seedOf(`tags:${teamId}`)),
     species: species.slice(0, 8),
     members: members.slice(0, 6),
@@ -589,10 +614,23 @@ function makeTeamDetail(teamId) {
       base_stats: { ...stats, maxlife: baseLife, pow: basePow },
     };
   });
+  const supportTeam = summary.roles?.includes("support");
+  if (supportTeam) {
+    appearances.unshift({
+      mission_id: 11435,
+      chapter_id: "score--60",
+      chapter_title: "谜境守卫+",
+      stage_title: "谜境守卫+",
+      code: "-60-1",
+      difficulty: 32000,
+      support: true,
+    });
+  }
   return {
     id: summary.id,
     power: summary.power,
     power_known: summary.power_known,
+    roles: summary.roles || ["enemy"],
     units: summary.units,
     hp_total: summary.hp_total,
     faction: summary.faction,
@@ -1247,6 +1285,7 @@ export async function mockRequest(method, path, body = {}) {
   if (match) {
     const stageId = Number(match[1]);
     const { stage, chapter } = findStage(stageId);
+    const supportTeams = stageId === 11435 ? [makeTeamSummary(6363006, { support: true })] : [];
     const teams = [];
     const rng = mulberry32(hash32(`stage-teams:${stageId}`));
     const teamCount = randInt(rng, 5, 12);
@@ -1265,7 +1304,11 @@ export async function mockRequest(method, path, body = {}) {
         }),
       );
     }
-    return ok({ stage: { ...stage, chapter_title: chapter.title }, teams });
+    return ok({
+      stage: { ...stage, support_team_count: supportTeams.length, chapter_title: chapter.title },
+      teams,
+      support_teams: supportTeams,
+    });
   }
   match = route.match(/^\/api\/teams\/(\d+)$/);
   if (match) {

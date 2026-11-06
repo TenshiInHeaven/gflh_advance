@@ -96,7 +96,7 @@ class Catalog:
 | 敌人类型 | `stc.table("enemy_character_type")` (5025) | name 文本 key / code / 基础数值 |
 | 图鉴 | `stc.table("enemy_illustration")` (5090) | codex 编号=id、名称文本 key、forces/if_capture/type |
 | 关卡 | `stc.table("mission")` (5016) | campaign/sub/type/difficulty/map_res_name/boss_team_id/order/if_emergency |
-| 点位 | `stc.table("spot")` (5002) | mission_id ↔ enemy_team_id |
+| 点位 | `stc.table("spot")` (5002) | mission_id ↔ enemy_team_id（敌方）/ ally_team_id（支援队伍） |
 | 活动 | `stc.table("mission_event")` (5074)、`stc.table("normal_activity")` (5233) | campaign → 活动名/章节名 |
 | 文本 | `dataMiner/derived/client_text.json` | `mission-{10000000+id}`、`enemy_character_type` 行内 name key、`enemy_illustration` 行内 name key、`mission_event` 行内 event_name key、`normal_activity` 行内 name/chapter_name key |
 | 类型索引 | `dataMiner/derived/enemy_full_model.csv` | type_id → codex_no / faction_name / boss / capturable（**只做映射与标签，不展示技能列**） |
@@ -104,6 +104,8 @@ class Catalog:
 
 注意：`spot.enemy_team_id` 有的 mission_id 不在 mission 表（例 404101）→ 归「特殊作战」或忽略都可，
 但不要崩。`mission.boss_team_id` 是 `"2152;0"` 这种分号/逗号串，需拆分。
+`spot.ally_team_id` 是**支援队伍**（同一 mission 的友方支援编队）：有槽位即收，可收藏/不可收藏都收，
+与敌方队伍分开展示（stage.support_teams）；支援链接也要计入队伍出处与 roles，不能当 orphan。
 
 ### 2.2 归类规则
 
@@ -121,18 +123,24 @@ class Catalog:
    否则 `mission_event` → 标题=活动名；否则 category `"special"`，标题 `f"特殊作战 {campaign}"`，
    副标题取本章第一个关卡标题。
 7. 其余（含 campaign 14 等无关卡队伍的 campaign 不产生章节）。
-8. 不属于任何关卡、也没被 `mission.boss_team_id` 引用的可收藏队伍 → category `"orphan"`，
-   chapter id `"orphan"`，标题 `"无固定关卡"`（灰域/随机/往期事件队伍都在这；chapter 详情里直接带分页 teams）。
-9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 special 的「特殊作战·未知」章节。
+8. 敌方（`spot.enemy_team_id` ∪ `mission.boss_team_id`）与**支援**（`spot.ally_team_id`，需有槽位）
+   都没有链接的可收藏队伍 → category `"orphan"`，chapter id `"orphan"`，标题 `"无固定关卡"`
+   （灰域/随机/往期事件队伍都在这；chapter 详情里直接带分页 teams）。支援队伍不再落入 orphan。
+9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
+10. 队伍↔关卡：敌方链接（enemy/boss）与支援链接（ally）都进 `appearances`（带 role）；stage 的
+    `teams`/`team_count` 只表示敌方，支援队伍单独放 `support_teams`/`support_team_count`，互不混淆。
 
 排序：组顺序 main → event → **score** → tutorial → simulation → grayzone → orphan；
-组内章节按 `min(mission.order/id)` 升序。**groups 共 7 个，章节 112 个**（main 14 / event 72 / score 17 / tutorial 6 / simulation 1 / grayzone 1 / orphan 1）。
+组内章节按 `min(mission.order/id)` 升序。**groups 共 7 个，章节约 121 个**
+（main 14 / event 73 / score 25 / tutorial 6 / simulation 1 / grayzone 1 / orphan 1）。
 
-- `score`（积分关卡）：campaign ∈ {-40401,-40402,-40403,-40404,-40405}，或该 campaign 的
-  `mission_event.event_name` / `normal_activity.chapter_name` 文本含 `+`（例：终焉花海+ / 谜境守卫+ /
-  混沌落幕+ / 自画像 / 贝蒂数 / 逃亡圣咏 …）。章节标题用活动名，subtitle = 所属大活动 + 「积分关卡」。
+- `score`（积分关卡）：**mission 级**判定，`mission.event_score` 非空即积分关卡（结算配置，权威字段；
+  不是名字带 `+`）。同一 campaign 里只有部分任务是积分关卡时会拆成 score 章 + event 章（例：思域迷航 -61，
+  禁止喂食/禁止喂食EX 进 score，其余 20 关留 event）；全积分 campaign（贝蒂数 / 终焉花海+ / 自画像 /
+  -77 静默沙盘 …）只生成 score 章。章节标题用活动名，subtitle = 所属大活动 + 「积分关卡」。
 - 原 `rerun`/`special` 全部并入 `event`，不再单独分组；event 章节 id 用 `event-{campaign}`（不跨 campaign 合并），
   subtitle/tags 标「往期复刻 · 第N章」「往期活动」等，保证搜索能命中活动名与副标题。
+- 关卡结算形式结构化：每个 stage 带 `settlement`（event_score / score_prize / rank），见 §2.3。
 - 灰域 **14 个区域**（按 mission 标题前缀去编号/空格）：共生净土/晶团挖掘点/旅团商道/放射区/人形复制工厂/
   废弃居民区/秘密通道/图腾圣所/装甲突击/交易地/地坛遗迹/最终贮藏地/庇护所旧址/坍缩狭缝。
 - `spot` 里缺失 mission 表的 mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
@@ -141,7 +149,7 @@ class Catalog:
 
 ```jsonc
 // GET /api/chapters
-{"built_at": "...", "counts": {"chapters":112,"stages":2345,"teams":13700,"species":264},
+{"built_at": "...", "counts": {"chapters":121,"stages":2345,"teams":13700,"support_teams":864,"species":264},
  "groups": [
    {"id":"main","title":"主线","chapters":[...]},
    {"id":"event","title":"活动","chapters":[...]},
@@ -157,33 +165,43 @@ class Catalog:
 // grayzone chapter: stages 为空，areas=[{"id":"旅团商道","title":"旅团商道","stage_count":210,"team_count":197,"species_count":40},...]
 // orphan chapter: stages 为空，直接返回分页 teams：
 //   GET /api/chapters/orphan?offset=0&limit=60&q=
-{"chapter":{...}, "stages":[], "teams":[team_summary...], "teams_total":4381, "offset":0, "limit":60}
+{"chapter":{...}, "stages":[], "teams":[team_summary...], "teams_total":3802, "offset":0, "limit":60}
+// orphan 只保留敌方+支援都无链接的可收藏队伍（支援链接也会把队伍从 orphan 拉出来）
 
 // team_summary（列表里到处用）
 {"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,
- "faction":"铁血","tags":["BOSS","满力场"],
+ "faction":"铁血","tags":["BOSS","满力场"],"roles":["enemy"],"collectable":true,
  "species":[{"codex_no":5,"name":"稻草人","icon":"scarecrow.png"},...最多8个],
  "members":[{"code":"Aegis_GA","name":"圣盾_GA","icon":"aegis_ga.png","number":5,"count":3},...最多6组],
  "gray_zone":false,"orphan":false,
  "stage": {"chapter_id":"main-1","title":"第1章","stage_title":"演习训练","code":"1-1"} | null}
+// roles: ["enemy"] / ["support"] / ["enemy","support"]（v1.4 支援队伍链接）
 
 // GET /api/stages/{id}
-{"stage":{..., "settlement": {
+{"stage":{..., "team_count":30, "support_team_count":17, "settlement": {
    "type":"score|normal",
    "event_score":{"mode":"1","params":24}|null,      // 积分结算配置（非空即积分关卡）
    "score_prize":{"raw":"1-0|110054:1","tiers":1}|null, // 积分奖励
    "rank":{"id":306,"name":"终焉花海PLUS常驻","title":"<终焉花海+>常驻积分榜",
            "type":10,"score_rewards":""}|null       // 常驻积分榜（rank 表）
- }}, "teams":[team_summary,...]}
+ }}, "teams":[team_summary,...],                      // 敌方队伍（不含支援）
+ "support_teams":[{...team_summary, "role":"support", "support_count":1,
+                   "collectable":true},...],          // 支援队伍（spot.ally_team_id，v1.4）
+ "support_team_count":17}
+// team_count 只算敌方；support_team_count=支援队伍数量；两者互不影响。
+// 章节详情 /api/chapters/{id} 的每个 stage 行带 team_count 与 support_team_count（不带完整 support 列表）。
 // 积分关卡判定依据（不是名字带 +）：mission.event_score 结算配置；score_prize 为积分奖励；
 // rank 表 type=10 行是「<活动名>常驻积分榜」，sub_type 直接列 mission id（type=6 为活动积分榜）。
-// 章节详情 /api/chapters/{id} 的每个 stage 也带同样 settlement 字段。
 // 分析工具：python targetforge/tools/analyze_score_stages.py [--json]
 
 // GET /api/teams/{id}（详情）
 {"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,"faction":"铁血",
- "tags":["BOSS"],"gray_zone":false,"orphan":false,
+ "tags":["BOSS"],"roles":["enemy"],"collectable":true,"gray_zone":false,"orphan":false,
  ...
+ // 出处：敌方与支援都在 appearances 里，role 标 "enemy"/"support"（同关两种都有时 roles 有两个）
+ "appearances":[{"mission_id":11435,"chapter_id":"score--60","chapter_title":"谜境守卫+",
+                 "stage_title":"谜境守卫+","code":"-60-1","difficulty":32000,
+                 "gray_zone":false,"role":"support","roles":["support"]},...最多24],
  "species":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1,"icon":"scarecrow.png"}],
  "members":[{"type_id":11028,"code":"Aegis_GA","name":"圣盾_GA","codex_no":15,"icon":"aegis_ga.png",
    "level":140,"number":5,"count":3,"def_percent":0,"batch":0,"x":8.0,"y":0.0,
@@ -217,6 +235,11 @@ class Catalog:
 - 头像：`dataMiner/derived/targetforge/icons/<code>.png` 由 `tools/build_icons.py` 从本机游戏
   `character<code>.ab` 的 `pic_<Code>_SS` 纹理导出；catalog 扫描该目录填 `icon`（缺失为 null，前端退化）。
 - 队伍 13700 条（有编制的可收藏队伍），只做展示，不做注入合法性以外的过滤。
+- **支援队伍口径（v1.4）**：`spot.ally_team_id` 指向的友方支援编队，有槽位即收（全局 864 支，
+  其中 818 可收藏）；`counts.support_teams`=864。支援队伍出现在 stage.support_teams（带
+  role/support_count/collectable），也可通过 team 详情反查出处（role=support），不计入敌方
+  `teams`/`team_count`。不可收藏的支援队伍只在 stage.support_teams 里展示（`collectable=false`），
+  不进 `team()` 查询与序列。
 - 效能：`power` 来自 `enemy_team.effect_ext`；`power_known=false` 表示客户端未标注（常规关卡绝大多数如此），
   只有积分关卡/部分特殊队伍有值（含负值）。**不要伪造公式反推。**
 - **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。

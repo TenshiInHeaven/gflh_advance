@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { addTeam } from "../store.js";
 import { icon, pageHeadHtml, skeletonRows, handleViewError, toastOk, toastErr, setBusy } from "../ui.js";
-import { esc, fmtNum, factionColor, factionClass, navigate, powerDisplay } from "../util.js";
+import { esc, fmtNum, factionColor, factionClass, navigate, powerDisplay, isSupportTeam } from "../util.js";
 import { teamDetailBodyHtml } from "../components/team-drawer.js";
 
 export async function render(root, { params }) {
@@ -29,7 +29,7 @@ export async function render(root, { params }) {
           { label: `#${detail.id}` },
         ],
         title: `队伍 #${detail.id}`,
-        badge: "ENEMY TEAM",
+        badge: isSupportTeam(detail) ? "SUPPORT TEAM" : "ENEMY TEAM",
         sub: `${esc(detail.faction || "其它")} · 效能 <b class="mono-inline">${powerDisp.known ? powerDisp.text : "未标注"}</b> · ${detail.units} 个单位 · 总血量 <b class="mono-inline">${fmtNum(detail.hp_total)}</b>。本页只展示数值 / 编制 / 参数 / 关卡出处。`,
         actions: `
           <button class="btn btn-ghost" type="button" data-act="back">${icon("chevronLeft", 14)} 返回</button>
@@ -40,6 +40,7 @@ export async function render(root, { params }) {
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;padding-left:12px">
           <span style="position:absolute;left:0;top:2px;bottom:2px;width:3px;background:${factionColor(detail.faction)}"></span>
           <span class="faction-chip ${factionClass(detail.faction)}"><i></i>${esc(detail.faction || "其它")}</span>
+          ${isSupportTeam(detail) ? `<span class="badge support">${icon("shield", 9)} 支援队伍</span>` : ""}
           ${detail.gray_zone ? '<span class="badge cyan">灰域队伍</span>' : ""}
           ${detail.orphan ? '<span class="badge violet">无固定关卡</span>' : ""}
           ${(detail.tags || []).map((tag) => `<span class="tag amber">${esc(tag)}</span>`).join("")}
