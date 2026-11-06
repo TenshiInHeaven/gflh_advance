@@ -15,6 +15,8 @@
 * **机场/后续刷新候选（v1.5）**：按 team id 族推断 stage.reserve_teams（role=reserve,
   inferred=true, reserve_reason），如 11435 AA-02 / 11946 威廉 / 11603 Hebe·Styx；
   reserve 不影响 team_count/support_team_count/orphan 真实状态；
+* **全怪组总表 team_list（v1.6）**：q/chapter/species(AND)/role/enemy·support·reserve/
+  power/units 筛选、8 种排序（稳定、未知效能最后）、分页；13,700 队单查询 <100ms；
 * 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
@@ -83,6 +85,11 @@ TEAM_SUMMARY_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction
 TEAM_DETAIL_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
                     "tags", "roles", "collectable", "gray_zone", "orphan", "params",
                     "appearances", "species", "members"}
+TEAM_LIST_ITEM_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
+                       "roles", "collectable", "orphan", "species", "appearances",
+                       "appearance_count", "chapter_titles"}
+TEAM_LIST_APPEARANCE_KEYS = {"chapter_id", "chapter_title", "stage_title", "role",
+                             "inferred"}
 STAT_KEYS = {"maxlife", "pow", "hit", "dodge", "armor", "armor_piercing", "range",
              "speed", "shield", "def", "crit", "crit_dmg", "tenacity"}
 SPECIES_ITEM_KEYS = {"codex_no", "name", "faction", "type", "capturable", "tags",
@@ -629,6 +636,169 @@ class CatalogDataTest(unittest.TestCase):
         non_collectable = [item for item in items if not item["collectable"]]
         self.assertTrue(non_collectable)
         self.assertIsNone(self.catalog.team(team_id))
+
+    # -- 全怪组总表 team_list（v1.6） ----------------------------------
+    def test_team_list_basic(self):
+        result = self.catalog.team_list()
+        self.assertEqual(result["total"], EXPECT_TEAMS)
+        self.assertEqual(result["offset"], 0)
+        self.assertEqual(result["limit"], 50)
+        self.assertEqual(len(result["items"]), 50)
+        item = result["items"][0]
+        self.assertEqual(set(item), TEAM_LIST_ITEM_KEYS)
+        for species in item["species"]:
+            self.assertEqual(set(species), {"codex_no", "name", "icon"})
+        for appearance in item["appearances"]:
+            self.assertTrue(TEAM_LIST_APPEARANCE_KEYS <= set(appearance))
+        self.assertIsInstance(item["chapter_titles"], list)
+        # 默认 id_asc；分页无缝衔接
+        ids = [entry["id"] for entry in result["items"]]
+        self.assertEqual(ids, sorted(ids))
+        page1 = self.catalog.team_list(offset=0, limit=3)
+        page2 = self.catalog.team_list(offset=3, limit=3)
+        self.assertEqual([entry["id"] for entry in page1["items"]] +
+                         [entry["id"] for entry in page2["items"]], ids[:6])
+        self.assertEqual(page1["total"], EXPECT_TEAMS)
+        # limit 上限 200
+        self.assertEqual(len(self.catalog.team_list(limit=999)["items"]), 200)
+        self.assertEqual(self.catalog.team_list(offset=999999)["items"], [])
+        self.assertEqual(self.catalog.team_list(sort="id_desc")["items"][0]["id"],
+                         self.catalog._team_ids[-1])
+
+    def test_team_list_chapter_and_roles(self):
+        # 章节：任意 role（敌方/支援/机场推断）出现即命中
+        chapter = self.catalog.team_list(chapter="score--60", limit=200)
+        ids = {entry["id"] for entry in chapter["items"]}
+        self.assertIn(6363006, ids)   # 支援
+        self.assertIn(6363057, ids)   # 机场推断（reserve）
+        enemy_team_ids = self.catalog._stage_teams.get(11435) or []
+        self.assertTrue(enemy_team_ids)
+        self.assertIn(enemy_team_ids[0], ids)  # 敌方
+        for team_id in ids:
+            self.assertIn("score--60", self.catalog._team_chapters[team_id])
+        for entry in chapter["items"]:
+            self.assertIn("谜境守卫+", entry["chapter_titles"])
+        # 混合筛选
+        support_mixed = self.catalog.team_list(chapter="score--60", role="support")
+        self.assertIn(6363006, {entry["id"] for entry in support_mixed["items"]})
+        reserve_mixed = self.catalog.team_list(chapter="score--60", role="reserve")
+        self.assertIn(6363057, {entry["id"] for entry in reserve_mixed["items"]})
+        # role 过滤
+        support = self.catalog.team_list(role="support")
+        self.assertEqual(support["total"],
+                         sum(1 for record in self.catalog._teams.values()
+                             if "support" in (record.get("roles") or [])))
+        self.assertEqual(support["total"], 818)
+        self.assertIn(6363006, {entry["id"] for entry in
+                                self.catalog.team_list(role="support", q="6363006")["items"]})
+        reserve = self.catalog.team_list(role="reserve")
+        self.assertEqual(reserve["total"],
+                         self.catalog.sources["reserve"]["teams"])
+        self.assertIn(6363057, {entry["id"] for entry in
+                                self.catalog.team_list(role="reserve", q="6363057")["items"]})
+        for entry in reserve["items"]:
+            self.assertTrue(any(appearance["inferred"]
+                                for appearance in entry["appearances"]))
+        enemy = self.catalog.team_list(role="enemy")
+        self.assertEqual(enemy["total"],
+                         sum(1 for record in self.catalog._teams.values()
+                             if "enemy" in (record.get("roles") or [])))
+        self.assertEqual(self.catalog.team_list(role="any")["total"], EXPECT_TEAMS)
+
+    def test_team_list_filters(self):
+        # species AND：同时包含 5 稻草人 + 12 龙骑兵
+        species = self.catalog.team_list(species=[5, 12])
+        self.assertGreater(species["total"], 0)
+        self.assertIn(-2, {entry["id"] for entry in species["items"]})
+        for entry in species["items"]:
+            codex = {item["codex_no"] for item in entry["species"]}
+            self.assertTrue({5, 12} <= codex)
+        self.assertEqual(self.catalog.team_list(species="5,12")["total"],
+                         species["total"])
+        self.assertEqual(self.catalog.team_list(species="5;12")["total"],
+                         species["total"])
+        # 单位数边界
+        units = self.catalog.team_list(units_min=10, units_max=10, limit=200)
+        self.assertTrue(all(entry["units"] == 10 for entry in units["items"]))
+        self.assertEqual(self.catalog.team_list(units_min=10, units_max=10,
+                                                q="660011")["items"][0]["id"], 660011)
+        # 效能边界（含负值原样）
+        power = self.catalog.team_list(power_min=673555, power_max=673555)
+        self.assertEqual(power["total"], 1)
+        self.assertEqual(power["items"][0]["id"], 6363006)
+        known = self.catalog.team_list(power_known=True)
+        unknown = self.catalog.team_list(power_known=False)
+        self.assertEqual(known["total"] + unknown["total"], EXPECT_TEAMS)
+        self.assertTrue(all(entry["power_known"] for entry in known["items"]))
+        self.assertTrue(all(not entry["power_known"] for entry in unknown["items"]))
+        # q：id 子串 / 怪种名 / 阵营
+        hits = self.catalog.team_list(q="6363", limit=200)
+        self.assertIn(6363057, {entry["id"] for entry in hits["items"]})
+        self.assertIn(6363006, {entry["id"] for entry in hits["items"]})
+        self.assertTrue(self.catalog.team_list(q="稻草人")["total"] > 0)
+        self.assertTrue(self.catalog.team_list(q="军方")["total"] > 0)
+        # collectable：默认只可收藏（13700）；false 时返回不可收藏支援队伍
+        self.assertEqual(self.catalog.team_list()["total"], EXPECT_TEAMS)
+        non_collectable = self.catalog.team_list(collectable=False)
+        self.assertEqual(non_collectable["total"], 46)
+        self.assertTrue(all(not entry["collectable"]
+                            for entry in non_collectable["items"]))
+
+    def test_team_list_sorting(self):
+        # id_desc 单调
+        desc = [entry["id"] for entry in self.catalog.team_list(sort="id_desc",
+                                                                limit=200)["items"]]
+        self.assertEqual(desc, sorted(desc, reverse=True))
+        # power_desc / power_asc（只看有标注的，避免未知值干扰；未知值另测排最后）
+        powers_desc = [entry["power"] for entry in
+                       self.catalog.team_list(sort="power_desc", power_known=True,
+                                              limit=200)["items"]]
+        self.assertEqual(powers_desc, sorted(powers_desc, reverse=True))
+        powers_asc = [entry["power"] for entry in
+                      self.catalog.team_list(sort="power_asc", power_known=True,
+                                             limit=200)["items"]]
+        self.assertEqual(powers_asc, sorted(powers_asc))
+        # units_desc / units_asc；同值按 id 升序（稳定）
+        units_desc = self.catalog.team_list(sort="units_desc", limit=200)["items"]
+        self.assertEqual([entry["units"] for entry in units_desc],
+                         sorted((entry["units"] for entry in units_desc),
+                                reverse=True))
+        grouped: dict[int, list[int]] = {}
+        for entry in units_desc:
+            grouped.setdefault(entry["units"], []).append(entry["id"])
+        for ids in grouped.values():
+            self.assertEqual(ids, sorted(ids))
+        units_asc = [entry["units"] for entry in
+                     self.catalog.team_list(sort="units_asc", limit=200)["items"]]
+        self.assertEqual(units_asc, sorted(units_asc))
+        # hp_desc / species_desc 单调
+        hp = [entry["hp_total"] for entry in
+              self.catalog.team_list(sort="hp_desc", limit=200)["items"]]
+        self.assertEqual(hp, sorted(hp, reverse=True))
+        species_counts = [len(entry["species"]) for entry in
+                          self.catalog.team_list(sort="species_desc",
+                                                 limit=200)["items"]]
+        self.assertEqual(species_counts, sorted(species_counts, reverse=True))
+        # 效能排序：未知（power_known=false）排最后
+        total = self.catalog.team_list()["total"]
+        tail = self.catalog.team_list(sort="power_desc", offset=total - 5,
+                                      limit=5)["items"]
+        self.assertTrue(all(not entry["power_known"] for entry in tail))
+
+    def test_team_list_performance(self):
+        self.catalog.team_list()  # 预热（索引已在 load 时建好）
+        unfiltered = []
+        for _ in range(3):
+            started = time.perf_counter()
+            self.catalog.team_list()
+            unfiltered.append(time.perf_counter() - started)
+        self.assertLess(min(unfiltered), 0.1, f"team_list() 太慢：{min(unfiltered):.3f}s")
+        queries = []
+        for _ in range(3):
+            started = time.perf_counter()
+            self.catalog.team_list(q="6363", chapter="score--60", limit=50)
+            queries.append(time.perf_counter() - started)
+        self.assertLess(min(queries), 0.1, f"带条件 team_list 太慢：{min(queries):.3f}s")
 
     # -- 怪种 ---------------------------------------------------------
     def test_species_flags(self):

@@ -1678,6 +1678,42 @@ class Catalog:
                              if cid in self._chapters],
             })
 
+        # v1.6 全怪组总表索引（加载时预计算，team_list 单次查询 <100ms）：
+        # 每支队伍 → 怪种 codex 集合 / 出现过的章节 id 集合（敌方+支援+reserve 推断）。
+        self._team_species_sets: dict[int, set[int]] = {
+            team_id: set(record.get("species") or [])
+            for team_id, record in self._teams.items()
+        }
+        self._team_chapters: dict[int, set[str]] = {}
+        for family in (self._teams, self._support_records):
+            for team_id, record in family.items():
+                chapter_ids: set[str] = set()
+                for key in ("appearances", "support_appearances", "reserve_appearances"):
+                    for mission_id in record.get(key) or []:
+                        stage = self._stages.get(int(mission_id))
+                        if stage is None:
+                            continue
+                        chapter_id = str(stage.get("chapter_id") or "")
+                        if chapter_id:
+                            chapter_ids.add(chapter_id)
+                self._team_chapters[team_id] = chapter_ids
+        # 每队搜索快照（id/阵营/tags/怪种名/成员 code·name 拼接小写），让 q 查询也 <100ms
+        self._team_search_text: dict[int, str] = {}
+        for family in (self._teams, self._support_records):
+            for team_id, record in family.items():
+                parts = [str(team_id), str(record.get("faction") or "")]
+                parts.extend(str(tag) for tag in record.get("tags") or [])
+                for codex_no in record.get("species") or []:
+                    parts.append(str(codex_no))
+                    item = self._species_by_codex.get(codex_no)
+                    if item:
+                        parts.append(str(item.get("name") or ""))
+                for slot in record.get("members") or []:
+                    info = self._types.get(_int(slot[0])) or {}
+                    parts.append(str(info.get("code") or ""))
+                    parts.append(str(info.get("name") or ""))
+                self._team_search_text[team_id] = " ".join(parts).lower()
+
     # -- 基础 ---------------------------------------------------------
     def __repr__(self) -> str:  # pragma: no cover - 调试用
         return f"<Catalog {self.built_at} teams={self.counts.get('teams')}>"
@@ -1834,6 +1870,214 @@ class Catalog:
             if summary is not None:
                 summaries.append(summary)
         return summaries
+
+    # -- 全怪组总表（v1.6） -------------------------------------------
+    def team_list(self, *, q: str = "", chapter: str = "", species: Any = None,
+                  role: str = "any", collectable: Any = True,
+                  power_known: Any = None, power_min: Any = None,
+                  power_max: Any = None, units_min: Any = None,
+                  units_max: Any = None, sort: str = "id_asc",
+                  offset: int = 0, limit: int = 50) -> dict:
+        """全怪组总表：多条件筛选 + 稳定排序 + 分页（13,700 队单查询 <100ms）。
+
+        * ``q``：id 子串 / 阵营 / 怪种名称 / 成员 code·name / tags（不区分大小写）
+        * ``chapter``：章节 id 精确匹配；队伍在该章节有**任意 role**（敌方/支援/推断候选）
+          出现即命中；``orphan`` 表示无固定关卡章节
+        * ``species``：codex_no 列表（list 或逗号串），**AND**（队伍包含全部指定怪种）
+        * ``role``：enemy / support / reserve / any
+        * ``collectable``：默认 True（只返回可收藏队伍）；False 时返回不可收藏的支援队伍
+        * ``power_known`` / ``power_min`` / ``power_max`` / ``units_min`` / ``units_max``
+        * ``sort``：id_asc / id_desc / power_desc / power_asc / units_desc / units_asc /
+          hp_desc / species_desc（稳定排序，同值按 id 升序；效能未知在效能排序时排最后）
+        * ``offset`` / ``limit``（默认 0/50，limit 上限 200）
+        """
+        query = str(q or "").strip().lower()
+        chapter = str(chapter or "").strip()
+        role = str(role or "any").strip().lower()
+        if role not in ("any", "enemy", "support", "reserve"):
+            role = "any"
+        sort = str(sort or "id_asc").strip().lower()
+        species_needed = self._normalize_species(species)
+        known = _optional_bool(power_known)
+        collectable_flag = _optional_bool(collectable)
+        low = None if power_min is None or str(power_min).strip() == "" else _float(power_min)
+        high = None if power_max is None or str(power_max).strip() == "" else _float(power_max)
+        units_low = None if units_min is None or str(units_min).strip() == "" else _int(units_min)
+        units_high = None if units_max is None or str(units_max).strip() == "" else _int(units_max)
+        offset = max(0, _int(offset))
+        limit = min(200, max(1, _int(limit, 50)))
+
+        if collectable_flag is False:
+            base: dict[int, dict] = self._support_records
+            candidates: list[int] = sorted(base)
+        else:
+            base = self._teams
+            candidates = self._team_ids
+
+        filtered: list[int] = []
+        for team_id in candidates:
+            record = base[team_id]
+            if (collectable_flag is not None
+                    and bool(record.get("collectable", True)) != collectable_flag):
+                continue
+            if chapter:
+                if chapter == "orphan":
+                    if not record.get("orphan"):
+                        continue
+                elif chapter not in self._team_chapters.get(team_id, ()):
+                    continue
+            roles = record.get("roles") or []
+            if role == "enemy" and "enemy" not in roles:
+                continue
+            if role == "support" and "support" not in roles:
+                continue
+            if role == "reserve" and not record.get("reserve_appearances"):
+                continue
+            if known is not None and bool(record.get("power_known")) != known:
+                continue
+            power = _int(record.get("power"))
+            if low is not None and power < low:
+                continue
+            if high is not None and power > high:
+                continue
+            units = _int(record.get("units"))
+            if units_low is not None and units < units_low:
+                continue
+            if units_high is not None and units > units_high:
+                continue
+            if species_needed and not species_needed.issubset(
+                    self._team_species_sets.get(team_id, ())):
+                continue
+            if query and not self._team_matches_query(team_id, query):
+                continue
+            filtered.append(team_id)
+
+        total = len(filtered)
+        self._sort_team_ids(filtered, sort)
+        page = filtered[offset:offset + limit]
+        items = [self._team_list_item(team_id, base) for team_id in page]
+        return {"total": total, "offset": offset, "limit": limit,
+                "sort": sort, "items": items}
+
+    @staticmethod
+    def _normalize_species(species: Any) -> set[int]:
+        if species is None:
+            return set()
+        if isinstance(species, (list, tuple, set)):
+            raw_values = list(species)
+        else:
+            raw_values = str(species).replace(";", ",").split(",")
+        out: set[int] = set()
+        for value in raw_values:
+            try:
+                out.add(int(str(value).strip()))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def _team_sort_record(self, team_id: int) -> dict:
+        return self._teams.get(team_id) or self._support_records[team_id]
+
+    def _sort_team_ids(self, team_ids: list[int], sort: str) -> None:
+        """稳定排序：同值一律按 id 升序；效能未知排在效能排序最后。"""
+        if sort == "id_desc":
+            team_ids.sort(reverse=True)
+            return
+        if sort in ("power_desc", "power_asc"):
+            reverse = sort == "power_desc"
+            team_ids.sort(key=lambda team_id: (
+                not bool(self._team_sort_record(team_id).get("power_known")),
+                -_int(self._team_sort_record(team_id).get("power")) if reverse
+                else _int(self._team_sort_record(team_id).get("power")),
+                team_id,
+            ))
+            return
+        if sort in ("units_desc", "units_asc"):
+            reverse = sort == "units_desc"
+            team_ids.sort(key=lambda team_id: (
+                -_int(self._team_sort_record(team_id).get("units")) if reverse
+                else _int(self._team_sort_record(team_id).get("units")),
+                team_id,
+            ))
+            return
+        if sort == "hp_desc":
+            team_ids.sort(key=lambda team_id: (
+                -_int(self._team_sort_record(team_id).get("hp_total")), team_id))
+            return
+        if sort == "species_desc":
+            team_ids.sort(key=lambda team_id: (
+                -len(self._team_sort_record(team_id).get("species") or []), team_id))
+            return
+        team_ids.sort()  # id_asc（默认）
+
+    def _team_list_item(self, team_id: int, base: dict[int, dict]) -> dict:
+        record = base[team_id]
+        species = []
+        for codex_no in record.get("species") or []:
+            item = self._species_by_codex.get(codex_no)
+            species.append({
+                "codex_no": codex_no,
+                "name": item.get("name") if item else f"图鉴 {codex_no}",
+                "icon": item.get("icon") if item else None,
+            })
+        appearances, chapter_titles, appearance_count = self._team_list_appearances(record)
+        return {
+            "id": record["id"],
+            "power": record["power"],
+            "power_known": record.get("power_known", False),
+            "units": record["units"],
+            "hp_total": record["hp_total"],
+            "faction": record["faction"],
+            "roles": list(record.get("roles") or []),
+            "collectable": bool(record.get("collectable", True)),
+            "orphan": bool(record.get("orphan", False)),
+            "species": species,
+            "appearances": appearances,
+            "appearance_count": appearance_count,
+            "chapter_titles": chapter_titles,
+        }
+
+    def _team_list_appearances(self, record: dict) -> tuple[list[dict], list[str], int]:
+        """总表里的出处：敌方/支援/推断候选合并（真实在前），最多 60 条。"""
+        role_map: dict[int, set[str]] = defaultdict(set)
+        for mission_id in record.get("appearances") or []:
+            if mission_id in self._stages:
+                role_map[mission_id].add("enemy")
+        for mission_id in record.get("support_appearances") or []:
+            if mission_id in self._stages:
+                role_map[mission_id].add("support")
+        for mission_id in record.get("reserve_appearances") or []:
+            if mission_id in self._stages:
+                role_map[mission_id].add("reserve")
+        entries = []
+        for mission_id, roles in role_map.items():
+            stage = self._stages[mission_id]
+            primary = 0 if "enemy" in roles else (1 if "support" in roles else 2)
+            entries.append((primary, _int(stage.get("order")), mission_id, roles))
+        entries.sort()
+        appearances: list[dict] = []
+        chapter_titles: list[str] = []
+        seen_chapters: set[str] = set()
+        for primary, _order, mission_id, roles in entries:
+            stage = self._stages[mission_id]
+            chapter_id = str(stage.get("chapter_id") or "")
+            chapter = self._chapters.get(chapter_id) or {}
+            title = str(chapter.get("title") or "")
+            if chapter_id and chapter_id not in seen_chapters:
+                seen_chapters.add(chapter_id)
+                if title:
+                    chapter_titles.append(title)
+            if len(appearances) < 60:
+                role = "enemy" if primary == 0 else ("support" if primary == 1 else "reserve")
+                appearances.append({
+                    "mission_id": mission_id,
+                    "chapter_id": chapter_id,
+                    "chapter_title": title,
+                    "stage_title": stage.get("title") or "",
+                    "role": role,
+                    "inferred": role == "reserve",
+                })
+        return appearances, chapter_titles, len(role_map)
 
     # -- 怪种 ---------------------------------------------------------
     def species_list(self, *, q: str = "", faction: str = "", category: str = "",
@@ -2219,27 +2463,21 @@ class Catalog:
 
     # -- 内部：搜索匹配 ------------------------------------------------
     def _team_matches_query(self, team_id: int, lowered: str) -> bool:
-        record = self._teams.get(int(team_id))
-        if record is None:
+        try:
+            team_id = int(team_id)
+        except (TypeError, ValueError):
             return False
-        if lowered in str(record["id"]):
-            return True
-        if lowered in str(record.get("faction") or "").lower():
-            return True
-        for tag in record.get("tags") or []:
-            if lowered in str(tag).lower():
-                return True
-        for codex_no in record.get("species") or []:
-            item = self._species_by_codex.get(codex_no)
-            if item and lowered in str(item.get("name") or "").lower():
-                return True
-        for slot in record.get("members") or []:
-            info = self._types.get(_int(slot[0])) or {}
-            if lowered in str(info.get("code") or "").lower():
-                return True
-            if lowered in str(info.get("name") or "").lower():
-                return True
-        return False
+        haystack = self._team_search_text.get(team_id)
+        if haystack is None:  # 兼容旧 catalog（无预计算快照）
+            record = self._teams.get(team_id) or self._support_records.get(team_id)
+            if record is None:
+                return False
+            haystack = " ".join([
+                str(record.get("id")),
+                str(record.get("faction") or ""),
+                " ".join(str(tag) for tag in record.get("tags") or []),
+            ]).lower()
+        return lowered in haystack
 
 
 __all__ = [

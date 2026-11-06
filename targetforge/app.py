@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -442,6 +442,61 @@ def api_team(team_id: int) -> dict:
     return detail
 
 
+def api_teams(qs: dict | None = None) -> dict:
+    """全怪组总表：多条件筛选 / 排序 / 分页。"""
+    def first(key: str, default: str = "") -> str:
+        return ((qs or {}).get(key) or [default])[0]
+
+    def opt_int(key: str):
+        raw = first(key, "").strip()
+        if not raw:
+            return None
+        try:
+            return int(float(raw))
+        except ValueError:
+            raise HttpError(400, f"{key} 不是数字", detail=raw)
+
+    species: list[int] = []
+    for chunk in (qs or {}).get("species") or []:
+        for part in str(chunk).replace(";", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                species.append(int(part))
+            except ValueError:
+                raise HttpError(400, "species 不是编号", detail=part)
+
+    role = first("role", "any").strip() or "any"
+    if role not in ("any", "enemy", "support", "reserve"):
+        raise HttpError(400, f"未知角色筛选 {role!r}",
+                        hint="可用：any / enemy / support / reserve")
+    sort = first("sort", "id_asc").strip() or "id_asc"
+    if sort not in ("id_asc", "id_desc", "power_desc", "power_asc", "units_desc",
+                    "units_asc", "hp_desc", "species_desc"):
+        raise HttpError(400, f"未知排序 {sort!r}",
+                        hint="可用：id_asc/id_desc/power_desc/power_asc/units_desc/units_asc/hp_desc/species_desc")
+    offset = max(0, int(float(first("offset", "0") or 0)))
+    limit = min(200, max(1, int(float(first("limit", "50") or 50))))
+    collectable_raw = first("collectable", "1").strip().lower()
+    power_known_raw = first("power_known", "").strip().lower()
+    return get_catalog().team_list(
+        q=first("q", ""),
+        chapter=first("chapter", ""),
+        species=species or None,
+        role=role,
+        collectable=collectable_raw not in ("0", "false", "no"),
+        power_known=power_known_raw in ("1", "true", "yes") if power_known_raw else None,
+        power_min=opt_int("power_min"),
+        power_max=opt_int("power_max"),
+        units_min=opt_int("units_min"),
+        units_max=opt_int("units_max"),
+        sort=sort,
+        offset=offset,
+        limit=limit,
+    )
+
+
 def api_stage(mission_id: int) -> dict:
     data = get_catalog().stage(mission_id)
     if data is None:
@@ -647,6 +702,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/chapters$"), lambda ctx: get_catalog().chapters()),
     (re.compile(r"^/api/chapters/(?P<cid>[^/]+)$"), lambda ctx: api_chapter(unquote(ctx["match"].group("cid")), ctx["qs"])),
     (re.compile(r"^/api/stages/(?P<mid>-?\d+)$"), lambda ctx: api_stage(int(ctx["match"].group("mid")))),
+    (re.compile(r"^/api/teams$"), lambda ctx: api_teams(ctx["qs"])),
     (re.compile(r"^/api/teams/(?P<tid>-?\d+)$"), lambda ctx: api_team(int(ctx["match"].group("tid")))),
     (re.compile(r"^/api/grayzone/areas$"), lambda ctx: {"areas": get_catalog().grayzone_areas()}),
     (re.compile(r"^/api/grayzone/teams$"), lambda ctx: api_grayzone_teams(ctx["qs"])),

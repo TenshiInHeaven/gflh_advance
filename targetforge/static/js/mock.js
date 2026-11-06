@@ -1329,6 +1329,9 @@ export async function mockRequest(method, path, body = {}) {
       reserve_teams: reserveTeams,
     });
   }
+  if (route === "/api/teams") {
+    return ok(mockTeamList(query));
+  }
   match = route.match(/^\/api\/teams\/(\d+)$/);
   if (match) {
     return ok(makeTeamDetail(Number(match[1])));
@@ -1513,6 +1516,141 @@ export async function mockRequest(method, path, body = {}) {
     return ok({ job_id: jobId });
   }
   throw makeError(404, `mock 未实现：${method} ${route}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* 全怪组总表（GET /api/teams）：分页 + 章节/怪种 AND/角色/效能/单位筛选 */
+/* ------------------------------------------------------------------ */
+const ROSTER_IDS = Array.from({ length: 13700 }, (_, index) => 6100000 + index * 7);
+
+function mockRosterRow(teamId) {
+  if (Number(teamId) === 6363006) {
+    const summary = makeTeamSummary(6363006, { support: true });
+    return {
+      ...summary,
+      collectable: true,
+      roles: ["support"],
+      inferred: true,
+      appearances: [
+        { chapter_id: "score--60", chapter_title: "谜境守卫+", stage_title: "谜境守卫+", role: "support", inferred: false },
+      ],
+      appearance_count: 1,
+      chapter_titles: ["谜境守卫+"],
+    };
+  }
+  const seed = hash32(`roster:${teamId}`);
+  const powerKnown = seed % 5 !== 0;
+  const power = powerKnown ? (seed % 7 === 0 ? -(seed % 5000) : 18000 + (seed % 160000)) : 0;
+  const units = 1 + (seed % 12);
+  const hpTotal = 5000 + (seed % 150000);
+  const faction = FACTIONS[seed % FACTIONS.length];
+  const rolePick = seed % 17;
+  const roles = rolePick === 0 ? ["support"] : rolePick === 1 ? ["reserve"] : ["enemy"];
+  const species = [];
+  const used = new Set();
+  for (let index = 0; index < 1 + (seed % 4); index += 1) {
+    const codex = 1 + ((seed >> (index * 3)) % 264);
+    if (used.has(codex)) continue;
+    used.add(codex);
+    species.push({ codex_no: codex, name: speciesName(codex), icon: mockIconUri(factionByCodex(codex), codex) });
+  }
+  const chapterPool = ["谜境守卫+", "从潘洛斯阶梯跃下", "静默沙盘", "第1章", "第2章", "失温症"];
+  const primary = chapterPool[seed % chapterPool.length];
+  const appearances = [{ chapter_id: `mock-${seed % 20}`, chapter_title: primary, stage_title: primary, role: roles[0], inferred: roles[0] === "reserve" }];
+  if (seed % 3 === 0) {
+    appearances.push({ chapter_id: `mock-${(seed >> 2) % 20}`, chapter_title: "异构图", stage_title: "异构图", role: "enemy", inferred: false });
+  }
+  return {
+    id: teamId,
+    power,
+    power_known: powerKnown,
+    units,
+    hp_total: hpTotal,
+    faction,
+    roles,
+    collectable: true,
+    orphan: seed % 11 === 0,
+    species,
+    appearances,
+    appearance_count: appearances.length,
+    chapter_titles: appearanceTitles(appearances),
+  };
+}
+
+function appearanceTitles(appearances) {
+  return [...new Set((appearances || []).map((item) => item.chapter_title).filter(Boolean))];
+}
+
+function mockTeamList(query = {}) {
+  const limit = Math.max(1, Math.min(200, Number(query.limit) || 50));
+  const offset = Math.max(0, Number(query.offset) || 0);
+  const q = String(query.q || "").trim().toLowerCase();
+  const chapter = String(query.chapter || "");
+  const speciesFilter = String(query.species || "")
+    .split(",")
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  const role = String(query.role || "");
+  const minPower = query.power_min !== undefined && query.power_min !== "" ? Number(query.power_min) : null;
+  const maxPower = query.power_max !== undefined && query.power_max !== "" ? Number(query.power_max) : null;
+  const minUnits = query.units_min !== undefined && query.units_min !== "" ? Number(query.units_min) : null;
+  const maxUnits = query.units_max !== undefined && query.units_max !== "" ? Number(query.units_max) : null;
+  const knownOnly = ["1", "true", "yes"].includes(String(query.power_known || "").toLowerCase());
+  const sort = String(query.sort || "id_asc");
+
+  let sourceIds = ROSTER_IDS;
+  if (chapter === "score--60") {
+    sourceIds = [6363006];
+  } else if (/^\d+$/.test(q)) {
+    sourceIds = [Number(q)];
+  }
+
+  const matched = [];
+  for (const teamId of sourceIds) {
+    const row = mockRosterRow(teamId);
+    if (chapter && chapter !== "score--60" && !row.appearances.some((item) => item.chapter_id === chapter)) continue;
+    if (q && !String(teamId).includes(q)) {
+      const hay = [row.faction, ...(row.species || []).map((item) => item.name)].join(" ").toLowerCase();
+      if (!/^\d+$/.test(q) && !hay.includes(q)) continue;
+    }
+    if (role) {
+      const normalized = String(role).toLowerCase();
+      if (normalized !== "any" && !row.roles.includes(normalized)) continue;
+    }
+    if (knownOnly && !row.power_known) continue;
+    if (minPower !== null && (!row.power_known || row.power < minPower)) continue;
+    if (maxPower !== null && (!row.power_known || row.power > maxPower)) continue;
+    if (minUnits !== null && row.units < minUnits) continue;
+    if (maxUnits !== null && row.units > maxUnits) continue;
+    if (speciesFilter.length) {
+      const codes = new Set((row.species || []).map((item) => Number(item.codex_no)));
+      if (!speciesFilter.every((codex) => codes.has(codex))) continue;
+    }
+    matched.push(row);
+  }
+
+  matched.sort((a, b) => {
+    switch (sort) {
+      case "id_desc":
+        return b.id - a.id;
+      case "power_desc":
+        return (b.power_known ? b.power : -Infinity) - (a.power_known ? a.power : -Infinity);
+      case "power_asc":
+        return (a.power_known ? a.power : Infinity) - (b.power_known ? b.power : Infinity);
+      case "units_desc":
+        return b.units - a.units;
+      case "units_asc":
+        return a.units - b.units;
+      case "hp_desc":
+        return b.hp_total - a.hp_total;
+      case "species_desc":
+        return (b.species || []).length - (a.species || []).length;
+      default:
+        return a.id - b.id;
+    }
+  });
+
+  return { total: matched.length, offset, limit, items: matched.slice(offset, offset + limit) };
 }
 
 function stripChapter(chapter) {

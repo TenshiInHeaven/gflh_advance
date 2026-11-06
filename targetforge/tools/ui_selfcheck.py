@@ -749,6 +749,152 @@ def run_checks(base_url: str, mock: bool) -> int:
             }
             checker.shot("21_sidebar_highlight.png", ".sidenav", scroll_top=False)
 
+            # ---------------- 全怪组总表 /roster（v1.6） ----------------
+            load("/roster", ".roster-table")
+            try:
+                page.wait_for_selector(".roster-row", timeout=20000)
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(1000)
+            roster_rows = page.locator(".roster-row").count()
+            if roster_rows > 0:
+                checker.passed.append(f"全怪组总表默认加载 {roster_rows} 行")
+            else:
+                checker.failures.append("全怪组总表默认没有行")
+            nav_roster = page.locator('.nav-item[data-nav="/roster"]')
+            if nav_roster.count() and "全怪组" in nav_roster.inner_text():
+                checker.passed.append("侧栏含「全怪组」导航项（怪种图鉴之后）")
+            else:
+                checker.failures.append("侧栏缺少「全怪组」导航项")
+            try:
+                default_teams = http_json(base_url.rstrip("/") + "/api/teams?limit=1")
+                default_total = int(default_teams.get("total") or 0)
+                if default_total == 13700:
+                    checker.passed.append("GET /api/teams 默认 total=13700")
+                else:
+                    checker.failures.append(f"/api/teams 默认 total={default_total}（期望 13700）")
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"/api/teams 默认请求失败：{exc}")
+            checker.shot("22_roster.png", ".roster-table-wrap", scroll_top=False, settle=400)
+
+            # 章节筛选 score--60（limit 200 保证 6363006 在结果里）
+            page.select_option("[data-roster-limit]", "200")
+            page.wait_for_timeout(900)
+            page.select_option("[data-roster-chapter]", "score--60")
+            page.wait_for_timeout(1500)
+            chapter_rows = page.locator(".roster-row").count()
+            chapter_text = page.locator("[data-roster-tbody]").inner_text()
+            if chapter_rows > 0 and "6363006" in chapter_text:
+                checker.passed.append(f"章节筛选 score--60 命中 {chapter_rows} 行且含 6363006")
+            else:
+                checker.failures.append(f"章节筛选 score--60 未命中 6363006（{chapter_rows} 行）")
+
+            # 怪种 AND：先用 API 找 6363006 的两种怪种，再在页面多选
+            try:
+                detail_6363006 = http_json(base_url.rstrip("/") + "/api/teams/6363006")
+                species_codes = [
+                    int(item["codex_no"])
+                    for item in (detail_6363006.get("species") or [])
+                    if item.get("codex_no")
+                ][:2]
+            except Exception:  # noqa: BLE001
+                species_codes = []
+            if len(species_codes) >= 2:
+                code1, code2 = species_codes
+                sp_input = page.locator("[data-sp-search]").first
+                sp_input.click()
+                sp_input.fill(str(code1))
+                page.wait_for_timeout(500)
+                opt1 = page.locator(f'[data-sp-opt="{code1}"]').first
+                if opt1.count():
+                    opt1.click()
+                    page.wait_for_timeout(1000)
+                sp_input.fill(str(code2))
+                page.wait_for_timeout(500)
+                opt2 = page.locator(f'[data-sp-opt="{code2}"]').first
+                if opt2.count():
+                    opt2.click()
+                    page.wait_for_timeout(1600)
+                filter_text = page.locator("[data-roster-tbody]").inner_text()
+                filter_rows = page.locator(".roster-row").count()
+                if filter_rows > 0 and "6363006" in filter_text:
+                    checker.passed.append(f"怪种 AND 筛选（{code1}+{code2}）+ 章节命中 6363006（{filter_rows} 行）")
+                else:
+                    checker.failures.append(f"怪种 AND 筛选未命中 6363006（{filter_rows} 行，codes={code1},{code2}）")
+                EVIDENCE["roster_filter"] = {"chapter": "score--60", "species": [code1, code2], "rows": filter_rows}
+                checker.shot("23_roster_filter.png", ".roster-table-wrap", scroll_top=False, settle=400)
+            else:
+                checker.failures.append("无法从 /api/teams/6363006 取得两种怪种做 AND 筛选")
+
+            # 重置 + units_desc / power_desc 排序 API 校验
+            page.locator("[data-roster-reset]").first.click()
+            page.wait_for_timeout(1300)
+            try:
+                units_sorted = http_json(base_url.rstrip("/") + "/api/teams?sort=units_desc&limit=50")["items"]
+                if units_sorted and units_sorted[0]["units"] >= units_sorted[-1]["units"]:
+                    checker.passed.append(f"units_desc 排序生效（{units_sorted[0]['units']} → {units_sorted[-1]['units']}）")
+                else:
+                    checker.failures.append("units_desc 排序异常")
+                power_sorted = http_json(base_url.rstrip("/") + "/api/teams?sort=power_desc&limit=50")["items"]
+                known_powers = [item["power"] for item in power_sorted if item.get("power_known")]
+                if len(known_powers) < 2 or all(
+                    known_powers[index] >= known_powers[index + 1] for index in range(len(known_powers) - 1)
+                ):
+                    checker.passed.append(f"power_desc 排序生效（已标注 {len(known_powers)} 支）")
+                else:
+                    checker.failures.append("power_desc 排序异常")
+                unknown_positions = [index for index, item in enumerate(power_sorted) if not item.get("power_known")]
+                if not unknown_positions or unknown_positions[0] >= len(power_sorted) - len(unknown_positions):
+                    checker.passed.append("power_desc 排序未标注队伍排在最后")
+                else:
+                    checker.failures.append("power_desc 未标注队伍未排最后")
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"排序 API 校验失败：{exc}")
+
+            # 搜索 6363006 + 加入序列（后移除还原）
+            page.fill("[data-roster-q]", "6363006")
+            page.wait_for_timeout(1400)
+            search_text = page.locator("[data-roster-tbody]").inner_text()
+            if "6363006" in search_text:
+                checker.passed.append("全怪组搜索 6363006 命中")
+            else:
+                checker.failures.append("全怪组搜索 6363006 未命中")
+            add_btn = page.locator(".roster-row [data-add-team]").first
+            if add_btn.count():
+                add_btn.click()
+                page.wait_for_timeout(1200)
+                try:
+                    roster_seq = [
+                        int(team["id"])
+                        for team in (http_json(base_url.rstrip("/") + "/api/sequence") or {}).get("draft", [])
+                    ]
+                except Exception:  # noqa: BLE001
+                    roster_seq = []
+                if 6363006 in roster_seq:
+                    checker.passed.append("全怪组搜索行可直接加入序列")
+                else:
+                    checker.failures.append(f"全怪组加入序列失败：{roster_seq[:30]}")
+                try:
+                    http_post(base_url.rstrip("/") + "/api/sequence", {"action": "remove", "team_id": 6363006})
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                checker.failures.append("全怪组搜索行缺少加入序列按钮")
+
+            # 行点击打开详情抽屉
+            page.locator(".roster-row").first.click(position={"x": 60, "y": 20})
+            try:
+                page.wait_for_selector(".drawer", timeout=8000)
+                checker.passed.append("全怪组行点击可打开队伍详情抽屉")
+                close_btn = page.locator(".drawer [data-close-drawer]").first
+                if close_btn.count():
+                    close_btn.click()
+                else:
+                    page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+            except Exception:  # noqa: BLE001
+                checker.failures.append("全怪组行点击未打开详情抽屉")
+
             # 回到关卡队伍页：效能筛选控件 + 全部加入（供后续序列截图）
             load("/stages/11435", ".team-card")
             page.wait_for_timeout(800)
@@ -1238,7 +1384,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 22
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 24
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

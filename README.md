@@ -34,6 +34,10 @@
 |---|---|
 | ![本怪组出现位置](docs/screenshots/team-appearances.jpg) | ![侧栏高亮](docs/screenshots/sidebar-highlight.jpg) |
 
+| 全怪组总表：表格排序 / 分页 | 多条件筛选：章节 + 怪种 AND + 角色 |
+|---|---|
+| ![全怪组](docs/screenshots/roster.jpg) | ![全怪组筛选](docs/screenshots/roster-filter.jpg) |
+
 ## 功能
 
 - **关卡图鉴**：**7 组 121 章 2345 关**——主线 / 活动（含往期复刻、特殊作战）/ **积分关卡** / 教学 / 模拟作战 / 灰域探查 / 无固定关卡。
@@ -50,6 +54,9 @@
   （如谜境守卫+ 的 AA-02 队 6363057/6363060、静默沙盘的威廉队 770060、潘洛斯的 Hebe/Styx 660002/660003）。
 - **按怪组编号搜索/加入**：顶栏全局搜索输入 `6363006` / `#6363006` 直接出队伍结果卡并可加入序列；
   序列页/序列面板也有「按编号加入」输入框。
+- **全怪组总表**：独立页面以表格列出全部 **13,700 支可收藏怪组**，可按 编号/效能/单位数/总血/怪种数 排序；
+  支持多条件组合筛选：搜索（编号/阵营/怪种名）、**出现在指定章节**、**同时包含多个怪种（AND）**、
+  角色（敌方/支援/机场推断）、单位数区间、效能区间/只看有标注；表头点击排序、分页、行内详情/加入序列。
 - **怪种图鉴**：264 个图鉴怪种，每只怪都有从**本机游戏资源提取的真实头像**（透明底 160px）；
   按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（筛「灰域」得到所有在灰域出现过的怪种，含灰域 BOSS）；
   怪种详情列出所有怪组并分页。
@@ -160,13 +167,13 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 130 个单测（app / catalog / gflh）
+python -m unittest discover -s targetforge/tests -t .      # 135 个单测（app / catalog / gflh）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（29 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 22 张截图
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 24 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
 ```
 
-前端自检结果：177 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：192 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
@@ -204,6 +211,15 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.6.0（2026-11-07）
+
+- **全怪组总表**：新增独立页面（侧栏「全怪组」，13,700 支可收藏队伍），表格展示编号/效能/单位数/总血/阵营/
+  角色/怪种/出现章节，支持表头排序（编号、效能、单位数、总血、怪种数）与分页。
+- **多条件筛选**：搜索（编号/阵营/怪种名）+ **出现在指定章节** + **同时包含多个怪种（AND）** + 角色
+  （敌方/支援/机场推断）+ 单位数区间 + 效能区间/只看有标注；筛选即时生效、可重置。
+- 新增 `GET /api/teams`（`catalog.team_list()`）：服务端筛选/排序/分页，13,700 队查询 <10ms。
+- 版本号 v1.6.0。
 
 ### v1.5.0（2026-11-07）
 

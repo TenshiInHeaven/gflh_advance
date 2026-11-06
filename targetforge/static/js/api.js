@@ -107,6 +107,23 @@ export const api = {
     get(`/api/chapters/${encodeURIComponent(chapterId)}`, { offset: 0, limit: 60, q: "", ...params }),
   stage: (missionId) => get(`/api/stages/${encodeURIComponent(missionId)}`),
   team: (teamId) => get(`/api/teams/${encodeURIComponent(teamId)}`),
+  teams: (params = {}) =>
+    get("/api/teams", {
+      q: "",
+      chapter: "",
+      species: "",
+      role: "",
+      collectable: "",
+      power_known: "",
+      power_min: "",
+      power_max: "",
+      units_min: "",
+      units_max: "",
+      sort: "id_asc",
+      offset: 0,
+      limit: 50,
+      ...params,
+    }),
 
   grayzoneAreas: () => get("/api/grayzone/areas"),
   grayzoneTeams: (params = {}) =>

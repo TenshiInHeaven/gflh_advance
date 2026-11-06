@@ -34,6 +34,7 @@ import * as stage from "./views/stage.js";
 import * as grayzone from "./views/grayzone.js";
 import * as species from "./views/species.js";
 import * as speciesDetail from "./views/species-detail.js";
+import * as roster from "./views/roster.js";
 import * as teamPage from "./views/team-page.js";
 import * as sequencePage from "./views/sequence-page.js";
 import * as capture from "./views/capture.js";
@@ -48,6 +49,7 @@ const ROUTES = [
   { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", viewId: "grayzone", param: "area", title: "灰域区域" },
   { pattern: /^\/species$/, view: species, nav: "species", viewId: "species", title: "怪种图鉴" },
   { pattern: /^\/species\/([^/]+)$/, view: speciesDetail, nav: "species", viewId: "species-detail", param: "codex", title: "怪种详情" },
+  { pattern: /^\/roster$/, view: roster, nav: "roster", viewId: "roster", title: "全怪组" },
   { pattern: /^\/teams\/([^/]+)$/, view: teamPage, nav: "chapters", viewId: "team", param: "id", title: "队伍详情" },
   { pattern: /^\/sequence$/, view: sequencePage, nav: "sequence", viewId: "sequence", title: "序列编排" },
   { pattern: /^\/capture$/, view: capture, nav: "capture", viewId: "capture", title: "登录抓取" },
@@ -236,6 +238,7 @@ function updateNavCounts(health) {
   const counts = health?.catalog?.counts || {};
   setNavCount("chapters", counts.chapters);
   setNavCount("species", counts.species);
+  setNavCount("roster", counts.teams);
 }
 
 function renderNavCounts() {

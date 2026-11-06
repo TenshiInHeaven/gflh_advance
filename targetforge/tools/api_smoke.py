@@ -83,7 +83,7 @@ def wait_ready(base: str, timeout: float = 240.0) -> dict:
 
 def run_checks(base: str, health: dict) -> None:
     check("health 200", bool(health.get("ok")), "")
-    check("version 1.5.x", str(health.get("version", "")).startswith("1.5"), str(health.get("version")))
+    check("version 1.6.x", str(health.get("version", "")).startswith("1.6"), str(health.get("version")))
     check("health.data_dir", bool(health.get("data_dir")), "")
     status, meta = get(base, "/api/meta")
     counts = (meta or {}).get("counts") or {}

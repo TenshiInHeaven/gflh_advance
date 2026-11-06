@@ -4177,3 +4177,158 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .reserve-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .reserve-foot-hint { color: var(--text-mute); font-size: 10.5px; line-height: 1.6; }
 .tag.reserve { color: #ffd27a; border-color: rgba(242, 193, 78, 0.4); background: rgba(242, 193, 78, 0.08); }
+
+/* ---------- 30. 全怪组总表页（v1.6） ---------- */
+.roster-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(14, 25, 52, 0.55), rgba(10, 18, 39, 0.35));
+}
+.rf-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rf-row-2 { align-items: flex-start; }
+.rf-search { min-width: 250px; flex: 1 1 260px; max-width: 360px; }
+.rf-select {
+  height: 32px;
+  padding: 0 26px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(10, 18, 39, 0.6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238aa0c4' fill='none'/%3E%3C/svg%3E") no-repeat right 9px center;
+  color: var(--text-2);
+  font-size: 11.5px;
+  appearance: none;
+  outline: none;
+  max-width: 260px;
+}
+.rf-select:hover { border-color: rgba(94, 225, 255, 0.35); }
+.rf-ranges { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rf-range { display: inline-flex; align-items: center; gap: 5px; color: var(--text-mute); font-size: 11px; white-space: nowrap; }
+.rf-range input {
+  width: 74px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(10, 18, 39, 0.6);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+}
+.rf-range input:hover, .rf-range input:focus { border-color: rgba(94, 225, 255, 0.35); }
+.rf-check { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.rf-check input { accent-color: var(--amber); }
+.rf-meta { color: var(--text-mute); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; white-space: nowrap; }
+.rf-meta b { color: var(--text); font-family: var(--font-mono); }
+
+.species-picker { position: relative; min-width: 320px; flex: 1 1 360px; }
+.sp-picked { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; min-height: 20px; }
+.sp-picked-empty { color: var(--text-mute); font-size: 10.5px; }
+.sp-chip-picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 5px 0 4px;
+  border: 1px solid rgba(94, 225, 255, 0.32);
+  border-radius: 2px;
+  background: rgba(94, 225, 255, 0.08);
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+.sp-chip-picked button { display: inline-flex; color: var(--text-mute); padding: 0 1px; }
+.sp-chip-picked button:hover { color: var(--amber); }
+.sp-input-wrap { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(10, 18, 39, 0.6); }
+.sp-input-wrap .in-ico { color: var(--text-mute); display: inline-flex; }
+.sp-input-wrap input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font-size: 11.5px; outline: none; }
+.sp-input-wrap input::placeholder { color: var(--text-mute); font-size: 10.5px; }
+.sp-menu {
+  display: none;
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid rgba(94, 225, 255, 0.25);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, #0d1830, #0a1224);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+.sp-menu.open { display: block; }
+.sp-menu-empty { padding: 14px; color: var(--text-mute); font-size: 11px; }
+.sp-opt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 7px;
+  border-radius: 2px;
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: left;
+}
+.sp-opt:hover { background: rgba(94, 225, 255, 0.08); }
+.sp-opt.selected { background: rgba(94, 225, 255, 0.12); color: var(--text); }
+.sp-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-opt-code { color: var(--text-mute); font-family: var(--font-mono); font-size: 9.5px; }
+.sp-opt .sp-icon { flex: none; }
+
+.roster-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--r); background: rgba(9, 16, 34, 0.5); max-width: 100%; }
+.roster-table { min-width: 960px; width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+.roster-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 9px 10px;
+  background: #0c1730;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-mute);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.roster-table th.sortable { cursor: pointer; user-select: none; }
+.roster-table th.sortable:hover { color: var(--text-2); }
+.roster-table th.active { color: var(--amber-2); }
+.roster-table th .si { margin-left: 4px; opacity: 0.55; font-size: 9px; }
+.roster-table th.active .si { opacity: 1; color: var(--amber); }
+.roster-table tbody td { padding: 8px 10px; border-bottom: 1px solid rgba(120, 160, 220, 0.08); vertical-align: middle; }
+.roster-table tbody tr:last-child td { border-bottom: 0; }
+.roster-row { cursor: pointer; transition: background 0.12s; }
+.roster-row:hover { background: rgba(94, 225, 255, 0.055); }
+.roster-id { font-family: var(--font-mono); color: var(--text-2); white-space: nowrap; }
+.roster-roles { white-space: nowrap; }
+.roster-roles .badge { height: 17px; font-size: 9px; margin-right: 3px; }
+.roster-species { display: inline-flex; align-items: center; gap: 3px; }
+.roster-species .rs-ico { display: inline-flex; }
+.roster-species .rs-ico .sp-icon { border-radius: 3px; }
+.rs-more { color: var(--text-mute); font-family: var(--font-mono); font-size: 9.5px; }
+.roster-table th:nth-child(1), .roster-table td:nth-child(1) { width: 64px; }
+.roster-table th:nth-child(2), .roster-table td:nth-child(2) { width: 88px; }
+.roster-table th:nth-child(3), .roster-table td:nth-child(3) { width: 58px; }
+.roster-table th:nth-child(4), .roster-table td:nth-child(4) { width: 78px; }
+.roster-table th:nth-child(5), .roster-table td:nth-child(5) { width: 88px; }
+.roster-table th:nth-child(6), .roster-table td:nth-child(6) { width: 140px; }
+.roster-table th:nth-child(7), .roster-table td:nth-child(7) { width: 150px; }
+.roster-table th:nth-child(9), .roster-table td:nth-child(9) { width: 136px; }
+.roster-roles { white-space: nowrap; }
+.roster-chapters { color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
+.roster-actions { white-space: nowrap; text-align: right; position: sticky; right: 0; background: #0b142b; z-index: 1; }
+.roster-table thead th:last-child { position: sticky; right: 0; background: #0c1730; z-index: 3; }
+.roster-row:hover .roster-actions { background: #0e1c3a; }
+.roster-actions .btn { height: 22px; padding: 0 7px; font-size: 10px; }
+.roster-pager { margin-top: 14px; }
+.roster-pager-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.roster-loading, .roster-error { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 34px 16px; color: var(--text-mute); font-size: 11.5px; }
+.roster-error { flex-wrap: wrap; color: var(--amber-2); }
+.roster-empty { padding: 18px 10px; }
+.roster-empty-actions { display: flex; justify-content: center; margin-top: -12px; }

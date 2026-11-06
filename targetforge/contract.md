@@ -80,6 +80,10 @@ class Catalog:
                        power_min=None, power_max=None, power_known=None, sort="default") -> dict
     def team(self, team_id: int) -> dict | None
     def team_summaries(self, team_ids: list[int]) -> list[dict]
+    def team_list(*, q="", chapter="", species=None, role="any", collectable=True,
+                  power_known=None, power_min=None, power_max=None,
+                  units_min=None, units_max=None, sort="id_asc",
+                  offset=0, limit=50) -> dict   # 全怪组总表（v1.6，见 §2.5）
     def species_list(self, *, q="", faction="", category="", offset=0, limit=60) -> dict
     def species(self, codex_no, offset=None, limit=None, q="", power_min=None, power_max=None,
                 power_known=None, sort="default") -> dict | None   # 无参数调用返回全量 teams
@@ -262,6 +266,42 @@ class Catalog:
   只有积分关卡/部分特殊队伍有值（含负值）。**不要伪造公式反推。**
 - **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。
 
+### 2.5 team_list（全怪组总表，v1.6）
+
+`GET /api/teams`（app.py 路由）→ `catalog.team_list(...)`。纯内存筛选/排序/分页，
+13,700 支队伍单次查询 **<100ms**（加载时已预计算每队的 species codex 集合 / 章节集合 /
+搜索快照）。
+
+参数（全部可选）：
+
+| 参数 | 说明 |
+|---|---|
+| `q` | 队伍 id 子串 / 阵营 / 怪种名称 / 成员 code·name / tags（不区分大小写） |
+| `chapter` | 章节 id 精确匹配（如 `score--60`、`event--61`、`grayzone`）；队伍在该章节有**任意 role**（敌方/支援/机场推断）出现即命中；`orphan` 表示无固定关卡章节 |
+| `species` | codex_no 列表（list 或逗号串，如 `5,12`），**AND**：队伍包含全部指定怪种 |
+| `role` | `enemy` / `support` / `reserve` / `any`（默认 any）；reserve = 有推断候选 appearance 的队伍 |
+| `collectable` | bool，默认 `true`（只可收藏队伍）；`false` 时返回不可收藏的支援队伍（46 支） |
+| `power_known` | bool（effect_ext != 0） |
+| `power_min` / `power_max` | 含边界 |
+| `units_min` / `units_max` | 单位数 = 成员 count 合计（与 team_summary.units 一致） |
+| `sort` | `id_asc`（默认）/ `id_desc` / `power_desc` / `power_asc` / `units_desc` / `units_asc` / `hp_desc` / `species_desc`；稳定排序（同值按 id 升序），效能未知在效能排序时排最后 |
+| `offset` / `limit` | 默认 0/50，`limit` 上限 200 |
+
+返回：
+
+```jsonc
+{"total": 13700, "offset": 0, "limit": 50, "sort": "id_asc",
+ "items": [{
+   "id":6363006, "power":673555, "power_known":true, "units":24, "hp_total":1075993,
+   "faction":"军方", "roles":["support"], "collectable":true, "orphan":false,
+   "species":[{"codex_no":50,"name":"...","icon":"..."}],
+   "appearances":[{"mission_id":11435,"chapter_id":"score--60","chapter_title":"谜境守卫+",
+                   "stage_title":"谜境守卫+","role":"support","inferred":false},...最多60],
+   "appearance_count":1,                    // 总出处数（含推断；appearances 截断到 60）
+   "chapter_titles":["谜境守卫+"]}          // 去重后的章节标题
+ ]}
+```
+
 ---
 
 ## 3. gflh.py 契约（gflh 任务实现）
@@ -338,6 +378,7 @@ def set_system_proxy(enable: bool, addr: str = f"127.0.0.1:{CAPTURE_PORT}") -> d
 | GET | `/api/chapters` | 章节分组 |
 | GET | `/api/chapters/{id}` | 章节详情 + 关卡（灰域返回 areas） |
 | GET | `/api/stages/{mission_id}` | 关卡 + 队伍列表 |
+| GET | `/api/teams` | 全怪组总表（q/chapter/species/role/power/units/sort/offset/limit，见 §2.5） |
 | GET | `/api/teams/{team_id}` | 队伍详情 |
 | GET | `/api/grayzone/areas` | 灰域区域 |
 | GET | `/api/grayzone/teams?area=&offset=&limit=&q=` | 区域队伍分页 |
