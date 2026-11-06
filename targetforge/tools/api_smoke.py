@@ -34,17 +34,30 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         print(f"  FAIL {name} {detail}")
 
 
-def get(base: str, path: str) -> tuple[int, dict | list]:
+def _token() -> str:
     try:
-        with urllib.request.urlopen(base + path, timeout=120) as resp:
+        from targetforge.security import read_api_token_file
+        return read_api_token_file()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+TOKEN = _token()
+
+
+def get(base: str, path: str) -> tuple[int, dict | list]:
+    req = urllib.request.Request(base + path, headers={"X-TargetForge-Token": TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.status, json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         return exc.code, {"_raw": exc.read().decode(errors="replace")[:500]}
 
 
 def get_bytes(base: str, path: str) -> tuple[int, str, bytes]:
+    req = urllib.request.Request(base + path, headers={"X-TargetForge-Token": TOKEN})
     try:
-        with urllib.request.urlopen(base + path, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             return resp.status, resp.headers.get("Content-Type", ""), resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, "", b""
@@ -54,7 +67,8 @@ def post(base: str, path: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(base + path, data=data, method="POST",
                                  headers={"Content-Type": "application/json",
-                                          "X-TargetForge-Client": "1"})
+                                          "X-TargetForge-Client": "1",
+                                          "X-TargetForge-Token": TOKEN})
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.status, json.loads(resp.read().decode())

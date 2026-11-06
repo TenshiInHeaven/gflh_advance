@@ -14,12 +14,18 @@ from __future__ import annotations
 
 import re
 import os
+import secrets
 import subprocess
+import threading
 from pathlib import Path
 from typing import Mapping
 
 CLIENT_HEADER = "X-TargetForge-Client"
 CLIENT_HEADER_VALUE = "1"
+TOKEN_HEADER = "X-TargetForge-Token"
+
+_TOKEN_LOCK = threading.Lock()
+_API_TOKEN: str | None = None
 
 #: 只允许本机回环地址（Host/Origin）
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -96,8 +102,10 @@ def request_allowed(
     method: str,
     headers: Mapping[str, str],
     expected_port: int | None,
+    *,
+    require_token: bool = False,
 ) -> str | None:
-    """校验一个 HTTP 请求；允许返回 ``None``，否则返回中文拒绝原因（403）。"""
+    """校验一个 HTTP 请求；允许返回 ``None``，否则返回中文拒绝原因（403/401）。"""
     host = str(headers.get("Host") or "")
     if not host_allowed(host, expected_port):
         return "Host 不被允许（仅限本机 127.0.0.1/localhost/::1）"
@@ -107,6 +115,8 @@ def request_allowed(
     site = str(headers.get("Sec-Fetch-Site") or "").strip().lower()
     if site == "cross-site":
         return "跨站请求被拒绝"
+    if require_token and not api_token_matches(str(headers.get(TOKEN_HEADER) or "")):
+        return f"缺少或错误的访问令牌 {TOKEN_HEADER}"
     if method.upper() == "POST":
         if str(headers.get(CLIENT_HEADER) or "").strip() != CLIENT_HEADER_VALUE:
             return f"缺少安全请求头 {CLIENT_HEADER}"
@@ -114,6 +124,49 @@ def request_allowed(
         if not content_type.startswith("application/json"):
             return "POST 请求必须使用 application/json"
     return None
+
+
+def api_token_file() -> Path:
+    from targetforge.datapaths import DATA_DIR
+
+    return Path(DATA_DIR) / ".api_token"
+
+
+def ensure_api_token() -> str:
+    """生成/返回本进程 API token；同时写一份 ACL 收紧的本机文件供工具读取。"""
+    global _API_TOKEN
+    with _TOKEN_LOCK:
+        if _API_TOKEN:
+            return _API_TOKEN
+        env_token = str(os.environ.get("TARGETFORGE_API_TOKEN") or "").strip()
+        if env_token:
+            _API_TOKEN = env_token
+            return _API_TOKEN
+        token = secrets.token_urlsafe(32)
+        try:
+            path = api_token_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(token + "\n", encoding="utf-8")
+            tmp.replace(path)
+            restrict_file_acl(path)
+        except OSError:
+            pass
+        _API_TOKEN = token
+        return _API_TOKEN
+
+
+def api_token_matches(value: str) -> bool:
+    token = ensure_api_token()
+    return bool(value) and secrets.compare_digest(str(value), token)
+
+
+def read_api_token_file() -> str:
+    """供本地工具/自检读取 token；不存在返回空串。"""
+    try:
+        return api_token_file().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def is_unc_path(raw: str | Path) -> bool:

@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from targetforge import app  # noqa: E402
+from targetforge import security  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ class AppTestBase(unittest.TestCase):
                                                                         "built_at": FakeCatalog.built_at},
                 reload=lambda: FakeCatalog())),
             mock.patch.object(app, "_gflh_module", lambda: FakeGflh()),
+            mock.patch.object(security, "_API_TOKEN", "test-token"),
             mock.patch.object(app, "_CATALOG_STATE",
                               {"state": "ready", "built_at": FakeCatalog.built_at,
                                "counts": FakeCatalog.counts, "error": None,
@@ -285,7 +287,8 @@ class HttpRoutesTest(AppTestBase):
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json",
-                                              "X-TargetForge-Client": "1"})
+                                              "X-TargetForge-Client": "1",
+                                              "X-TargetForge-Token": security.ensure_api_token()})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode())
 
@@ -354,14 +357,21 @@ class HttpRoutesTest(AppTestBase):
 
     def test_security_headers_and_csrf_guard(self):
         # 正常 GET 带安全响应头
-        with urllib.request.urlopen(self.base + "/api/health", timeout=10) as resp:
+        with urllib.request.urlopen(urllib.request.Request(
+                self.base + "/api/health",
+                headers={"X-TargetForge-Token": security.ensure_api_token()}), timeout=10) as resp:
             self.assertEqual(resp.headers.get("X-Frame-Options"), "DENY")
             self.assertIn("default-src 'self'", resp.headers.get("Content-Security-Policy") or "")
-        # POST 缺少自定义安全头 → 403
+        # 缺少 API token → 401
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(self.base + "/api/health", timeout=10)
+        self.assertEqual(ctx.exception.code, 401)
+        # POST 缺少自定义安全头（token 正确）→ 403
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(urllib.request.Request(
                 self.base + "/api/sequence", data=b"{}", method="POST",
-                headers={"Content-Type": "application/json"}), timeout=10)
+                headers={"Content-Type": "application/json",
+                         "X-TargetForge-Token": security.ensure_api_token()}), timeout=10)
         self.assertEqual(ctx.exception.code, 403)
         # Host 非 loopback → 403
         with self.assertRaises(urllib.error.HTTPError) as ctx:
@@ -612,7 +622,8 @@ class GameRoutesTest(AppTestBase):
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
                                      headers={"Content-Type": "application/json",
-                                              "X-TargetForge-Client": "1"})
+                                              "X-TargetForge-Client": "1",
+                                              "X-TargetForge-Token": security.ensure_api_token()})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.status, json.loads(resp.read().decode())
@@ -706,6 +717,7 @@ class GameRoutesTest(AppTestBase):
         self.assertEqual(payload["detected"]["path"], str(self.game_dir))
         self.assertGreaterEqual(len(payload["candidates"]), 1)
         # pick 取消 → 400「已取消」
+        app._PICK_LAST = 0
         with mock.patch.object(self.gamepath, "pick_folder",
                                side_effect=self.gamepath.GamePathError(
                                    "已取消", hint="可重试", code="pick_cancelled")):
@@ -713,11 +725,18 @@ class GameRoutesTest(AppTestBase):
         self.assertEqual(status, 400)
         self.assertEqual(payload["error"], "已取消")
         # pick 成功 → {path}
+        app._PICK_LAST = 0
         with mock.patch.object(self.gamepath, "pick_folder",
                                return_value=str(self.game_dir)):
             status, payload = self.request("POST", "/api/game/pick", {})
         self.assertEqual(status, 200)
         self.assertEqual(payload["path"], str(self.game_dir))
+        app._PICK_LAST = 0
+        # 连续 pick 触发 429
+        app._PICK_LAST = time.time()
+        status, payload = self.request("POST", "/api/game/pick", {})
+        self.assertEqual(status, 429)
+        app._PICK_LAST = 0
 
 
 if __name__ == "__main__":

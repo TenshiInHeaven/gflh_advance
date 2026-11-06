@@ -1,5 +1,6 @@
 /* main.js —— 应用启动 / 路由 / 顶栏 / 全局交互 */
 import { api, IS_MOCK } from "./api.js";
+import { rememberTokenFromUrl, currentToken, saveToken } from "./auth.js";
 import {
   store,
   refreshHealth,
@@ -69,6 +70,13 @@ let appStarted = false;
 /* 启动                                                               */
 /* ================================================================== */
 async function boot() {
+  if (!IS_MOCK) {
+    const token = rememberTokenFromUrl();
+    if (!token) {
+      showTokenGate();
+      return;
+    }
+  }
   renderNavCounts();
   initTopbar();
   bindGlobalEvents();
@@ -78,6 +86,50 @@ async function boot() {
   const gateShown = await maybeRequireGameSetup();
   if (gateShown) return;
   await startApp();
+}
+
+/* 本机 API token gate：启动终端里的链接会带 ?token=；也可手动粘贴 */
+function showTokenGate(message = "") {
+  if (document.querySelector(".token-gate")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "token-gate";
+  wrap.innerHTML = `
+    <div class="token-card">
+      <div class="token-kicker">TARGET FORGE // LOCAL ACCESS</div>
+      <h2>需要访问令牌</h2>
+      <p>本地服务启用了随机 token 防止其它本机进程/用户冒充。第一次打开请使用启动终端打印的带
+        <code>?token=</code> 链接，或把终端里的 token 粘贴到下面；之后浏览器会记住。</p>
+      <div class="token-input-row">
+        <input id="token-input" type="password" placeholder="粘贴访问 token" autocomplete="off">
+        <button id="token-submit" class="btn-primary" type="button">进入</button>
+      </div>
+      <div class="token-error" id="token-error">${esc(message || "")}</div>
+      <p class="token-hint">token 也会写入本机数据目录下的 <code>.api_token</code>（仅当前 Windows 用户可读）。</p>
+    </div>`;
+  document.body.appendChild(wrap);
+  const input = wrap.querySelector("#token-input");
+  const error = wrap.querySelector("#token-error");
+  const submit = async () => {
+    const value = input.value.trim();
+    if (!value) {
+      error.textContent = "请输入访问 token";
+      return;
+    }
+    saveToken(value);
+    try {
+      await api.health();
+      wrap.remove();
+      await boot();
+    } catch (err) {
+      saveToken("");
+      error.textContent = err?.message || "token 无效";
+    }
+  };
+  wrap.querySelector("#token-submit").addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") submit();
+  });
+  input.focus();
 }
 
 /** 启动前置 gate：返回 true 表示已显示 gate、等待用户选择后由 onReady 继续 */
@@ -513,6 +565,12 @@ export async function renderRoute() {
 /* 全局事件                                                           */
 /* ================================================================== */
 function bindGlobalEvents() {
+  window.addEventListener("tf:unauthorized", () => {
+    saveToken("");
+    if (!document.querySelector(".token-gate")) {
+      showTokenGate("token 无效或服务已重启，请使用新的访问链接/token。");
+    }
+  });
   window.addEventListener("hashchange", () => {
     if (firstBoot) return;
     renderRoute();

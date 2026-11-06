@@ -1,0 +1,57 @@
+/* 本地 API token gate（与主主题一致） */
+.token-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(30, 136, 229, .18), transparent 55%),
+    rgba(3, 8, 24, .94);
+  backdrop-filter: blur(6px);
+}
+.token-card {
+  width: min(560px, 100%);
+  padding: 28px 30px;
+  border: 1px solid rgba(120, 200, 255, .28);
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(12, 28, 58, .98), rgba(8, 18, 40, .98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+  color: #dcecff;
+}
+.token-kicker {
+  font-size: 11px;
+  letter-spacing: .22em;
+  color: #7fd6ff;
+  margin-bottom: 10px;
+}
+.token-card h2 { margin: 0 0 12px; font-size: 26px; color: #fff; }
+.token-card p { margin: 0 0 14px; line-height: 1.7; color: #a9c4e0; font-size: 13px; }
+.token-card code {
+  color: #ffd479;
+  background: rgba(255, 212, 121, .08);
+  border: 1px solid rgba(255, 212, 121, .2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.token-input-row { display: flex; gap: 10px; margin: 6px 0 8px; }
+.token-input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 200, 255, .3);
+  background: rgba(4, 12, 28, .8);
+  color: #fff;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.token-input-row input:focus { outline: none; border-color: #4fc3f7; box-shadow: 0 0 0 2px rgba(79, 195, 247, .18); }
+.token-input-row .btn-primary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-width: 88px;
+  padding: 0 18px;
+}
+.token-error { min-height: 20px; color: #ff9b9b; font-size: 12px; }
+.token-hint { margin-top: 12px; font-size: 12px; color: #6f8cae; }

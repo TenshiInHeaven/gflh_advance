@@ -1,5 +1,6 @@
 /* api.js —— 后端 API 客户端（同源 fetch；?mock=1 时走本地 mock 层） */
 import { mockRequest } from "./mock.js";
+import { currentToken } from "./auth.js";
 
 export const IS_MOCK = new URLSearchParams(window.location.search).get("mock") === "1";
 const MOCK_LATENCY_MIN = 0;
@@ -60,11 +61,13 @@ async function request(method, path, body) {
       throw new ApiError(err.status || 500, err.payload || { error: err.message }, err.message);
     }
   }
+  const token = currentToken();
   const options = {
     method,
     cache: "no-store",
     headers: { Accept: "application/json", "X-TargetForge-Client": "1" },
   };
+  if (token) options.headers["X-TargetForge-Token"] = token;
   if (method !== "GET" && body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
@@ -84,7 +87,17 @@ async function request(method, path, body) {
       payload = { error: `服务返回了非 JSON 内容（HTTP ${response.status}）`, detail: text.slice(0, 400) };
     }
   }
-  if (!response.ok) throw new ApiError(response.status, payload, `HTTP ${response.status}`);
+  if (!response.ok) {
+    const err = new ApiError(response.status, payload, `HTTP ${response.status}`);
+    if (response.status === 401) {
+      try {
+        window.dispatchEvent(new CustomEvent("tf:unauthorized"));
+      } catch {
+        // ignore
+      }
+    }
+    throw err;
+  }
   return payload;
 }
 

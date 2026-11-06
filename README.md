@@ -57,9 +57,9 @@
 
 ## 安全
 
-本地服务只监听 `127.0.0.1`，并对 Host / Origin / POST 自定义请求头 / JSON Content-Type 做校验
-（防 CSRF、DNS rebinding 与误绑局域网），拒绝 UNC 网络路径，统一附带 CSP 等安全响应头。
-威胁模型、已实现加固与剩余风险见 **[SECURITY/](SECURITY/README.md)**。
+本地服务只监听 `127.0.0.1`，并对 Host / Origin / **随机访问 token** / POST 自定义请求头 / JSON Content-Type 做校验
+（防 CSRF、DNS rebinding、本机其它进程冒充与误绑局域网），拒绝 UNC 网络路径，统一附带 CSP 等安全响应头；
+`/api/game/pick` 有限流，500 错误不返回 traceback。威胁模型、已实现加固与剩余风险见 **[SECURITY/](SECURITY/README.md)**。
 
 ## 前置依赖
 
@@ -101,10 +101,20 @@ python -m targetforge --open
 
 ## 运行
 
+启动后终端会打印带一次性 token 的访问链接：
+
+```text
+本地地址（含本次访问 token）: http://127.0.0.1:8765/?token=xxxxx
+访问 token 文件: <数据目录>/.api_token
+```
+
+直接打开 http://127.0.0.1:8765 会显示「需要访问令牌」，把终端里的 token 粘贴进去即可（之后浏览器会记住）。
+token 也写在数据目录的 `.api_token`（ACL 仅当前 Windows 用户可读）；服务重启会换新 token，旧链接失效。
+
 ```powershell
 cd gflh_advance
 python -m targetforge                 # http://127.0.0.1:8765
-python -m targetforge --open          # 顺便打开浏览器
+python -m targetforge --open          # 顺便打开带 token 的浏览器链接
 python -m targetforge --port 8771     # 换端口
 python -m targetforge --rebuild-catalog   # 用本机客户端强制重建数据（约 4 秒）
 ```
@@ -215,6 +225,14 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.9.3（2026-11-07）
+
+- **本机 API 随机 token**：启动生成随机 token，浏览器用 `?token=` 链接或页面提示框输入；所有 `/api/*`
+  （icons 除外）要求 `X-TargetForge-Token`，防止本机其它进程/其它 Windows 用户冒充；token 文件 ACL 仅当前用户。
+- **`/api/game/pick` 限流**：5 秒冷却，连续调用返回 429。
+- **500 不再返回 traceback**：详细堆栈只写启动终端日志，页面只看到错误类型。
+- 版本号 v1.9.3。
 
 ### v1.9.2（2026-11-07）
 

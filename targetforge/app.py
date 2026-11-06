@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -39,6 +39,9 @@ from targetforge import security  # noqa: E402
 _LOCK = threading.RLock()
 _JOBS: dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
+_PICK_LOCK = threading.Lock()
+_PICK_LAST = 0.0
+_PICK_COOLDOWN = 5.0
 _CATALOG_STATE = {"state": "cold", "detail": "", "started_at": None, "error": None}
 
 
@@ -223,6 +226,14 @@ def api_game_detect() -> dict:
 
 
 def api_game_pick() -> dict:
+    global _PICK_LAST
+    now = time.time()
+    with _PICK_LOCK:
+        wait = _PICK_COOLDOWN - (now - _PICK_LAST)
+        if wait > 0:
+            raise HttpError(429, "操作过于频繁", hint=f"请 {wait:.0f} 秒后再试。",
+                            extra={"retry_after": round(wait, 1)})
+        _PICK_LAST = now
     try:
         path = _gamepath_module().pick_folder()
     except _gamepath_module().GamePathError as exc:
@@ -1012,11 +1023,15 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         started = time.time()
-        denied = security.request_allowed(method, self.headers, getattr(self.server, "server_port", None))
+        denied = security.request_allowed(method, self.headers, getattr(self.server, "server_port", None),
+                                          require_token=path.startswith("/api/") and not path.startswith("/api/icons/"))
         if denied:
-            self._error(403, "请求被安全策略拒绝", detail=denied,
-                        hint="请从本机 http://127.0.0.1:%s/ 页面访问。" % getattr(self.server, "server_port", 8765))
-            self._log(method, path, 403, started)
+            status = 401 if "令牌" in denied else 403
+            self._error(status, "请求被安全策略拒绝", detail=denied,
+                        hint=("请使用启动终端中的带 token 链接访问，或把 token 粘贴到页面提示框。"
+                              if status == 401 else
+                              "请从本机 http://127.0.0.1:%s/ 页面访问。" % getattr(self.server, "server_port", 8765)))
+            self._log(method, path, status, started)
             return
         try:
             if path.startswith("/api/icons/"):
@@ -1064,7 +1079,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             detail = traceback.format_exc()[-2000:]
             sys.stderr.write(detail + "\n")
-            self._error(500, f"内部错误：{type(exc).__name__}", detail=detail)
+            self._error(500, f"内部错误：{type(exc).__name__}",
+                        hint="请查看启动终端日志；详细堆栈不会返回给页面。")
             self._log(method, path, 500, started)
 
     def _log(self, method: str, path: str, status: int, started: float) -> None:
@@ -1122,10 +1138,13 @@ def main(argv: list[str] | None = None) -> int:
     warm_catalog(rebuild=args.rebuild_catalog)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
-    url = f"http://{args.host}:{args.port}/"
+    token = security.ensure_api_token()
+    base_url = f"http://{args.host}:{args.port}/"
+    url = f"{base_url}?token={token}"
     print(f"== 靶机工坊 TargetForge v{VERSION} ==")
-    print(f"   本地地址: {url}")
+    print(f"   本地地址（含本次访问 token）: {url}")
     print(f"   数据目录: {DATA_DIR}")
+    print(f"   访问 token 文件: {security.api_token_file()}")
     if bootstrap.get("ok"):
         source_names = {"settings": "设置", "env": "环境变量",
                         "local_paths": "local_paths.json", "detected": "自动检测"}

@@ -28,9 +28,24 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]  # 仓库根（GF Forge）
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 OUT_DIR = ROOT / "tmp" / "frontend_shots"
 DEFAULT_PORT = 8771
 VIEWPORT = {"width": 1600, "height": 1000}
+
+
+def _api_token() -> str:
+    try:
+        from targetforge.security import read_api_token_file
+        return read_api_token_file()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _auth_headers() -> dict:
+    token = _api_token()
+    return {"X-TargetForge-Token": token} if token else {}
 
 SHOTS: list[str] = []
 EVIDENCE: dict = {}
@@ -282,7 +297,7 @@ ROUTE_SMOKE = [
 # HTTP 工具（不启动浏览器时也能用）
 # ---------------------------------------------------------------------------
 def http_json(url: str, timeout: float = 5.0):
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    request = urllib.request.Request(url, headers={"Accept": "application/json", **_auth_headers()})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -291,7 +306,7 @@ def http_post(url: str, payload: dict, timeout: float = 10.0):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json", "Accept": "application/json",
-                                  "X-TargetForge-Client": "1"}, method="POST"
+                                  "X-TargetForge-Client": "1", **_auth_headers()}, method="POST"
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -452,6 +467,10 @@ def run_checks(base_url: str, mock: bool) -> int:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
         context = browser.new_context(viewport=VIEWPORT, device_scale_factor=1, locale="zh-CN")
+        token = _api_token()
+        if token:
+            context.add_init_script(
+                "try { localStorage.setItem('tf_api_token', %s); } catch (e) {}" % json.dumps(token))
         page = context.new_page()
 
         page.on(
@@ -1367,7 +1386,7 @@ def run_checks(base_url: str, mock: bool) -> int:
                     base_url.rstrip("/") + "/api/game/confirm",
                     data=json.dumps({"path": "Z:\\TargetForge_Invalid_Game_Dir_Not_Exists"}).encode("utf-8"),
                     headers={"Content-Type": "application/json", "Accept": "application/json",
-                             "X-TargetForge-Client": "1"},
+                             "X-TargetForge-Client": "1", **_auth_headers()},
                     method="POST",
                 )
                 try:

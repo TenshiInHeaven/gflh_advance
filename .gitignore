@@ -21,3 +21,5 @@ dataMiner/derived/targetforge/state.json
 dataMiner/derived/targetforge/creds_*.json
 dataMiner/derived/target_injection_state.json
 
+.api_token
+
