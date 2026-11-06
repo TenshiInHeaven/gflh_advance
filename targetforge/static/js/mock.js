@@ -171,6 +171,7 @@ const state = {
   groups: null,
   speciesList: null,
   areas: null,
+  regions: null,
   currentTeamIds: null,
   currentCreds: "creds_latest.json",
   sequence: loadMockSequence(),
@@ -325,7 +326,7 @@ function buildChapter(groupDef, ordinal) {
   };
   if (groupDef.id === "grayzone") {
     chapter.areas = getAreas();
-    chapter.subtitle = `${GRAYZONE_AREAS.length} 个区域 · ${stageCount} 个节点`;
+    chapter.subtitle = `${GRAYZONE_AREAS.length} 个地点 · ${stageCount} 个节点`;
   }
   state.chaptersById.set(chapterId, chapter);
   return chapter;
@@ -345,13 +346,39 @@ function ensureChapters() {
   return groups;
 }
 
+const GRAYZONE_REGION_DEFS = [
+  { id: "sand", title: "沙尘带", areas: ["晶团挖掘点", "旅团商道", "放射区"] },
+  { id: "storm", title: "风暴带", areas: ["人形复制工厂", "废弃居民区", "秘密通道"] },
+  { id: "silicon", title: "硅状带", areas: ["交易地", "装甲突击"] },
+  { id: "crystal", title: "结晶带", areas: ["共生净土", "最终贮藏地", "图腾圣所", "地坛遗迹"] },
+  { id: "special", title: "特殊区域", areas: ["庇护所旧址", "坍缩狭缝"] },
+];
+
+function getRegions() {
+  if (state.regions) return state.regions;
+  const areas = getAreas();
+  state.regions = GRAYZONE_REGION_DEFS.map((region) => {
+    const own = areas.filter((area) => (area.region_ids || []).includes(region.id));
+    return {
+      id: region.id,
+      title: region.title,
+      stage_count: own.reduce((acc, area) => acc + area.stage_count, 0),
+      team_count: own.reduce((acc, area) => acc + area.team_count, 0),
+      species_count: own.reduce((acc, area) => acc + area.species_count, 0),
+    };
+  });
+  return state.regions;
+}
+
 function getAreas() {
   if (state.areas) return state.areas;
   state.areas = GRAYZONE_AREAS.map((name, idx) => {
     const rng = mulberry32(hash32(`area:${name}`));
+    const regionIds = GRAYZONE_REGION_DEFS.filter((region) => region.areas.includes(name)).map((region) => region.id);
     return {
       id: name,
       title: name,
+      region_ids: regionIds,
       stage_count: randInt(rng, 32, 240),
       team_count: [197, 240, 320, 410, 512, 620, 758, 880, 940, 1000, 1050, 1104][idx],
       species_count: randInt(rng, 30, 150),
@@ -1337,7 +1364,7 @@ export async function mockRequest(method, path, body = {}) {
     return ok(makeTeamDetail(Number(match[1])));
   }
   if (route === "/api/grayzone/areas") {
-    return ok({ areas: getAreas() });
+    return ok({ regions: getRegions(), areas: getAreas() });
   }
   if (route === "/api/grayzone/teams") {
     return ok(grayzoneTeams(query.area || "", Number(query.offset || 0), Number(query.limit || 60), query));

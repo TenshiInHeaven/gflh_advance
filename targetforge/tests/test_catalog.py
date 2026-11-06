@@ -17,7 +17,8 @@
   reserve 不影响 team_count/support_team_count/orphan 真实状态；
 * **全怪组总表 team_list（v1.6）**：q/chapter/species(AND)/role/enemy·support·reserve/
   power/units 筛选、8 种排序（稳定、未知效能最后）、分页；13,700 队单查询 <100ms；
-* 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
+* 灰域 **5 个真实区域**（沙尘带/风暴带/硅状带/结晶带/特殊区域）+ **14 个地点**
+  （原 mission 标题前缀，带 region_ids；特殊区域含组5/6/未映射）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
 * 队伍/物种列表分页；species() 无参仍返回全量 teams（app.py 兼容）；
@@ -234,8 +235,8 @@ class CatalogDataTest(unittest.TestCase):
     def test_chapter_payload_fields(self):
         for group in self.chapters_payload["groups"]:
             for chapter in group["chapters"]:
-                expected = CHAPTER_KEYS | ({"areas"} if chapter["category"] == "grayzone"
-                                           else set())
+                expected = CHAPTER_KEYS | ({"areas", "regions"}
+                                           if chapter["category"] == "grayzone" else set())
                 self.assertEqual(set(chapter), expected)
                 self.assertEqual(chapter["category"], group["id"])
                 self.assertIsInstance(chapter["tags"], list)
@@ -422,35 +423,76 @@ class CatalogDataTest(unittest.TestCase):
         main_stage = self.catalog.chapter("main-1")["stages"][0]
         self.assertEqual(main_stage["settlement"]["type"], "normal")
 
-    # -- 灰域 14 区域 -------------------------------------------------
+    # -- 灰域：5 个真实区域 / 14 个地点 ---------------------------------
     def test_grayzone_areas(self):
-        areas = self.catalog.grayzone_areas()
+        payload = self.catalog.grayzone_areas()
+        self.assertEqual(set(payload), {"regions", "areas"})
+        regions = payload["regions"]
+        self.assertEqual(len(regions), 5)
+        self.assertEqual([region["id"] for region in regions],
+                         ["sand", "storm", "silicon", "crystal", "special"])
+        self.assertEqual([region["title"] for region in regions],
+                         ["沙尘带", "风暴带", "硅状带", "结晶带", "特殊区域"])
+        expected_stages = [228, 228, 228, 278, 326]
+        for region, stage_count in zip(regions, expected_stages):
+            self.assertEqual(region["groups"], [1] if region["id"] == "sand" else
+                             ([2] if region["id"] == "storm" else
+                              ([3] if region["id"] == "silicon" else
+                               ([4] if region["id"] == "crystal" else [5, 6]))))
+            self.assertEqual(region["stage_count"], stage_count)
+            self.assertGreater(region["team_count"], 0)
+            self.assertGreater(region["species_count"], 0)
+            self.assertEqual(set(region), {"id", "title", "groups", "stage_count",
+                                           "team_count", "species_count", "source",
+                                           "note"})
+        for region in regions[:4]:
+            self.assertIn("daily_mission_difficulty_group", region["source"])
+            self.assertEqual(region["note"], "")
+        special = regions[-1]
+        self.assertIsNone(special["source"])
+        self.assertIn("客户端无区域名", special["note"])
+        self.assertEqual(special["groups"], [5, 6])
+        self.assertEqual(sum(region["stage_count"] for region in regions), 1288)
+        # 地点（原来的 14 个）统计不变，新增 region_ids
+        areas = payload["areas"]
         self.assertEqual(len(areas), 14)
-        names = [area["id"] for area in areas]
-        self.assertEqual(set(names), set(GRAY_AREAS))
+        self.assertEqual({area["id"] for area in areas}, set(GRAY_AREAS))
+        region_ids = [region["id"] for region in regions]
+        for area in areas:
+            self.assertEqual(set(area), {"id", "title", "region_ids", "stage_count",
+                                         "team_count", "species_count"})
+            self.assertTrue(area["region_ids"], f"{area['id']} 缺 region_ids")
+            self.assertTrue(set(area["region_ids"]) <= set(region_ids))
         by_id = {area["id"]: area for area in areas}
         self.assertEqual(by_id["共生净土"]["stage_count"], 240)
         self.assertEqual(by_id["共生净土"]["team_count"], 1104)
+        self.assertEqual(by_id["共生净土"]["region_ids"],
+                         ["sand", "storm", "silicon", "crystal", "special"])
         self.assertEqual(by_id["晶团挖掘点"]["team_count"], 872)
         self.assertEqual(by_id["旅团商道"]["stage_count"], 210)
         self.assertEqual(by_id["放射区"]["team_count"], 315)
-        # 新增的两个区域暂时没有可收藏队伍，但必须存在
+        # 只在特殊区域的地点
+        self.assertEqual(by_id["最终贮藏地"]["region_ids"], ["special"])
+        self.assertEqual(by_id["装甲突击"]["region_ids"], ["special"])
+        # 没有可收藏队伍的地点也要存在（region_ids 由 mission 映射得出）
         self.assertEqual(by_id["庇护所旧址"]["stage_count"], 0)
         self.assertEqual(by_id["坍缩狭缝"]["stage_count"], 0)
+        self.assertTrue(by_id["庇护所旧址"]["region_ids"])
+        self.assertTrue(by_id["坍缩狭缝"]["region_ids"])
         self.assertEqual(sum(area["stage_count"] for area in areas), 1288)
-        for area in areas:
-            self.assertEqual(set(area), {"id", "title", "stage_count",
-                                         "team_count", "species_count"})
 
     def test_grayzone_chapter(self):
         detail = self.catalog.chapter("grayzone")
         chapter = detail["chapter"]
         self.assertEqual(chapter["stage_count"], 1288)
         self.assertEqual(chapter["team_count"], 3352)
-        self.assertEqual(chapter["subtitle"], "14 个区域 · 1288 个节点")
+        self.assertEqual(chapter["subtitle"], "5 个区域 · 14 个地点 · 1288 个节点")
         self.assertEqual(chapter["tags"], ["打灰"])
         self.assertEqual(detail["stages"], [])
+        self.assertEqual(len(detail["regions"]), 5)
         self.assertEqual(len(detail["areas"]), 14)
+        self.assertEqual(len(chapter["regions"]), 5)
+        self.assertEqual(len(chapter["areas"]), 14)
 
     def test_grayzone_teams_pagination_and_filters(self):
         page = self.catalog.grayzone_teams("共生净土", 0, 10)
@@ -467,6 +509,27 @@ class CatalogDataTest(unittest.TestCase):
                          1104)
         self.assertEqual(self.catalog.grayzone_teams(area_id="共生净土", offset=0,
                                                      limit=2)["total"], 1104)
+        # 真实区域筛选（v1.7）：region 支持 标题/id/组号；special 含组5/6/未映射
+        crystal = self.catalog.grayzone_teams(region="结晶带")
+        self.assertEqual(crystal["total"], 789)
+        self.assertEqual(crystal["region"], "crystal")
+        self.assertEqual(self.catalog.grayzone_teams(region="crystal")["total"], 789)
+        self.assertEqual(self.catalog.grayzone_teams(region="4")["total"], 789)
+        self.assertEqual(self.catalog.grayzone_teams(region="沙尘带")["total"], 579)
+        self.assertEqual(self.catalog.grayzone_teams(region="storm")["total"], 580)
+        self.assertEqual(self.catalog.grayzone_teams(region="硅状带")["total"], 580)
+        self.assertEqual(self.catalog.grayzone_teams(region="特殊区域")["total"], 1023)
+        self.assertEqual(self.catalog.grayzone_teams(region="special")["total"], 1023)
+        self.assertEqual(self.catalog.grayzone_teams(region="5")["total"], 1023)
+        self.assertEqual(self.catalog.grayzone_teams(region="不存在")["total"], 0)
+        combo = self.catalog.grayzone_teams(area="共生净土", region="结晶带", limit=10)
+        self.assertGreater(combo["total"], 0)
+        self.assertLessEqual(combo["total"], 1104)
+        self.assertEqual(combo["area"], "共生净土")
+        self.assertEqual(combo["region"], "crystal")
+        regions_meta = {region["id"]: region for region in
+                        self.catalog.grayzone_areas()["regions"]}
+        self.assertEqual(crystal["total"], regions_meta["crystal"]["team_count"])
         # 效能筛选/排序（灰域普通节点基本 effect_ext=0 → power_known=False）
         known = self.catalog.grayzone_teams("", 0, 5, power_known=True)
         unknown = self.catalog.grayzone_teams("", 0, 5, power_known=False)

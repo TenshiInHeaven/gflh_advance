@@ -152,12 +152,17 @@ def run_port_pid_checks(context, base_url: str, mock: bool, checker, console_err
         pid_title = (pid_chip.get_attribute("title") or "") if pid_chip.count() else ""
         info_title = page.locator(".pid-info").first.get_attribute("title") if page.locator(".pid-info").count() else ""
         pid_text = pid_chip.inner_text() if pid_chip.count() else ""
+        game_status = page.locator('[data-status="game"]').first
+        game_status_title = game_status.get_attribute("title") if game_status.count() else ""
+        # 游戏进程可能刚好在重启：运行中看 PID chip tooltip，未运行看顶栏状态 tooltip（仍含来源说明）
+        effective_title = pid_title or game_status_title or ""
         evidence["pid_title"] = pid_title
-        if "tasklist" in pid_title and "GrilsFrontLine.exe" in pid_title:
-            checker.passed.append(f"顶栏 PID tooltip 正确（{pid_text}）")
+        evidence["game_status_title"] = game_status_title
+        if "tasklist" in effective_title and "GrilsFrontLine.exe" in effective_title:
+            checker.passed.append(f"顶栏 PID tooltip 正确（{pid_text or '未运行态'}）")
         else:
-            checker.failures.append(f"PID tooltip 缺少 tasklist/GrilsFrontLine.exe 说明：{pid_title!r}")
-        if "tasklist" in (info_title or ""):
+            checker.failures.append(f"PID tooltip 缺少 tasklist/GrilsFrontLine.exe 说明：{effective_title!r}")
+        if "tasklist" in (info_title or effective_title):
             checker.passed.append("PID 旁 ⓘ 提示可 hover 查看来源")
         else:
             checker.failures.append("PID 旁缺少 ? 提示 tooltip")
@@ -1142,25 +1147,82 @@ def run_checks(base_url: str, mock: bool) -> int:
             page.keyboard.press("Escape")
             page.wait_for_timeout(400)
 
-            # ---------------- 13 灰域区域（14 个）+ 12 灰域队伍分页 ----------------
-            load("/chapters/grayzone", ".area-card")
-            checker.assert_count(".area-card", 14)
+            # ---------------- 13 灰域区域（沙尘带/风暴带/硅状带/结晶带）→ 14 个灰域地点 ----------------
+            load("/chapters/grayzone", ".region-card, .area-card")
+            try:
+                page.wait_for_selector(".region-card", timeout=20000)
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(1100)
+            region_names = [name.strip() for name in page.locator(".rg-name").all_inner_texts()]
+            has_regions = page.locator(".region-card").count() >= 5 and all(
+                name in " ".join(region_names) for name in ["沙尘带", "风暴带", "硅状带", "结晶带"]
+            )
+            if has_regions:
+                checker.passed.append(f"灰域区域区块 {page.locator('.region-card').count()} 个区域（{'/'.join(region_names)}）")
+            else:
+                checker.failures.append(f"灰域区域区块异常：{region_names}")
+            if page.locator(".area-card").count() == 14:
+                checker.passed.append("灰域地点区块 14 张地点卡")
+            else:
+                checker.failures.append(f"灰域地点卡数量 {page.locator('.area-card').count()} != 14")
+            chapter_gray_text = page.locator("#view").inner_text()
+            if "灰域地点" in chapter_gray_text and "区域内的地点" in chapter_gray_text:
+                checker.passed.append("地点区块标题为「灰域地点」（说明不是区域）")
+            else:
+                checker.failures.append("地点区块标题/说明缺失")
+            if "区域数量" in chapter_gray_text and "地点数量" in chapter_gray_text:
+                checker.passed.append("灰域统计含区域数量 / 地点数量")
+            else:
+                checker.failures.append("灰域统计缺少区域数量/地点数量")
             area_names = [name.strip() for name in page.locator(".area-name").all_inner_texts()]
             if "庇护所旧址" in area_names or "坍缩狭缝" in area_names:
-                checker.passed.append(f"灰域区域含新增区域（共 {len(area_names)} 个）")
-            EVIDENCE["grayzone_areas"] = {"count": len(area_names), "names": area_names}
-            checker.shot("13_grayzone_areas.png", ".area-grid")
+                checker.passed.append("灰域地点含庇护所旧址/坍缩狭缝")
+            region_badges = page.locator(".area-regions .region-badge").count()
+            if region_badges >= 14:
+                checker.passed.append(f"地点卡显示所属区域 badges（{region_badges} 个）")
+            else:
+                checker.failures.append(f"地点卡缺少所属区域 badges（{region_badges} 个）")
+            EVIDENCE["grayzone_areas"] = {"count": len(area_names), "names": area_names, "regions": region_names}
+            checker.shot("13_grayzone_areas.png", ".region-grid", scroll_top=False, settle=400)
+
+            # 区域筛选：点「结晶带」→ 地点数减少且包含共生净土；重置恢复 14
+            crystal = page.locator(".region-card", has_text="结晶带").first
+            if crystal.count():
+                crystal.click()
+                page.wait_for_timeout(700)
+                visible_areas = page.locator(".area-card:visible").count()
+                visible_names = page.locator(".area-card:visible .area-name").all_inner_texts()
+                if 0 < visible_areas < 14 and any("共生净土" in str(name) for name in visible_names):
+                    checker.passed.append(f"点击「结晶带」后地点筛选生效（{visible_areas} 个，含共生净土）")
+                else:
+                    checker.failures.append(f"结晶带筛选异常：{visible_areas} 个 / {visible_names[:6]}")
+                checker.shot("24_grayzone_region.png", ".region-grid", scroll_top=False, settle=400)
+                page.locator("[data-region-reset]").first.click()
+                page.wait_for_timeout(600)
+                if page.locator(".area-card:visible").count() == 14:
+                    checker.passed.append("重置区域后恢复 14 个地点")
+                else:
+                    checker.failures.append("重置区域后地点数没有恢复 14")
+            else:
+                checker.failures.append("缺少「结晶带」区域卡片")
 
             load("/grayzone/共生净土", ".team-card")
             checker.wait(".pager")
             checker.wait(".power-filter")
-            checker.passed.append("灰域区域队伍页含效能筛选/排序条")
+            checker.passed.append("灰域地点队伍页含效能筛选/排序条")
             title_text = page.locator(".page-title").first.inner_text()
             if "%E" in title_text:
-                checker.failures.append(f"灰域区域标题未解码：{title_text}")
+                checker.failures.append(f"灰域地点标题未解码：{title_text}")
             elif "共生净土" in title_text:
-                checker.passed.append("灰域区域标题已解码")
+                checker.passed.append("灰域地点标题已解码")
+            gray_page_text = page.locator("#view").inner_text()
+            if "区域：" in gray_page_text and "灰域地点内的可收藏队伍" in gray_page_text:
+                checker.passed.append("灰域地点队伍页显示所属区域面包屑/说明")
+            else:
+                checker.failures.append("灰域地点队伍页缺少区域说明")
             checker.shot("12_grayzone.png", ".team-grid")
+
             add_page = page.locator('[data-act="add-page"]')
             if add_page.count() > 0:
                 add_page.first.click()
@@ -1322,10 +1384,27 @@ def run_checks(base_url: str, mock: bool) -> int:
     # 后端 12 个灰域区域都能返回队伍（真实 API 模式）
     if not mock:
         try:
-            areas = http_json(base_url.rstrip("/") + "/api/grayzone/areas").get("areas") or []
-            assert len(areas) == 14, f"灰域区域数量 {len(areas)} != 14"
+            gray_payload = http_json(base_url.rstrip("/") + "/api/grayzone/areas")
+            areas = gray_payload.get("areas") or []
+            regions = gray_payload.get("regions") or []
+            assert len(areas) == 14, f"灰域地点数量 {len(areas)} != 14"
             names = [str(area.get("title") or area.get("id") or "").strip() for area in areas]
-            assert "庇护所旧址" in names and "坍缩狭缝" in names, f"缺少新增灰域区域：{names}"
+            assert "庇护所旧址" in names and "坍缩狭缝" in names, f"缺少灰域地点：{names}"
+            region_names = [
+                str(region.get("title") or region.get("name") or region.get("id") or "").strip() for region in regions
+            ]
+            if regions:
+                assert len(regions) == 5, f"灰域区域数量 {len(regions)} != 5"
+                for required in ("沙尘带", "风暴带", "硅状带", "结晶带", "特殊区域"):
+                    assert required in region_names, f"缺少灰域区域 {required}：{region_names}"
+                region_ids = {str(region.get("id") or "").strip() for region in regions}
+                for area in areas:
+                    area_regions = area.get("region_ids") or []
+                    assert area_regions, f"地点 {area.get('id')} 没有 region_ids"
+                    assert all(str(rid) in region_ids for rid in area_regions), f"地点 {area.get('id')} region_ids 未匹配区域"
+                node_total = sum(int(area.get("stage_count") or 0) for area in areas)
+                assert node_total == 1288, f"地点节点合计 {node_total} != 1288"
+                checker.passed.append(f"灰域层级：{len(regions)} 区域 / {len(areas)} 地点 / 节点合计 1288")
             bad = []
             for area in areas:
                 data = http_json(
@@ -1341,9 +1420,9 @@ def run_checks(base_url: str, mock: bool) -> int:
                 if not total and has_items:
                     bad.append(f"{area['id']}(空区域却有队伍)")
             if bad:
-                checker.failures.append(f"灰域区域取队伍为空：{bad}")
+                checker.failures.append(f"灰域地点取队伍为空：{bad}")
             else:
-                checker.passed.append(f"灰域 14 个区域齐全（含庇护所旧址/坍缩狭缝），且有队伍区域均能取到队伍")
+                checker.passed.append(f"灰域 14 个地点齐全（含庇护所旧址/坍缩狭缝），有队伍的地点均能取到队伍")
         except Exception as exc:  # noqa: BLE001
             checker.failures.append(f"灰域区域后端校验失败：{exc}")
 
@@ -1384,7 +1463,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 24
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 25
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

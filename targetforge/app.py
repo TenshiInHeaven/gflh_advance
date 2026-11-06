@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -689,6 +689,7 @@ def api_grayzone_teams(qs: dict) -> dict:
     filters = _team_filters(qs or {})
     return get_catalog().grayzone_teams(
         area=(qs.get("area") or [""])[0],
+        region=(qs.get("region") or [""])[0],
         offset=int((qs.get("offset") or ["0"])[0] or 0),
         limit=min(200, int((qs.get("limit") or ["60"])[0] or 60)),
         q=(qs.get("q") or [""])[0],
@@ -704,7 +705,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/stages/(?P<mid>-?\d+)$"), lambda ctx: api_stage(int(ctx["match"].group("mid")))),
     (re.compile(r"^/api/teams$"), lambda ctx: api_teams(ctx["qs"])),
     (re.compile(r"^/api/teams/(?P<tid>-?\d+)$"), lambda ctx: api_team(int(ctx["match"].group("tid")))),
-    (re.compile(r"^/api/grayzone/areas$"), lambda ctx: {"areas": get_catalog().grayzone_areas()}),
+    (re.compile(r"^/api/grayzone/areas$"), lambda ctx: get_catalog().grayzone_areas()),
     (re.compile(r"^/api/grayzone/teams$"), lambda ctx: api_grayzone_teams(ctx["qs"])),
     (re.compile(r"^/api/species$"), lambda ctx: get_catalog().species_list(
         q=(ctx["qs"].get("q") or [""])[0],

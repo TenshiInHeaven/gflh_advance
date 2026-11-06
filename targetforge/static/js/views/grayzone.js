@@ -1,5 +1,6 @@
 /* views/grayzone.js —— 灰域区域：队伍服务端分页 + 搜索 + 效能筛选/排序 */
 import { api } from "../api.js";
+import { normalizeGrayMeta, areaRegionNames } from "../components/grayzone-meta.js";
 import { store, sequenceStats, addTeams } from "../store.js";
 import {
   icon,
@@ -37,7 +38,7 @@ const state = {
 };
 let rootEl = null;
 
-export async function render(root, { params }) {
+export async function render(root, { params, query }) {
   rootEl = root;
   const areaId = (params.area || "").trim();
   state.page = 1;
@@ -46,15 +47,32 @@ export async function render(root, { params }) {
   state.total = 0;
   state.filter = defaultPowerFilter();
 
+  // 灰域层级：区域（沙尘带/风暴带/硅状带/结晶带/特殊区域）→ 地点（14 个）
+  let grayMeta = { regions: [], areas: [], hasRegions: false };
+  try {
+    grayMeta = normalizeGrayMeta(await api.grayzoneAreas());
+  } catch {
+    grayMeta = { regions: [], areas: [], hasRegions: false };
+  }
+  const areaMeta = (grayMeta.areas || []).find((area) => area.id === areaId || area.title === areaId);
+  const areaTitle = (areaMeta?.title || areaId).trim();
+  const regionNames = areaRegionNames(areaMeta || {}, grayMeta.regions || []);
+  const regionParam = String((query && query.region) || "").trim();
+  const selectedRegionName = (grayMeta.regions || []).find(
+    (region) => region.id === regionParam || region.title === regionParam,
+  )?.title || regionParam;
+  const crumbs = [
+    { label: "关卡图鉴", nav: "/chapters" },
+    { label: "灰域探查", nav: "/chapters/grayzone" },
+  ];
+  if (selectedRegionName) crumbs.push({ label: selectedRegionName });
+  crumbs.push({ label: areaTitle });
+
   root.innerHTML = pageHeadHtml({
-    crumbs: [
-      { label: "关卡图鉴", nav: "/chapters" },
-      { label: "灰域探查", nav: "/chapters/grayzone" },
-      { label: areaId },
-    ],
-    title: areaId,
+    crumbs,
+    title: areaTitle,
     badge: "GRAY ZONE",
-    sub: "灰域区域内的可收藏队伍。灰域不逐节点列举关卡，这里按区域分页浏览，支持搜索队伍 id 与效能筛选/排序。",
+    sub: `${regionNames.length ? `区域：${esc(regionNames.join(" / "))} · ` : ""}灰域地点内的可收藏队伍。灰域不逐节点列举关卡，这里按地点分页浏览，支持搜索队伍 id 与效能筛选/排序。`,
     actions: `<button class="btn btn-primary" type="button" data-act="add-page" disabled>${icon("plus", 14)} 本页全部加入序列</button>`,
   }) + `
     <div class="toolbar">
@@ -80,6 +98,7 @@ export async function render(root, { params }) {
     try {
       const data = await api.grayzoneTeams({
         area: areaId,
+        region: regionParam || (areaMeta?.region_ids || [])[0] || "",
         offset: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         q: state.query,
@@ -114,12 +133,12 @@ export async function render(root, { params }) {
       const filtering = state.query || state.filter.mode !== "all";
       areaEl.innerHTML = emptyState({
         iconName: filtering ? "search" : "users",
-        title: filtering ? "没有匹配的队伍" : state.total === 0 ? "该区域暂无可收藏队伍" : "该区域暂无队伍",
+        title: filtering ? "没有匹配的队伍" : state.total === 0 ? "该地点暂无可收藏队伍" : "该地点暂无队伍",
         desc: filtering
           ? "换个关键词或效能条件试试。"
           : state.total === 0
-            ? "该区域在 mission 表里有节点，但没有可收藏队伍，这里只作为区域展示；换一个区域看看。"
-            : "换一个灰域区域看看。",
+            ? "该地点在 mission 表里有节点，但没有可收藏队伍，这里只作为地点展示；换一个地点看看。"
+            : "换一个灰域地点看看。",
       });
       return;
     }

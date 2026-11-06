@@ -87,10 +87,15 @@ class FakeCatalog:
         return [TEAMS[int(t)] for t in team_ids if int(t) in TEAMS]
 
     def grayzone_areas(self):
-        return [{"id": "旅团商道", "title": "旅团商道", "stage_count": 1,
-                 "team_count": 1, "species_count": 1}]
+        return {
+            "regions": [{"id": "sand", "title": "沙尘带", "groups": [1],
+                         "stage_count": 1, "team_count": 1, "species_count": 1,
+                         "source": "daily_mission_difficulty_group-10000001"}],
+            "areas": [{"id": "旅团商道", "title": "旅团商道", "region_ids": ["sand"],
+                       "stage_count": 1, "team_count": 1, "species_count": 1}],
+        }
 
-    def grayzone_teams(self, area, offset, limit, q="", power_min=None, power_max=None,
+    def grayzone_teams(self, area, region="", offset=0, limit=60, q="", power_min=None, power_max=None,
                        power_known=None, sort="default"):
         items = [TEAMS[101]] if not q else []
         if power_known:

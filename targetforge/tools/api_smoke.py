@@ -83,7 +83,7 @@ def wait_ready(base: str, timeout: float = 240.0) -> dict:
 
 def run_checks(base: str, health: dict) -> None:
     check("health 200", bool(health.get("ok")), "")
-    check("version 1.6.x", str(health.get("version", "")).startswith("1.6"), str(health.get("version")))
+    check("version 1.7.x", str(health.get("version", "")).startswith("1.7"), str(health.get("version")))
     check("health.data_dir", bool(health.get("data_dir")), "")
     status, meta = get(base, "/api/meta")
     counts = (meta or {}).get("counts") or {}
@@ -110,12 +110,19 @@ def run_checks(base: str, health: dict) -> None:
     check("自画像章节存在/可搜", any("自画像" in t for t in titles) or bool(found_self),
           f"titles_hit={[t for t in titles if '自画像' in t][:3]} search={len(found_self)}")
 
-    # 灰域 14 区域
+    # 灰域：5 区域 + 14 地点
     status, areas = get(base, "/api/grayzone/areas")
     area_list = (areas or {}).get("areas") or []
-    check("灰域 14 区域", len(area_list) == 14, str([a.get("id") for a in area_list]))
+    region_list = (areas or {}).get("regions") or []
+    check("灰域 14 地点", len(area_list) == 14, str([a.get("id") for a in area_list]))
+    check("灰域 5 区域", len(region_list) == 5, str([(r.get("id"), r.get("title")) for r in region_list]))
+    region_titles = [r.get("title") for r in region_list]
+    check("灰域区域名", all(n in region_titles for n in ("沙尘带", "风暴带", "硅状带", "结晶带")), str(region_titles))
     names = [a.get("id") for a in area_list]
     check("灰域含 庇护所旧址/坍缩狭缝", "庇护所旧址" in names and "坍缩狭缝" in names, str(names))
+    status, gz_crystal = get(base, "/api/grayzone/teams?region=" + urllib.parse.quote("结晶带") + "&limit=1")
+    check("灰域 region 筛选（结晶带 789）", (gz_crystal or {}).get("total") == 789,
+          str((gz_crystal or {}).get("total")))
 
     # 物种：灰域过滤 66 含法官
     status, gray_species = get(base, "/api/species?category=grayzone&limit=200")

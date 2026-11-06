@@ -127,7 +127,7 @@ function chapterCardHtml({ chapter, group, index }) {
             ? '<span class="badge cyan mono">特殊作战</span>'
             : "";
   const subtitle = chapter.subtitle
-    || (isGray ? `${areaCount} 个区域` : isOrphan ? "没有固定关卡的可收藏队伍" : isScore ? "积分关卡 · 效能非 0" : "点击查看关卡列表");
+    || (isGray ? `${areaCount} 个地点` : isOrphan ? "没有固定关卡的可收藏队伍" : isScore ? "积分关卡 · 效能非 0" : "点击查看关卡列表");
   return `
     <button class="chapter-card ${isGray ? "grayzone" : ""} ${isOrphan ? "orphan" : ""} ${isScore ? "score" : ""}" type="button" data-chapter-detail="${esc(chapter.id)}"${chapterSettlementHint(chapter) ? ` title="${esc(chapterSettlementHint(chapter))}"` : ""}>
       <div class="cc-top">

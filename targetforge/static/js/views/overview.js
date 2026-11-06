@@ -162,7 +162,7 @@ export async function render(root, options = {}) {
     { label: "关卡", icon: "flag", value: catalogState === "ready" ? fmtNum(counts.stages) : "…", sub: "含活动 / 复刻 / 教学" },
     { label: "收藏队伍", icon: "users", value: catalogState === "ready" ? fmtNum(counts.teams) : "…", sub: "仅可收藏队伍" },
     { label: "图鉴怪种", icon: "crosshair", value: catalogState === "ready" ? fmtNum(counts.species) : "…", sub: "含灰域 / 无固定关卡" },
-    { label: "灰域区域", icon: "radar", value: fmtNum(grayAreas), sub: "按区域分页浏览", accent: "cyan" },
+    { label: "灰域地点", icon: "map", value: fmtNum(grayAreas), sub: "区域内的地点，不是区域", accent: "cyan" },
     { label: "当前靶机", icon: "target", value: currentTargets.length ? `${currentTargets.length}` : "0", sub: `上限 35 · ${current?.uid ? `uid ${current.uid}` : "未抓取"}` },
   ];
 
@@ -198,7 +198,7 @@ export async function render(root, options = {}) {
           <div class="hero-stat"><b>${fmtNum(counts.stages || 0)}</b><span>关卡</span></div>
           <div class="hero-stat"><b>${fmtNum(counts.teams || 0)}</b><span>可收藏队伍</span></div>
           <div class="hero-stat"><b class="cyan">${fmtNum(counts.species || 0)}</b><span>图鉴怪种</span></div>
-          <div class="hero-stat"><b>${grayAreas}</b><span>灰域区域</span></div>
+          <div class="hero-stat"><b>${grayAreas}</b><span>灰域地点</span></div>
         </div>
       </div>
       <div class="hero-right">
