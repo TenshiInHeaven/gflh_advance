@@ -14,7 +14,9 @@ v1.2 变化（用户实测反馈）
 1. **章节 7 组**：``main``（主线）/ ``event``（活动）/ ``score``（积分关卡）/
    ``tutorial``（教学）/ ``simulation``（模拟作战）/ ``grayzone``（灰域探查）/
    ``orphan``（无固定关卡）。往期复刻、特殊作战并入 event（用 subtitle/tags 标记）。
-   积分关卡 = campaign ∈ {-40401..-40405} 或活动/章节名里带「+」的 campaign。
+   积分关卡 = campaign ∈ {-40401..-40405} 强制；其余活动名含「+」的 campaign
+   必须**只有 1 个有可收藏队伍的 mission** 才算（4 关的 魔方行动+ 是常驻/复刻活动，
+   归 event 组并用「往期复刻」标记）。
 2. **灰域 14 个区域**：区域名直接取 client_text 的 mission 标题前缀
    （去掉尾部 ``-I/II`` 编号和空格），包含 庇护所旧址 / 坍缩狭缝。
 3. **怪种分类改为非互斥 flag**：``has_normal`` / ``has_grayzone`` / ``has_orphan``
@@ -600,13 +602,16 @@ def _build_payload() -> dict:
             "chapter_name": _clean_text(text.get(str(row.get("chapter_name") or ""), "")),
             "tag": _clean_text(text.get(str(row.get("tag") or ""), "")),
         }
-    score_campaigns: set[int] = set(SCORE_SPECIAL_CAMPAIGNS)
+    # 含「+」的活动 campaign 候选：是否算积分关卡还要看该 campaign 有几个
+    # 有可收藏队伍的 mission（见 mission_teams 构建后的判定）——4 关的
+    # 魔方行动+（campaign -6/-7）是常驻/复刻活动，不是积分关卡。
+    plus_campaigns: set[int] = set()
     for campaign, activity in campaign_to_act.items():
         if _has_plus(activity.get("chapter_name")):
-            score_campaigns.add(campaign)
+            plus_campaigns.add(campaign)
     for campaign, event_name in campaign_to_event.items():
         if _has_plus(event_name):
-            score_campaigns.add(campaign)
+            plus_campaigns.add(campaign)
 
     # ---- 可收藏有效队伍 -------------------------------------------------
     collectable: set[int] = {
@@ -633,6 +638,20 @@ def _build_payload() -> dict:
             if team_id in collectable:
                 mission_teams[mission_id].add(team_id)
                 team_missions[team_id].add(mission_id)
+
+    # ---- 积分关卡判定（必须在 mission_teams 之后） ----------------------
+    # 1) campaign ∈ {-40401..-40405} → 强制积分关卡（可 1~9 关）；
+    # 2) 其余活动名含「+」且该 campaign **只有 1 个有可收藏队伍的 mission** → 积分关卡；
+    #    多关的「+」活动（如 魔方行动+ campaign -6/-7，4 关）是常驻/复刻活动，回 event 组。
+    campaign_mission_counts: Counter = Counter()
+    for mission_id in mission_teams:
+        mission = missions.get(mission_id)
+        if mission is not None:
+            campaign_mission_counts[_int(mission.get("campaign"))] += 1
+    score_campaigns: set[int] = set(SCORE_SPECIAL_CAMPAIGNS)
+    for campaign in plus_campaigns:
+        if campaign_mission_counts.get(campaign, 0) == 1:
+            score_campaigns.add(campaign)
 
     # ---- 关卡归类 → 章节骨架（每个 campaign 一章，不跨 campaign 合并） --
     gray_stage_ids: list[int] = []
@@ -1010,6 +1029,13 @@ def _build_payload() -> dict:
                 kind = "rerun"
                 title = event_name or first_title
                 subtitle = f"往期复刻 · 第{campaign}章"
+                tags = ["往期复刻"]
+            elif campaign is not None and campaign in plus_campaigns:
+                # 多关的「+」活动（如 魔方行动+ -6/-7）：常驻/复刻活动，不是积分关卡
+                kind = "rerun"
+                title = chapter_name or event_name or first_title
+                parent = activity_name or event_name
+                subtitle = f"{parent} · 往期复刻" if parent else "往期复刻"
                 tags = ["往期复刻"]
             elif activity or event_name:
                 title = chapter_name or event_name or first_title

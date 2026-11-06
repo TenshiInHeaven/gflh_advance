@@ -39,9 +39,9 @@ EXPECT_CHAPTERS = 112
 
 GROUP_ORDER = ["main", "event", "score", "tutorial", "simulation", "grayzone", "orphan"]
 GROUP_TITLES = ["主线", "活动", "积分关卡", "教学", "模拟作战", "灰域探查", "无固定关卡"]
-EXPECT_GROUP_CHAPTERS = {"main": 14, "event": 72, "score": 17, "tutorial": 6,
+EXPECT_GROUP_CHAPTERS = {"main": 14, "event": 74, "score": 15, "tutorial": 6,
                          "simulation": 1, "grayzone": 1, "orphan": 1}
-EXPECT_GROUP_STAGES = {"main": 140, "event": 835, "score": 33, "tutorial": 40,
+EXPECT_GROUP_STAGES = {"main": 140, "event": 843, "score": 25, "tutorial": 40,
                        "simulation": 9, "grayzone": 1288, "orphan": 0}
 
 GRAY_AREAS = ["共生净土", "晶团挖掘点", "旅团商道", "放射区", "人形复制工厂",
@@ -155,12 +155,36 @@ class CatalogDataTest(unittest.TestCase):
                  if chapter["kind"] == "rerun"]
         special = [chapter for chapter in self.groups["event"]["chapters"]
                    if chapter["kind"] == "special"]
-        self.assertEqual(len(rerun), 10)
+        # 10 个 id>=90000 的往期活动复刻 + 2 个多关「+」复刻活动（魔方行动/盲拆法则）
+        self.assertEqual(len(rerun), 12)
         self.assertEqual(len(special), 15)
         self.assertTrue(all("往期复刻" in chapter["subtitle"] for chapter in rerun))
         self.assertTrue(all("特殊作战" in chapter["subtitle"] for chapter in special))
         self.assertTrue(all("往期复刻" in chapter["tags"] for chapter in rerun))
         self.assertTrue(all("特殊作战" in chapter["tags"] for chapter in special))
+
+    def test_mofang_activity_is_not_score(self):
+        """用户实测：EP 5.5 魔方行动（4 关）是常驻/复刻活动，不是积分关卡。"""
+        score_titles = [chapter["title"] for chapter in self.groups["score"]["chapters"]]
+        self.assertNotIn("魔方行动", score_titles)
+        self.assertNotIn("盲拆法则", score_titles)
+        # 回 event 组，两章都带「往期复刻」标记，4 关一场
+        event = {chapter["id"]: chapter for chapter in self.groups["event"]["chapters"]}
+        mofang = event.get("event--6")
+        mangchai = event.get("event--7")
+        self.assertIsNotNone(mofang)
+        self.assertIsNotNone(mangchai)
+        self.assertEqual((mofang["title"], mangchai["title"]), ("魔方行动", "盲拆法则"))
+        for chapter in (mofang, mangchai):
+            self.assertEqual(chapter["category"], "event")
+            self.assertEqual(chapter["kind"], "rerun")
+            self.assertEqual(chapter["stage_count"], 4)
+            self.assertIn("往期复刻", chapter["subtitle"])
+            self.assertIn("魔方行动+", chapter["subtitle"])
+            self.assertIn("往期复刻", chapter["tags"])
+        # 搜索仍能命中这两章
+        self.assertTrue(self.catalog.search("魔方行动", limit=5)["stages"])
+        self.assertTrue(self.catalog.search("盲拆法则", limit=5)["stages"])
 
     def test_main_and_simulation(self):
         detail = self.catalog.chapter("main-1")
@@ -180,7 +204,7 @@ class CatalogDataTest(unittest.TestCase):
 
     def test_score_chapters(self):
         score = self.groups["score"]
-        self.assertEqual(len(score["chapters"]), 17)
+        self.assertEqual(len(score["chapters"]), 15)
         for chapter in score["chapters"]:
             self.assertEqual(chapter["category"], "score")
             self.assertEqual(chapter["tags"], ["积分关卡"])
@@ -192,11 +216,14 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(portrait["stage_count"], 2)
         self.assertIn("慢休克", portrait["subtitle"])
         self.assertIn("积分关卡", portrait["subtitle"])
-        # 其它已确认命中的积分关卡
-        titles = [chapter["title"] for chapter in score["chapters"]]
-        for title in ("终焉花海+", "谜境守卫+", "贝蒂数", "逃亡圣咏",
-                      "从潘洛斯阶梯跃下", "铁雨礼赞"):
-            self.assertIn(title, titles)
+        # 积分关卡必须是「单关（或 -4040x 强制）」的 campaign：不是 4 关的魔方行动+
+        self.assertEqual({chapter["title"] for chapter in score["chapters"]}, {
+            "终焉花海+", "谜境守卫+", "混沌落幕+", "噩梦迷城+", "驱雾行动+",
+            "秘密涡点+", "飓风营救+", "马蜂窝+", "虚数迷宫+", "坠入兔洞+",
+            "贝蒂数", "逃亡圣咏", "自画像", "从潘洛斯阶梯跃下", "铁雨礼赞",
+        })
+        self.assertNotIn("魔方行动", [chapter["title"] for chapter in score["chapters"]])
+        self.assertNotIn("盲拆法则", [chapter["title"] for chapter in score["chapters"]])
         # 搜索：自画像 / 积分关卡 / 慢休克 都能命中
         for query in ("自画像", "积分关卡", "慢休克"):
             result = self.catalog.search(query, limit=10)
