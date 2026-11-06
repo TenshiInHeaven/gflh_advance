@@ -14,9 +14,10 @@ v1.2 变化（用户实测反馈）
 1. **章节 7 组**：``main``（主线）/ ``event``（活动）/ ``score``（积分关卡）/
    ``tutorial``（教学）/ ``simulation``（模拟作战）/ ``grayzone``（灰域探查）/
    ``orphan``（无固定关卡）。往期复刻、特殊作战并入 event（用 subtitle/tags 标记）。
-   积分关卡 = campaign ∈ {-40401..-40405} 强制；其余活动名含「+」的 campaign
-   必须**只有 1 个有可收藏队伍的 mission** 才算（4 关的 魔方行动+ 是常驻/复刻活动，
-   归 event 组并用「往期复刻」标记）。
+   积分关卡是 **mission 级**：``mission.event_score`` 非空即积分关卡（权威字段）。
+   同一 campaign 里只有部分任务是积分关卡时会拆成 score 章 + event 章（如
+    思域迷航 -61：禁止喂食/禁止喂食EX 进 score，其余 20 关留在 event）；全积分
+    campaign（贝蒂数、终焉花海+、自画像、-77 静默沙盘…）只生成 score 章。
 2. **灰域 14 个区域**：区域名直接取 client_text 的 mission 标题前缀
    （去掉尾部 ``-I/II`` 编号和空格），包含 庇护所旧址 / 坍缩狭缝。
 3. **怪种分类改为非互斥 flag**：``has_normal`` / ``has_grayzone`` / ``has_orphan``
@@ -114,7 +115,8 @@ GROUP_TAGS = {
     "orphan": ["无固定关卡"],
 }
 
-#: 固定属于「积分关卡」的 campaign（用户实测：贝蒂数/逃亡圣咏/自画像/从潘洛斯阶梯跃下/铁雨礼赞）
+#: -4040x 积分关卡的标题优先用 mission_event.event_name
+#: （例如 -40403 的章节名是「慢休克」，但积分关卡名是「自画像」）
 SCORE_SPECIAL_CAMPAIGNS: frozenset[int] = frozenset({-40401, -40402, -40403, -40404, -40405})
 
 #: 模拟作战的固定 mission id 段（1104..1106 的 map_res 是 OPS5_Y，1701..1745 是靶场系列）
@@ -505,11 +507,12 @@ def _classify_mission(
     mid: int,
     mission: dict,
     *,
-    score_campaigns: set[int],
+    score_mission_ids: set[int],
 ) -> tuple[str | None, str | None]:
     """返回 ``(category, chapter_id)``；None 表示该关卡不产生章节。
 
-    活动/积分关卡按 campaign 一章（不跨 campaign 合并），章节标题在聚合阶段补。
+    积分关卡 = ``mission.event_score`` 非空的 mission（mission 级，见任务 v1.4）；
+    同一 campaign 的其它任务仍归 event 章节，全积分 campaign 只生成 score 章节。
     """
     campaign = _int(mission.get("campaign"))
     map_res = str(mission.get("map_res_name") or "")
@@ -526,8 +529,8 @@ def _classify_mission(
     # 4. 主线：campaign 0..13、id < 90000、非模拟作战地图
     if 0 <= campaign <= 13 and mid < 90000 and not map_res.startswith("Moni"):
         return ("main", f"main-{campaign}")
-    # 5. 积分关卡
-    if campaign in score_campaigns:
+    # 5. 积分关卡：mission.event_score 非空（mission 级判定）
+    if mid in score_mission_ids:
         return ("score", f"score-{campaign}")
     # 6. 其余全部并入活动（往期复刻 / 特殊作战 也在这里，靠 subtitle/tags 区分）
     return ("event", f"event-{campaign}")
@@ -602,9 +605,8 @@ def _build_payload() -> dict:
             "chapter_name": _clean_text(text.get(str(row.get("chapter_name") or ""), "")),
             "tag": _clean_text(text.get(str(row.get("tag") or ""), "")),
         }
-    # 含「+」的活动 campaign 候选：是否算积分关卡还要看该 campaign 有几个
-    # 有可收藏队伍的 mission（见 mission_teams 构建后的判定）——4 关的
-    # 魔方行动+（campaign -6/-7）是常驻/复刻活动，不是积分关卡。
+    # 含「+」的活动 campaign（用于 event 章节的「往期复刻」标记，如 魔方行动+ -6/-7；
+    # 是否积分关卡由 mission.event_score 决定，见 mission_teams 构建后的判定）
     plus_campaigns: set[int] = set()
     for campaign, activity in campaign_to_act.items():
         if _has_plus(activity.get("chapter_name")):
@@ -639,19 +641,22 @@ def _build_payload() -> dict:
                 mission_teams[mission_id].add(team_id)
                 team_missions[team_id].add(mission_id)
 
-    # ---- 积分关卡判定（必须在 mission_teams 之后） ----------------------
-    # 1) campaign ∈ {-40401..-40405} → 强制积分关卡（可 1~9 关）；
-    # 2) 其余活动名含「+」且该 campaign **只有 1 个有可收藏队伍的 mission** → 积分关卡；
-    #    多关的「+」活动（如 魔方行动+ campaign -6/-7，4 关）是常驻/复刻活动，回 event 组。
-    campaign_mission_counts: Counter = Counter()
+    # ---- 积分关卡判定（权威字段：mission.event_score 非空，mission 级） ----
+    # 用户实测：积分关卡是 mission 级而不是 campaign 级。
+    # 只有 event_score 非空、且该 mission 有可收藏队伍、且不是灰域的任务才算积分关卡；
+    # 同一 campaign 的其它任务仍留在 event 章节（混合活动会拆成 event+score 两章）。
+    score_mission_ids: set[int] = set()
     for mission_id in mission_teams:
         mission = missions.get(mission_id)
-        if mission is not None:
-            campaign_mission_counts[_int(mission.get("campaign"))] += 1
-    score_campaigns: set[int] = set(SCORE_SPECIAL_CAMPAIGNS)
-    for campaign in plus_campaigns:
-        if campaign_mission_counts.get(campaign, 0) == 1:
-            score_campaigns.add(campaign)
+        if mission is None:
+            continue
+        if _int(mission.get("campaign")) == -404:
+            continue
+        if str(mission.get("event_score") or "").strip():
+            score_mission_ids.add(mission_id)
+    score_campaigns: set[int] = {
+        _int((missions.get(mid) or {}).get("campaign")) for mid in score_mission_ids
+    }
 
     # ---- 关卡归类 → 章节骨架（每个 campaign 一章，不跨 campaign 合并） --
     gray_stage_ids: list[int] = []
@@ -675,7 +680,7 @@ def _build_payload() -> dict:
             mid_chapter[mission_id] = "event-unknown"
             continue
         category, chapter_id = _classify_mission(
-            mission_id, mission, score_campaigns=score_campaigns)
+            mission_id, mission, score_mission_ids=score_mission_ids)
         if category is None:
             continue
         campaign = _int(mission.get("campaign"))
@@ -1009,12 +1014,16 @@ def _build_payload() -> dict:
         elif category == "simulation":
             title = "模拟作战·靶场"
         elif category == "score":
+            kind = "score"
             if campaign in SCORE_SPECIAL_CAMPAIGNS:
                 # -404xx：章节名可能被大活动名占用（-40403 = 慢休克 / 自画像），优先 event_name
-                title = event_name or chapter_name or first_title or f"积分关卡 {campaign}"
+                base_title = event_name or chapter_name or first_title or f"积分关卡 {campaign}"
             else:
-                # 带「+」的积分关卡：优先活动内章节名（如 终焉花海+ / 混沌落幕+）
-                title = chapter_name or event_name or first_title
+                # 其它积分关卡：优先活动内章节名（如 终焉花海+ / 混沌落幕+ / 思域迷航）
+                base_title = chapter_name or event_name or first_title
+            # 混合活动（同 campaign 还有非积分关卡任务）会同时存在 event 章，标题加后缀区分
+            mixed = campaign is not None and f"event-{campaign}" in chapters
+            title = f"{base_title} · 积分关卡" if mixed and base_title else base_title
             parent = activity_name or event_name
             subtitle = f"{parent} · 积分关卡" if parent else "积分关卡"
             tags = ["积分关卡"]

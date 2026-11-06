@@ -4,12 +4,12 @@
 
     python -m unittest targetforge.tests.test_catalog -v
 
-覆盖任务验收点（task-7）：
-* 章节 7 组（main/event/score/tutorial/simulation/grayzone/orphan），活动/往期复刻/
-  特殊作战合并进 event，积分关卡独立成组，自画像可搜；
+覆盖任务验收点（task-11）：
+* 章节 7 组（main/event/score/tutorial/simulation/grayzone/orphan）；活动/往期复刻/
+  特殊作战合并进 event；积分关卡按 **mission.event_score**（mission 级）拆章：
+  混合活动（思域迷航）拆成 event+score 两章，全积分 campaign 只有 score 章；
 * 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
-* 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2），灰域过滤含
-  法官（灰域Boss）变体；
+* 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
 * 队伍/物种列表分页；species() 无参仍返回全量 teams（app.py 兼容）；
 * 小怪图标：icon 字段（species / team_summary.species / detail members）+ 覆盖率；
@@ -35,14 +35,26 @@ EXPECT_TEAMS = 13700
 EXPECT_SPECIES = 264
 EXPECT_STAGES = 2345
 EXPECT_MISSIONS_IN_TABLE = 3986
-EXPECT_CHAPTERS = 112
+EXPECT_CHAPTERS = 121
 
 GROUP_ORDER = ["main", "event", "score", "tutorial", "simulation", "grayzone", "orphan"]
 GROUP_TITLES = ["主线", "活动", "积分关卡", "教学", "模拟作战", "灰域探查", "无固定关卡"]
-EXPECT_GROUP_CHAPTERS = {"main": 14, "event": 74, "score": 15, "tutorial": 6,
+EXPECT_GROUP_CHAPTERS = {"main": 14, "event": 73, "score": 25, "tutorial": 6,
                          "simulation": 1, "grayzone": 1, "orphan": 1}
-EXPECT_GROUP_STAGES = {"main": 140, "event": 843, "score": 25, "tutorial": 40,
+EXPECT_GROUP_STAGES = {"main": 140, "event": 815, "score": 53, "tutorial": 40,
                        "simulation": 9, "grayzone": 1288, "orphan": 0}
+#: mission.event_score 非空且有可收藏队伍的积分关卡
+EXPECT_SCORE_STAGES = 53
+EXPECT_SCORE_CHAPTERS = 25
+#: v1.4 期望的 score 章节标题（15 个全积分 campaign + 8 个混合活动的「· 积分关卡」章 + 静默沙盘）
+EXPECT_SCORE_TITLES = {
+    "终焉花海+", "谜境守卫+", "混沌落幕+", "噩梦迷城+", "驱雾行动+", "秘密涡点+",
+    "飓风营救+", "马蜂窝+", "虚数迷宫+", "坠入兔洞+", "贝蒂数", "逃亡圣咏",
+    "自画像", "从潘洛斯阶梯跃下", "铁雨礼赞", "静默沙盘",
+    "思域迷航 · 积分关卡", "迷笼猜想 · 积分关卡", "里坎禁猎区 · 积分关卡",
+    "静风点 · 积分关卡", "熵减焓增 · 积分关卡", "镜像论 · 积分关卡",
+    "双联乱数 · 积分关卡", "偏振光 · 积分关卡", "裂变链接 · 积分关卡",
+}
 
 GRAY_AREAS = ["共生净土", "晶团挖掘点", "旅团商道", "放射区", "人形复制工厂",
               "废弃居民区", "秘密通道", "图腾圣所", "装甲突击", "交易地",
@@ -203,33 +215,75 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(self.catalog.stage(1104)["stage"]["chapter_id"], "simulation")
 
     def test_score_chapters(self):
+        """score 是 mission.event_score 判定（mission 级）：25 章 / 53 关。"""
         score = self.groups["score"]
-        self.assertEqual(len(score["chapters"]), 15)
+        self.assertEqual(len(score["chapters"]), EXPECT_SCORE_CHAPTERS)
+        self.assertEqual(sum(chapter["stage_count"] for chapter in score["chapters"]),
+                         EXPECT_SCORE_STAGES)
         for chapter in score["chapters"]:
             self.assertEqual(chapter["category"], "score")
+            self.assertEqual(chapter["kind"], "score")
             self.assertEqual(chapter["tags"], ["积分关卡"])
             self.assertIn("积分关卡", chapter["subtitle"])
-        # 自画像：标题=自画像，parent 慢休克（-40403）
+        # 标题集合：全积分 campaign + 混合活动的「· 积分关卡」章
+        self.assertEqual({chapter["title"] for chapter in score["chapters"]},
+                         EXPECT_SCORE_TITLES)
+        # 自画像：标题=自画像，parent 慢休克（-40403，全部任务都是积分关卡）
         portrait = next((chapter for chapter in score["chapters"]
                          if chapter["title"] == "自画像"), None)
-        self.assertIsNotNone(portrait, [c["title"] for c in score["chapters"]])
+        self.assertIsNotNone(portrait)
         self.assertEqual(portrait["stage_count"], 2)
         self.assertIn("慢休克", portrait["subtitle"])
-        self.assertIn("积分关卡", portrait["subtitle"])
-        # 积分关卡必须是「单关（或 -4040x 强制）」的 campaign：不是 4 关的魔方行动+
-        self.assertEqual({chapter["title"] for chapter in score["chapters"]}, {
-            "终焉花海+", "谜境守卫+", "混沌落幕+", "噩梦迷城+", "驱雾行动+",
-            "秘密涡点+", "飓风营救+", "马蜂窝+", "虚数迷宫+", "坠入兔洞+",
-            "贝蒂数", "逃亡圣咏", "自画像", "从潘洛斯阶梯跃下", "铁雨礼赞",
-        })
-        self.assertNotIn("魔方行动", [chapter["title"] for chapter in score["chapters"]])
-        self.assertNotIn("盲拆法则", [chapter["title"] for chapter in score["chapters"]])
-        # 搜索：自画像 / 积分关卡 / 慢休克 都能命中
-        for query in ("自画像", "积分关卡", "慢休克"):
+        # 贝蒂数：9 关全部 event_score，含 三维流形 G-1..S-2
+        beiti = self.catalog.chapter("score--40401")
+        self.assertIsNotNone(beiti)
+        self.assertEqual(beiti["chapter"]["stage_count"], 9)
+        beiti_titles = [stage["title"] for stage in beiti["stages"]]
+        self.assertIn("三维流形G-1", beiti_titles)
+        self.assertIn("三维流形S-2", beiti_titles)
+        # 搜索：自画像 / 积分关卡 / 三维流形 / 禁止喂食EX 都能命中 score 关卡
+        for query in ("自画像", "积分关卡", "三维流形", "禁止喂食EX"):
             result = self.catalog.search(query, limit=10)
             self.assertTrue(result["stages"], f"搜索 {query!r} 没有结果")
-        result = self.catalog.search("自画像")
-        self.assertTrue(any(stage["chapter_title"] == "自画像" for stage in result["stages"]))
+        portrait_hits = self.catalog.search("自画像")["stages"]
+        self.assertTrue(any(stage["chapter_title"] == "自画像" for stage in portrait_hits))
+        weidu = self.catalog.search("三维流形")["stages"]
+        self.assertTrue(any(stage["chapter_title"] == "贝蒂数" for stage in weidu))
+
+    def test_event_score_mission_split(self):
+        """混合活动拆章：思域迷航(-61) 2 关进 score，其余 20 关留在 event。"""
+        score = {chapter["id"]: chapter for chapter in self.groups["score"]["chapters"]}
+        event = {chapter["id"]: chapter for chapter in self.groups["event"]["chapters"]}
+        # 思域迷航：score 只含 禁止喂食 / 禁止喂食EX
+        score_chapter = self.catalog.chapter("score--61")
+        self.assertIsNotNone(score_chapter)
+        self.assertEqual(score_chapter["chapter"]["stage_count"], 2)
+        self.assertEqual(sorted(stage["title"] for stage in score_chapter["stages"]),
+                         ["禁止喂食", "禁止喂食EX"])
+        self.assertEqual({stage["id"] for stage in score_chapter["stages"]},
+                         {11445, 11458})
+        self.assertIn("思域迷航", score_chapter["chapter"]["title"])
+        # 同 campaign 的 event 章保留其余 20 关且不含积分关卡任务
+        event_chapter = self.catalog.chapter("event--61")
+        self.assertIsNotNone(event_chapter)
+        self.assertEqual(event_chapter["chapter"]["stage_count"], 20)
+        event_ids = {stage["id"] for stage in event_chapter["stages"]}
+        self.assertFalse(event_ids & {11445, 11458})
+        # 全积分 campaign 不再生成 event 章（贝蒂数 / 终焉花海+ / 静默沙盘）
+        for campaign in (-40401, -55, -77):
+            self.assertNotIn(f"event-{campaign}", event)
+            self.assertIn(f"score-{campaign}", score)
+        # 全局：score 关卡与 event 关卡集合不重叠
+        score_stage_ids = {stage["id"] for chapter in score.values()
+                           for stage in self.catalog.chapter(chapter["id"])["stages"]}
+        event_stage_ids = {stage["id"] for chapter in event.values()
+                           for stage in self.catalog.chapter(chapter["id"])["stages"]}
+        self.assertEqual(len(score_stage_ids), EXPECT_SCORE_STAGES)
+        self.assertFalse(score_stage_ids & event_stage_ids)
+        # 普通 EX 无 event_score 的不算积分关卡；10365 终焉花海EX 有 event_score
+        self.assertIn(11451, event_stage_ids)       # 同频干扰EX（无 event_score）
+        self.assertNotIn(11451, score_stage_ids)
+        self.assertIn(10365, score_stage_ids)       # 终焉花海EX（有 event_score）
 
     # -- 灰域 14 区域 -------------------------------------------------
     def test_grayzone_areas(self):
