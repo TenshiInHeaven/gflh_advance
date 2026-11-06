@@ -1,5 +1,7 @@
 # 靶机工坊 TargetForge
 
+> 独立发布仓库：<https://github.com/TenshiInHeaven/gflh_advance>（`gflh_advance/targetforge/` 与本目录保持同步）
+
 基于仓库里的 GFLH「抓取靶机」能力做的本地可视化应用：在网页里挑关卡 / 挑怪种 / 看怪组数值 /
 编排靶机顺序，然后通过官方协议接口把队伍写进游戏「靶机专训 → 收藏标靶」（最多 35 个）。
 
