@@ -231,15 +231,26 @@ gflh_advance/
 完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
 安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
 
-## 相关项目
+## 致谢
 
-- [GFLH](https://github.com/MaaGF1/GFLH) / [ZIRC](https://github.com/MaaGF1/ZIRC) —— 社区 GFL 协议库（`gflzirc`），本项目的注入与抓包基于它。
-- **GF Forge** —— 本项目的配套主仓库（数据层来源）；自 v1.9.0 起本仓库已内置所需精简数据层，无需单独安装。
+- **GFLH**：感谢 **MaaGF1** 及所有贡献者。本项目的登录抓取与收藏标靶注入流程建立在
+  [GFLH](https://github.com/MaaGF1/GFLH) 的协议与思路上。
+- **ZIRC / gflzirc**：感谢 **MaaGF1** 与 ZIRC 贡献者；`gflzirc` 以 **MIT** 发布，
+  是本项目与游戏接口、本地抓包交互的基础。
+- **GF Forge**：感谢数据层与靶机编号规划的上游工作；自 v1.9.0 起其精简子集已内置在本仓库。
+- 也感谢 Python、requests、urllib3、charset-normalizer、idna、certifi、UnityPy、Pillow、Playwright
+  等开源项目的作者与维护者。
+
+完整的上游项目、依赖许可证与 MIT 合规说明见 **[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)**。
+MIT 允许自由使用/修改/再分发，但请保留原作者版权与许可声明。
 
 ---
 
 ## 许可证
 
 [MIT License](LICENSE)
+
+第三方组件（尤其以 MIT 发布的 `gflzirc` / GFLH 相关上游）保留原有版权与许可；完整列表与合规说明见
+[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
 
 本项目与《少女前线》开发 / 运营方无关，不包含任何游戏素材。
