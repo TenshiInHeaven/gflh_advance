@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -362,6 +364,341 @@ class HttpRoutesTest(AppTestBase):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(self.base + "/api/icons/..%2Fstate.json", timeout=10)
         self.assertIn(ctx.exception.code, (403, 404))
+
+
+# ---------------------------------------------------------------------------
+# 游戏客户端目录（v1.9，gamepath）
+# ---------------------------------------------------------------------------
+def make_game_dir(root: Path, *, exe: bool = True, data: bool = True,
+                  stc: bool = True) -> Path:
+    """构造假的少前客户端目录树。"""
+    root.mkdir(parents=True, exist_ok=True)
+    if exe:
+        (root / "GrilsFrontLine.exe").write_bytes(b"fake-exe")
+    if data:
+        res_dir = root / "GrilsFrontLine_Data" / "StreamingAssets" / "Res" / "Pc"
+        res_dir.mkdir(parents=True, exist_ok=True)
+        if stc:
+            stc_dir = res_dir / "stc"
+            stc_dir.mkdir(parents=True, exist_ok=True)
+            (stc_dir / "catchdata.dat").write_bytes(b"fake")
+    return root
+
+
+class GamePathUnitTest(unittest.TestCase):
+    """gamepath.validate/apply/bootstrap/status/pick 的单元测试（不弹窗）。"""
+
+    def setUp(self):
+        from targetforge import gamepath as gamepath_module
+        self.gamepath = gamepath_module
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.tmp_path = Path(self.tmp.name)
+        self.local_paths = self.tmp_path / "local_paths.json"
+        patch = mock.patch.object(self.gamepath, "LOCAL_PATHS_FILE", self.local_paths)
+        patch.start()
+        self.addCleanup(patch.stop)
+        env_patch = mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        clear_patch = mock.patch.object(self.gamepath, "clear_game_caches", lambda: [])
+        clear_patch.start()
+        self.addCleanup(clear_patch.stop)
+        self.valid_dir = make_game_dir(self.tmp_path / "game")
+
+    def test_validate_cases(self):
+        self.assertEqual(self.gamepath.validate(""),
+                         (False, ["missing_path"]))
+        self.assertEqual(self.gamepath.validate(self.tmp_path / "nope"),
+                         (False, ["missing_dir"]))
+        empty = self.tmp_path / "empty"
+        empty.mkdir()
+        valid, missing = self.gamepath.validate(empty)
+        self.assertFalse(valid)
+        self.assertIn("missing_exe", missing)
+        self.assertIn("missing_data", missing)
+        exe_only = make_game_dir(self.tmp_path / "exe_only", data=False)
+        self.assertEqual(self.gamepath.validate(exe_only),
+                         (False, ["missing_data"]))
+        no_stc = make_game_dir(self.tmp_path / "no_stc", stc=False)
+        self.assertEqual(self.gamepath.validate(no_stc),
+                         (False, ["missing_stc"]))
+        # 大小写不敏感
+        upper = make_game_dir(self.tmp_path / "upper")
+        (upper / "GrilsFrontLine.exe").unlink()
+        (upper / "GRILSFRONTLINE.EXE").write_bytes(b"x")
+        self.assertEqual(self.gamepath.validate(upper), (True, []))
+        self.assertEqual(self.gamepath.validate(self.valid_dir), (True, []))
+        self.assertEqual(self.gamepath.missing_messages(["missing_exe"])[0],
+                         "未找到 GrilsFrontLine.exe")
+        self.assertIn("StreamingAssets", self.gamepath.describe_missing(["missing_stc"]))
+        self.assertTrue(self.gamepath.find_exe(self.valid_dir))
+        self.assertTrue(self.gamepath.find_stc_dir(self.valid_dir))
+
+    def test_apply_writes_local_paths_env(self):
+        result = self.gamepath.apply(self.valid_dir)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["path"], str(self.valid_dir.resolve()))
+        data = json.loads(self.local_paths.read_text(encoding="utf-8"))
+        self.assertEqual(data["gf1_game_root"], str(self.valid_dir.resolve()))
+        import os as _os
+        self.assertEqual(_os.environ.get("GF1_GAME_ROOT"), str(self.valid_dir.resolve()))
+        # 校验失败不写文件
+        bad = self.gamepath.apply(self.tmp_path / "nope")
+        self.assertFalse(bad["ok"])
+        self.assertIn("目录不存在", bad["error"])
+        self.assertIn("missing_dir", bad["missing_codes"])
+        # persist=False 也不写文件
+        self.local_paths.unlink()
+        result = self.gamepath.apply(self.valid_dir, persist=False)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["saved"])
+        self.assertFalse(self.local_paths.exists())
+
+    def test_bootstrap_priority(self):
+        valid = str(self.valid_dir)
+        # settings 优先级最高
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""}):
+            result = self.gamepath.bootstrap({"game_root": valid},
+                                             auto_detect=False)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source"], "settings")
+        # settings 无效、env 为空 → 自动检测关闭时失败
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""}):
+            result = self.gamepath.bootstrap({"game_root": str(self.tmp_path / "bad")},
+                                             auto_detect=False)
+        self.assertFalse(result["ok"])
+        # settings 无效 → 落到 env
+        env_valid = str(make_game_dir(self.tmp_path / "env_game"))
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": env_valid}):
+            result = self.gamepath.bootstrap({"game_root": ""}, auto_detect=False)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source"], "env")
+        # env 无效 → local_paths
+        local_valid = make_game_dir(self.tmp_path / "local_game")
+        self.local_paths.write_text(json.dumps(
+            {"gf1_game_root": str(local_valid)}), encoding="utf-8")
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": str(self.tmp_path / "bad")}):
+            result = self.gamepath.bootstrap({"game_root": ""}, auto_detect=False)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source"], "local_paths")
+        # 都无效 → 自动检测（不保存）
+        detected = make_game_dir(self.tmp_path / "detected_game")
+        self.local_paths.unlink()
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""}):
+            with mock.patch.object(self.gamepath, "detect_best",
+                                   lambda: {"path": str(detected),
+                                            "source": "process"}):
+                result = self.gamepath.bootstrap({"game_root": ""},
+                                                 auto_detect=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source"], "detected")
+        self.assertTrue(result["detected"])
+        self.assertFalse(result["saved"])
+        # 全部失败
+        with mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""}):
+            with mock.patch.object(self.gamepath, "detect_best", lambda: None):
+                result = self.gamepath.bootstrap({"game_root": ""},
+                                                 auto_detect=True)
+        self.assertFalse(result["ok"])
+        self.assertIn("未找到", result["error"])
+
+    def test_status_and_quick_mode(self):
+        valid = str(self.valid_dir)
+        status = self.gamepath.status({"game_root": valid}, include_detected=False,
+                                      include_process=False)
+        self.assertTrue(status["configured"])
+        self.assertTrue(status["valid"])
+        self.assertFalse(status["needs_setup"])
+        self.assertEqual(status["source"], "settings")
+        missing = self.gamepath.status(
+            {"game_root": str(self.tmp_path / "nope")},
+            include_detected=False, include_process=False)
+        self.assertFalse(missing["valid"])
+        self.assertTrue(missing["needs_setup"])
+        self.assertTrue(missing["missing"])
+        self.assertIn("目录不存在", missing["missing"][0])
+        empty = self.gamepath.status({}, include_detected=False, include_process=False)
+        self.assertFalse(empty["configured"])
+        self.assertFalse(empty["valid"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows only")
+    def test_pick_folder_cancel_timeout_and_success(self):
+        from types import SimpleNamespace
+        fake_ok = SimpleNamespace(stdout=b"C:\\Games\\GIRLS FRONTLINE\r\n")
+        with mock.patch.object(self.gamepath.subprocess, "run", return_value=fake_ok):
+            self.assertEqual(self.gamepath.pick_folder(timeout=1),
+                             "C:\\Games\\GIRLS FRONTLINE")
+        fake_empty = SimpleNamespace(stdout=b"")
+        with mock.patch.object(self.gamepath.subprocess, "run", return_value=fake_empty):
+            with self.assertRaises(self.gamepath.GamePathError) as ctx:
+                self.gamepath.pick_folder(timeout=1)
+            self.assertEqual(ctx.exception.message, "已取消")
+        with mock.patch.object(self.gamepath.subprocess, "run",
+                               side_effect=__import__("subprocess").TimeoutExpired(
+                                   "powershell", 1)):
+            with self.assertRaises(self.gamepath.GamePathError) as ctx:
+                self.gamepath.pick_folder(timeout=1)
+            self.assertEqual(ctx.exception.message, "选择目录超时")
+        with mock.patch.object(self.gamepath.subprocess, "run",
+                               side_effect=OSError("no desktop")):
+            with self.assertRaises(self.gamepath.GamePathError) as ctx:
+                self.gamepath.pick_folder(timeout=1)
+            self.assertIn("无法打开", ctx.exception.message)
+
+
+class GameRoutesTest(AppTestBase):
+    """GET /api/game/status 与 POST /api/game/{detect,pick,confirm}。"""
+
+    def setUp(self):
+        super().setUp()
+        from targetforge import gamepath as gamepath_module
+        self.gamepath = gamepath_module
+        self.game_dir = make_game_dir(self.tmp_path / "game")
+        self.bad_dir = self.tmp_path / "bad_game"
+        self.bad_dir.mkdir()
+        self.local_paths = self.tmp_path / "local_paths.json"
+        self.candidates = [
+            {"path": str(self.game_dir), "source": "process", "valid": True,
+             "missing": []},
+            {"path": str(self.bad_dir), "source": "steam", "valid": False,
+             "missing": ["missing_exe", "missing_data"]},
+        ]
+        extra = [
+            mock.patch.object(app, "_gamepath_module", lambda: self.gamepath),
+            mock.patch.object(self.gamepath, "LOCAL_PATHS_FILE", self.local_paths),
+            mock.patch.object(self.gamepath, "detect",
+                              lambda **kwargs: self.candidates),
+            mock.patch.object(self.gamepath, "detect_best",
+                              lambda: {"path": str(self.game_dir), "source": "process"}),
+            mock.patch.object(self.gamepath, "running_game_root",
+                              lambda: ("", "")),
+            mock.patch.object(self.gamepath, "clear_game_caches", lambda: []),
+        ]
+        for patch in extra:
+            patch.start()
+            self.addCleanup(patch.stop)
+        env_patch = mock.patch.dict("os.environ", {"GF1_GAME_ROOT": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        self.server.daemon_threads = True
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def request(self, method, path, payload=None, timeout=20):
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(self.base + path, data=data, method=method,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode())
+
+    def set_game_root(self, path: str) -> None:
+        state = app.state_load()
+        settings = state.get("settings") or {}
+        settings["game_root"] = path
+        settings["game_selected_at"] = "2026-11-07T00:00:00+08:00"
+        state["settings"] = settings
+        app.state_save(state)
+
+    def test_game_status(self):
+        status, payload = self.request("GET", "/api/game/status")
+        self.assertEqual(status, 200)
+        for key in ("configured", "path", "source", "exists", "valid", "missing",
+                    "game_running", "process_path", "detected", "catalog_ready",
+                    "needs_setup"):
+            self.assertIn(key, payload)
+        self.assertFalse(payload["valid"])
+        self.assertTrue(payload["needs_setup"])
+        self.assertEqual(payload["detected"]["path"], str(self.game_dir))
+        # 设置里有有效目录后 status.valid=True
+        self.set_game_root(str(self.game_dir))
+        status, payload = self.request("GET", "/api/game/status")
+        self.assertTrue(payload["configured"])
+        self.assertTrue(payload["valid"])
+        self.assertFalse(payload["needs_setup"])
+        self.assertEqual(payload["source"], "settings")
+        # health 带轻量 game_setup 摘要
+        status, health = self.request("GET", "/api/health")
+        self.assertIn("game_setup", health)
+        self.assertTrue(health["game_setup"]["valid"])
+
+    def test_game_confirm_errors(self):
+        status, payload = self.request("POST", "/api/game/confirm", {})
+        self.assertEqual(status, 400)
+        self.assertIn("缺少游戏目录路径", payload["error"])
+        self.assertIn("missing", payload)
+        # 目录不存在
+        status, payload = self.request("POST", "/api/game/confirm",
+                                       {"path": str(self.tmp_path / "nope")})
+        self.assertEqual(status, 400)
+        self.assertIn("目录不存在", payload["error"])
+        self.assertIn("missing", payload)
+        # 目录存在但没有 exe
+        empty = self.tmp_path / "only_dir"
+        empty.mkdir()
+        status, payload = self.request("POST", "/api/game/confirm",
+                                       {"path": str(empty)})
+        self.assertEqual(status, 400)
+        self.assertIn("GrilsFrontLine.exe", payload["error"])
+        self.assertIn("missing", payload)
+        # 有 exe 但没有 *_Data
+        exe_only = make_game_dir(self.tmp_path / "exe_only", data=False)
+        status, payload = self.request("POST", "/api/game/confirm",
+                                       {"path": str(exe_only)})
+        self.assertEqual(status, 400)
+        self.assertIn("*_Data", payload["error"])
+        # 有 *_Data 但没有 stc
+        no_stc = make_game_dir(self.tmp_path / "no_stc", stc=False)
+        status, payload = self.request("POST", "/api/game/confirm",
+                                       {"path": str(no_stc)})
+        self.assertEqual(status, 400)
+        self.assertIn("StreamingAssets", payload["error"])
+        self.assertIn("missing", payload)
+        self.assertFalse(self.local_paths.exists())  # 失败不写 local_paths
+
+    def test_game_confirm_success_and_settings(self):
+        status, payload = self.request("POST", "/api/game/confirm",
+                                       {"path": str(self.game_dir)})
+        self.assertEqual(status, 200, payload)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["status"]["valid"])
+        self.assertTrue(payload["status"]["configured"])
+        self.assertTrue(self.local_paths.is_file())
+        data = json.loads(self.local_paths.read_text(encoding="utf-8"))
+        self.assertEqual(data["gf1_game_root"], str(self.game_dir.resolve()))
+        settings = app.state_load()["settings"]
+        self.assertEqual(settings["game_root"], str(self.game_dir.resolve()))
+        self.assertTrue(settings["game_selected_at"])
+        status, settings_resp = self.request("POST", "/api/settings",
+                                             {"game_root": ""})
+        self.assertIn("game_root", settings_resp)
+
+    def test_game_detect_and_pick(self):
+        status, payload = self.request("POST", "/api/game/detect", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["detected"]["path"], str(self.game_dir))
+        self.assertGreaterEqual(len(payload["candidates"]), 1)
+        # pick 取消 → 400「已取消」
+        with mock.patch.object(self.gamepath, "pick_folder",
+                               side_effect=self.gamepath.GamePathError(
+                                   "已取消", hint="可重试", code="pick_cancelled")):
+            status, payload = self.request("POST", "/api/game/pick", {})
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "已取消")
+        # pick 成功 → {path}
+        with mock.patch.object(self.gamepath, "pick_folder",
+                               return_value=str(self.game_dir)):
+            status, payload = self.request("POST", "/api/game/pick", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["path"], str(self.game_dir))
 
 
 if __name__ == "__main__":

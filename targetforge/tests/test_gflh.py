@@ -308,7 +308,7 @@ class PlanTests(unittest.TestCase):
 class CurrentTargetsTests(TempPathsMixin, unittest.TestCase):
     def test_creds_source_pairs_enemies_orders(self):
         self.write_creds({
-            "uid": "100000001", "sign": "SECRET_SIGN",
+            "uid": "558472", "sign": "SECRET_SIGN",
             "base_url": "http://gf.example/index.php/1000/",
             "enemies": ["111", "222"], "orders": ["1", "2"],
             "captured_at": now_iso(),
@@ -316,7 +316,7 @@ class CurrentTargetsTests(TempPathsMixin, unittest.TestCase):
         result = gflh.current_targets("creds")
         self.assertEqual(result["source"], "creds")
         self.assertEqual(result["creds_file"], "creds_latest.json")
-        self.assertEqual(result["uid"], "100000001")
+        self.assertEqual(result["uid"], "558472")
         self.assertEqual(result["base_url"], "http://gf.example/index.php/1000/")
         self.assertEqual(pairs(result["targets"]), [(1, 111), (2, 222)])
         self.assertEqual(result["duplicate_orders"], {})
@@ -366,13 +366,13 @@ class CurrentTargetsTests(TempPathsMixin, unittest.TestCase):
     def test_state_source_when_no_creds(self):
         self.write_state({
             "targets": [{"order": 1, "team": 100}, {"order": 2, "team": 200}],
-            "uid": "100000001",
+            "uid": "558472",
             "base_url": "http://gf.example/index.php/1000/",
             "updated_at": now_iso(),
         })
         result = gflh.current_targets("auto")
         self.assertEqual(result["source"], "state")
-        self.assertEqual(result["uid"], "100000001")
+        self.assertEqual(result["uid"], "558472")
         self.assertEqual(pairs(result["targets"]), [(1, 100), (2, 200)])
         self.assertEqual(result["state_file"], "target_injection_state.json")
 
@@ -427,7 +427,7 @@ class CredsFileTests(TempPathsMixin, unittest.TestCase):
 
     def test_load_creds_file_copies_to_latest(self):
         source = self.write_creds(
-            {"uid": "100000001", "sign": "SIGN_X", "base_url": "http://gf.example/index.php/1000/",
+            {"uid": "558472", "sign": "SIGN_X", "base_url": "http://gf.example/index.php/1000/",
              "enemies": ["111", "222"], "orders": ["1", "2"],
              "captured_at": now_iso()},
             self.derived / "cn_creds_pick.json")
@@ -468,7 +468,7 @@ class ExecuteTests(TempPathsMixin, unittest.TestCase):
         self.pace = pace.start()
         self.addCleanup(pace.stop)
 
-    def _creds(self, enemies=(), orders=(), uid="100000001", sign="SECRET_SIGN"):
+    def _creds(self, enemies=(), orders=(), uid="558472", sign="SECRET_SIGN"):
         return {
             "uid": uid, "sign": sign,
             "base_url": "http://gf.example/index.php/1000/",
@@ -550,7 +550,7 @@ class ExecuteTests(TempPathsMixin, unittest.TestCase):
         self.assertEqual(self.pace.call_count, 2)
         state = self.read_state()
         self.assertEqual(pairs(state["targets"]), [(1, 300), (2, 400)])
-        self.assertEqual(state["uid"], "100000001")
+        self.assertEqual(state["uid"], "558472")
         self.assertTrue(result["restart_required"])
         self.assertTrue(any("新增收藏標靶1" in text for _level, text in logs))
 
@@ -701,9 +701,9 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
             # 登录流量：SYS_KEY_UPGRADE
             proxy.callback("SYS_KEY_UPGRADE",
                            "http://gf.example/index.php/1000/Index/getUidPC",
-                           {"uid": "100000001", "sign": "SECRET_SIGN"})
+                           {"uid": "558472", "sign": "SECRET_SIGN"})
             status = gflh.capture_status()
-            self.assertEqual(status["uid"], "100000001")
+            self.assertEqual(status["uid"], "558472")
             self.assertTrue(status["sign_set"])
             self.assertTrue(status["login_captured"])
             self.assertEqual(status["base_url"], "http://gf.example/index.php/1000/")
@@ -726,7 +726,7 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
         self.assertEqual(fake.set_proxy_calls[-1][0], False)
         self.assertTrue(status["creds_path"].endswith("creds_latest.json"))
         creds = json.loads(self.creds_file.read_text(encoding="utf-8"))
-        self.assertEqual(creds["uid"], "100000001")
+        self.assertEqual(creds["uid"], "558472")
         self.assertEqual(creds["sign"], "SECRET_SIGN")
         self.assertEqual(creds["base_url"], "http://gf.example/index.php/1000/")
         self.assertEqual(creds["enemies"], ["111", "222"])
@@ -991,7 +991,7 @@ class PortConfigTests(unittest.TestCase):
 class GameControlTests(unittest.TestCase):
     def test_player_status_running(self):
         # 系统代理读真实注册表值，不能受 CAPTURE_PORT/会话端口默认值影响
-        with mock.patch.object(gflh, "_game_pids", return_value=[12345]), \
+        with mock.patch.object(gflh, "_game_pids", return_value=[82816]), \
                 mock.patch.object(gflh, "_window_title", return_value="少女前线"), \
                 mock.patch.object(gflh, "_read_system_proxy",
                                   return_value="127.0.0.1:19999"), \
@@ -999,7 +999,7 @@ class GameControlTests(unittest.TestCase):
             status = gflh.player_status()
         self.assertEqual(status, {
             "game_running": True,
-            "pid": 12345,
+            "pid": 82816,
             "game_window_title": "少女前线",
             "system_proxy": "127.0.0.1:19999",
             "gflzirc_ok": True,
@@ -1018,9 +1018,9 @@ class GameControlTests(unittest.TestCase):
         title.assert_not_called()
 
     def test_parse_tasklist_pids(self):
-        text = ('"GrilsFrontLine.exe","12345","Console","1","12,345 K"\r\n'
+        text = ('"GrilsFrontLine.exe","82816","Console","1","12,345 K"\r\n'
                 '"other.exe","4242","Console","1","1,000 K"\r\n')
-        self.assertEqual(gflh._parse_tasklist_pids(text), [12345])
+        self.assertEqual(gflh._parse_tasklist_pids(text), [82816])
         self.assertEqual(gflh._parse_tasklist_pids("信息: 没有运行的任务匹配指定标准。"), [])
         self.assertEqual(gflh._parse_tasklist_pids(""), [])
 

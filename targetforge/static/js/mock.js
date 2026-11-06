@@ -929,7 +929,7 @@ function currentTargets(name = "creds_latest.json") {
   return {
     source: "creds",
     creds_file: name,
-    uid: "100000001",
+    uid: "558472",
     base_url: "http://gfcn-game.avocado.games",
     captured_at: "2026-11-06T17:58:12+08:00",
     targets: ids.map((teamId, index) => ({ order: index + 1, team: teamId })),
@@ -945,7 +945,7 @@ function credsList() {
       name: "creds_latest.json",
       path: "dataMiner/derived/targetforge/creds_latest.json",
       updated_at: "2026-11-06T17:58:12+08:00",
-      uid: "100000001",
+      uid: "558472",
       base_url: "http://gfcn-game.avocado.games",
       targets_count: 30,
     },
@@ -953,7 +953,7 @@ function credsList() {
       name: "creds_20261106_batch.json",
       path: "dataMiner/derived/targetforge/creds_20261106_batch.json",
       updated_at: "2026-11-06T16:32:08+08:00",
-      uid: "100000001",
+      uid: "558472",
       base_url: "http://gfcn-game.avocado.games",
       targets_count: 35,
     },
@@ -975,7 +975,7 @@ function playerStatus() {
   const port = state.capture?.port || state.settings.capture_port || 18080;
   return {
     game_running: true,
-    pid: 12345,
+    pid: 82816,
     game_window_title: "少女前线",
     system_proxy: state.capture?.proxy_active ? `127.0.0.1:${port}` : null,
     gflzirc_ok: true,
@@ -1019,7 +1019,7 @@ function captureStatus() {
     [1.4, "info", "等待游戏重新登录…"],
     [2.6, "warn", "检测到游戏进程已启动，等待 index/index 请求"],
     [4.0, "info", "捕获 index/index · 正在读取登录信息"],
-    [5.2, "info", "已拿到 uid=100000001"],
+    [5.2, "info", "已拿到 uid=558472"],
     [6.4, "info", "已拿到 sign（有效期至本次登录结束）"],
     [7.6, "info", "读取 targettrain_collect_user_info…"],
     [8.8, "info", "已抓到当前收藏标靶 30 条"],
@@ -1037,7 +1037,7 @@ function captureStatus() {
     proxy_active: cap.state === "running",
     system_proxy_on: cap.state === "running",
     auto_restore_proxy: true,
-    uid: elapsed >= 5.2 ? "100000001" : null,
+    uid: elapsed >= 5.2 ? "558472" : null,
     sign_set: elapsed >= 6.4,
     base_url: elapsed >= 5.2 ? "http://gfcn-game.avocado.games" : "",
     targets_count: elapsed >= 8.8 ? 30 : 0,
@@ -1204,7 +1204,7 @@ function previewPlan(body) {
 
 const JOB_SCRIPT = {
   append: [
-    [0.1, "info", "读取登录凭证 creds_latest.json（uid=100000001）"],
+    [0.1, "info", "读取登录凭证 creds_latest.json（uid=558472）"],
     [0.4, "info", "读取当前收藏标靶 30 条"],
     [0.8, "info", "追加模式：跳过已存在队伍，编号从 31 继续"],
     [1.3, "info", "发送 Targettrain/addCollect × 3"],
@@ -1215,7 +1215,7 @@ const JOB_SCRIPT = {
     [4.4, "done", "执行完成：删除 0 · 新增 3 · 失败 0"],
   ],
   replace: [
-    [0.1, "info", "读取登录凭证 creds_latest.json（uid=100000001）"],
+    [0.1, "info", "读取登录凭证 creds_latest.json（uid=558472）"],
     [0.4, "info", "读取当前收藏标靶 30 条"],
     [0.8, "info", "按序号替换：草稿 3 个 → 目标编号 1..3"],
     [1.2, "info", "发送 Targettrain/delCollect × 3（先删旧项）"],
@@ -1226,7 +1226,7 @@ const JOB_SCRIPT = {
     [4.4, "done", "执行完成：删除 3 · 新增 3 · 失败 0"],
   ],
   rebuild: [
-    [0.1, "info", "读取登录凭证 creds_latest.json（uid=100000001）"],
+    [0.1, "info", "读取登录凭证 creds_latest.json（uid=558472）"],
     [0.4, "warn", "清空重排：即将删除当前全部 30 条靶机"],
     [0.9, "info", "发送 Targettrain/delCollect × 30（按 order 倒序）"],
     [1.8, "info", "delCollect 30/30 完成"],
@@ -1237,7 +1237,7 @@ const JOB_SCRIPT = {
     [4.8, "done", "执行完成：删除 30 · 新增 3 · 失败 0"],
   ],
   clear: [
-    [0.1, "info", "读取登录凭证 creds_latest.json（uid=100000001）"],
+    [0.1, "info", "读取登录凭证 creds_latest.json（uid=558472）"],
     [0.5, "warn", "危险操作：清空当前全部收藏标靶"],
     [1.0, "info", "发送 Targettrain/delCollect × 30（按 order 倒序）"],
     [2.1, "info", "delCollect 30/30 完成"],
@@ -1343,6 +1343,41 @@ function ok(payload) {
   return payload;
 }
 
+const MOCK_GAME_PATH = "E:/Games/GirlsFrontline";
+
+function mockGameStatus() {
+  const forcedSetup =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("setup") === "1";
+  if (forcedSetup) {
+    return {
+      configured: false,
+      path: "",
+      source: "",
+      exists: false,
+      valid: false,
+      missing: ["目录不存在"],
+      game_running: false,
+      process_path: "",
+      detected: null,
+      catalog_ready: true,
+      needs_setup: true,
+    };
+  }
+  return {
+    configured: true,
+    path: MOCK_GAME_PATH,
+    source: "settings",
+    exists: true,
+    valid: true,
+    missing: [],
+    game_running: true,
+    process_path: `${MOCK_GAME_PATH}/GrilsFrontLine.exe`,
+    detected: { path: MOCK_GAME_PATH, source: "running" },
+    catalog_ready: true,
+    needs_setup: false,
+  };
+}
+
 export async function mockRequest(method, path, body = {}) {
   await sleep(70 + Math.floor(Math.random() * 80));
   const url = new URL(path, "http://mock.local");
@@ -1368,6 +1403,34 @@ export async function mockRequest(method, path, body = {}) {
       game: playerStatus(),
       data_dir: "dataMiner/derived/targetforge",
     });
+  }
+  if (route === "/api/game/status") {
+    return ok(mockGameStatus());
+  }
+  if (route === "/api/game/detect") {
+    return ok({
+      detected: { path: MOCK_GAME_PATH, source: "running" },
+      candidates: [
+        { path: MOCK_GAME_PATH, source: "running", valid: true },
+        { path: "E:/Games/NotGirlsFrontline", source: "steam", valid: false },
+      ],
+    });
+  }
+  if (route === "/api/game/pick") {
+    return ok({ path: MOCK_GAME_PATH });
+  }
+  if (route === "/api/game/confirm") {
+    const inputPath = String(body?.path || "").trim();
+    if (!inputPath || /不存在|invalid|notfound|nope/i.test(inputPath)) {
+      const err = new Error(`目录不存在：${inputPath || "（空路径）"}`);
+      err.status = 400;
+      err.payload = { error: `目录不存在：${inputPath || "（空路径）"}`, missing: ["目录不存在"] };
+      throw err;
+    }
+    return ok({ ...mockGameStatus(), configured: true, path: inputPath, source: "settings", valid: true, catalog_ready: true, needs_setup: false });
+  }
+  if (route === "/api/catalog/refresh") {
+    return ok({ ok: true, state: "ready" });
   }
   if (route === "/api/meta") {
     return ok({ version: VERSION, built_at: BUILT_AT, counts: counts(), max_targets: 35, now: new Date().toISOString() });

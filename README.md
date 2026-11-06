@@ -3,8 +3,10 @@
 把《少女前线》里**任意「可收藏」的敌方队伍**，可视化地编排进游戏内「靶机专训 → 收藏标靶」（最多 35 条）。
 本项目是靶机工坊的应用本体：本地 Web 服务 + 数据层 + GFLH 登录抓取 / 注入模块 + 完整前端。
 
-> **本仓库只包含应用代码与文档，不含任何游戏数据、账号凭证、日志或缓存。**
-> 运行需要配合 [GF Forge](#前置依赖) 主仓库（提供本机 STC 数据解析与 GFLH 协议脚本）以及本机安装的游戏客户端。
+> **本仓库是自包含发行版**：包含应用本体、精简数据解析层（`unit_model/` 子集）、
+> `scripts/gflh_target_train.py` 以及预构建的 `catalog.json` / 小怪头像；**不再需要另行克隆 GF Forge 主仓库**。
+> 账号凭证、日志与运行状态不随仓库分发；游戏客户端仅用于「刷新数据 / 抓包注入」，纯浏览可直接使用内置数据。
+> 仓库体积约 **43MB**（其中预构建数据约 39MB）。
 
 ![总览：深蓝星空 + 大蓝闪蝶](docs/screenshots/overview.jpg)
 
@@ -90,52 +92,48 @@
 | 依赖 | 说明 |
 |---|---|
 | Windows 10/11 | 抓包 / 游戏控制 / winreg 代理设置目前是 Windows 实现 |
-| Python 3.14 | 运行 `python -m targetforge`；需 `gflzirc>=0.4.4`（`python -m pip install gflzirc==0.4.4`） |
-| GF Forge 主仓库 | 提供 `unit_model/`（STC 二进制表解析、等级缩放口径）、`scripts/gflh_target_train.py`（编号规划 / payload / 本地状态）、`dataMiner/derived/client_text.json` 与 `enemy_full_model.csv` 等派生数据 |
-| 本机游戏客户端 | 《少女前线》PC 版（Steam appid **3347970**）；路径写入 GF Forge 的 `local_paths.json` 或环境变量 `GF1_GAME_ROOT` |
+| Python 3.10+（推荐 3.14） | 运行 `python -m targetforge`；需 `gflzirc==0.4.4`（`pip install -r requirements.txt`） |
+| 内置数据层 | `unit_model/`（STC 解析最小集）+ `project_paths.py` + `scripts/gflh_target_train.py` + 预构建 `dataMiner/derived/{catalog.json,icons}`；无需 GF Forge 主仓库 |
+| 本机游戏客户端（可选） | 《少女前线》PC 版（Steam appid **3347970**）。**注入/刷新数据时必须**；纯浏览可不用。首次启动会要求选择客户端目录（自动检测 / 浏览文件夹），之后可在「登录抓取」页修改 |
 | 端口 | 应用 **8765**；抓包代理默认 **18080**，可在「登录抓取 → 抓包端口」配置（8080 常被其它程序占用，不建议用） |
-| 可选 | UnityPy + Pillow（导出小怪头像 `tools/build_icons.py`）、Playwright + Edge（页面自检） |
+| 可选 | UnityPy + Pillow（重新导出小怪头像）、Playwright + Edge（页面自检） |
 
 ## 安装
 
 ```powershell
-# 1) 克隆本仓库
+# 1) 克隆本仓库（约 43MB，含预构建数据）
 git clone https://github.com/TenshiInHeaven/gflh_advance.git
+cd gflh_advance
 
-# 2) 把 targetforge/ 整体复制到 GF Forge 仓库根目录，形成 <GF_FORGE_ROOT>\targetforge\...
-xcopy /E /I gflh_advance\targetforge <GF_FORGE_ROOT>\targetforge
+# 2) 安装依赖
+python -m pip install -r requirements.txt
 
-# 3) 安装依赖（已装可跳过）
-python -m pip install gflzirc==0.4.4
-
-# 4) 自检（可选）
-cd <GF_FORGE_ROOT>
-python -m unittest discover -s targetforge/tests -t .
+# 3) 启动（Windows 可双击/运行 start.ps1）
+python -m targetforge --open
 ```
 
-> 也可以直接把本仓库克隆成 `<GF_FORGE_ROOT>\targetforge`：
-> `git clone https://github.com/TenshiInHeaven/gflh_advance.git "<GF_FORGE_ROOT>\targetforge_tmp"`，
-> 再把 `targetforge_tmp\targetforge` 移到 `<GF_FORGE_ROOT>\targetforge`。
+首次启动会弹出**「先选择游戏客户端」**前置步骤：自动检测本机 Steam/运行中游戏，或点「浏览文件夹」手动选择
+`GIRLS' FRONTLINE` 安装目录（含 `GrilsFrontLine.exe` 与 `GrilsFrontLine_Data` 的那一层）。
+路径无效时会明确提示（目录不存在 / 未找到 exe / 不是有效少前客户端目录）；保存后可在「登录抓取 → 游戏客户端」修改。
+如果只是浏览数据、不注入，内置的 catalog/icons 可直接使用（选择客户端仅用于注入/刷新数据）。
 
 ## 运行
 
 ```powershell
-cd <GF_FORGE_ROOT>
+cd gflh_advance
 python -m targetforge                 # http://127.0.0.1:8765
 python -m targetforge --open          # 顺便打开浏览器
 python -m targetforge --port 8771     # 换端口
-python -m targetforge --rebuild-catalog   # 强制重建数据缓存
+python -m targetforge --rebuild-catalog   # 用本机客户端强制重建数据（约 4 秒）
 ```
 
-首次启动会解析本机 STC 生成数据缓存（约 4 秒，约 7 MB），之后直接读缓存（<1 秒）。
-游戏更新后点顶栏「刷新数据」或加 `--rebuild-catalog`。
+游戏更新后点顶栏「刷新数据」或加 `--rebuild-catalog`；内置 catalog 只是发布时的客户端版本，版本不一致时请重建。
 
-**导出小怪头像（可选）**：界面对每个怪种/单位都有头像；头像由本机游戏资源提取，未随仓库分发：
+**重新导出小怪头像（可选）**：内置头像来自发布时客户端，游戏新版单位可能缺失：
 
 ```powershell
-# 需要 UnityPy（GF Forge 的 .sim 环境自带）
-.\.sim\Scripts\python.exe targetforge\tools\build_icons.py
-# 导出后再重建一次 catalog，让 icon 字段进缓存
+python -m pip install UnityPy Pillow
+python targetforge\tools\build_icons.py
 python -c "from targetforge import catalog; catalog.build(force=True)"
 ```
 
@@ -162,9 +160,12 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 
 ## 数据与安全
 
-- 所有关卡 / 怪种 / 怪组数据都来自**本机客户端 STC 静态表**，应用离线运行；本仓库不含这些数据。
-- 数据目录默认是 **GF Forge 仓库下的 `dataMiner/derived/targetforge/`**（由 `datapaths.py` 按模块位置计算，
-  不是写死的绝对路径）；可用环境变量 `TARGETFORGE_DATA_DIR` 指定到别处，缓存 / 凭证 / 状态 / 头像都会跟着走。
+- 所有关卡 / 怪种 / 怪组数据都由**本机客户端 STC 静态表**解析而来；仓库内置发布时的预构建 `catalog.json`/icons，
+  首次选择客户端后也可随时「刷新数据」。应用完全离线运行，不上传任何数据。
+- 数据目录默认是本仓库下的 `dataMiner/derived/targetforge/`（由 `datapaths.py` 按模块位置计算，不是写死的绝对路径）；
+  可用环境变量 `TARGETFORGE_DATA_DIR` 指定到别处，缓存 / 凭证 / 状态 / 头像都会跟着走。
+- 游戏客户端路径保存在仓库根 `local_paths.json`（本地文件，**不入 git**），首次启动由向导写入，后续可在页面修改；
+  也可用环境变量 `GF1_GAME_ROOT` 覆盖。
 - 应用只监听 `127.0.0.1`，不上传任何数据。
 - 抓到的 `uid/sign` 只保存在数据目录下的 `creds_latest.json`（不入 git），**请勿提交或外传**。
 - 抓包端口可配置（登录抓取页，默认 `18080`）；请确保使用完毕后系统代理已关闭。
@@ -174,13 +175,13 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 137 个单测（app / catalog / gflh）
+python -m unittest discover -s targetforge/tests -t .      # 146 个单测（app / catalog / gflh / game setup）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（33 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 25 张截图
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 26 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
 ```
 
-前端自检结果：206 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：215 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
@@ -188,16 +189,27 @@ python targetforge/tools/analyze_score_stages.py          # 积分关卡结算�
 gflh_advance/
   README.md                    本文件
   LICENSE                      MIT
+  start.ps1                    一键安装依赖并启动（Windows）
+  requirements.txt             运行依赖（gflzirc）
+  local_paths.example.json     本机游戏目录示例（复制为 local_paths.json，或首次启动向导写入）
   docs/screenshots/            README 用截图
-  targetforge/                 复制到 GF Forge 仓库根目录后的模块
-    app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job / 头像接口
+  project_paths.py             仓库根 / 游戏目录解析（内置精简数据层）
+  unit_model/                  精简 STC 解析层（core: stc/enemy/paths + stc-mapping）
+  scripts/gflh_target_train.py 靶机编号规划 / payload / 本地状态
+  dataMiner/derived/
+    client_text.json           名称文本（构建 catalog 用）
+    enemy_full_model.csv       怪种映射（构建 catalog 用）
+    targetforge/catalog.json   预构建数据缓存（约 11MB）
+    targetforge/icons/         预构建小怪头像（约 10MB）
+  targetforge/                 应用本体
+    app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job / 头像接口 / 游戏目录设置
+    gamepath.py                游戏客户端检测 / 校验 / 文件夹选择 / local_paths
     catalog.py                 STC → 章节 / 关卡 / 怪种 / 怪组数据层（缓存 + 查询 + 效能/图标）
     gflh.py                    登录抓取（GFLProxy）/ 序列规划 / 注入（addCollect·delCollect）/ 游戏控制
     datapaths.py               数据目录唯一来源（支持 TARGETFORGE_DATA_DIR）
     static/                    前端（原生 HTML/CSS/JS，无构建步骤，离线）
-    tests/                     unittest（app / catalog / gflh）
-    tools/                     build_icons.py（游戏资源导出小怪头像）/ analyze_score_stages.py（结算分析）/
-                               api_smoke.py / ui_selfcheck.py / screenshot.py
+    tests/                     unittest（app / catalog / gflh / game setup）
+    tools/                     build_icons.py / analyze_score_stages.py / api_smoke.py / ui_selfcheck.py
     contract.md                模块 / API 契约
     README.md                  应用层说明
 ```
@@ -211,6 +223,9 @@ gflh_advance/
 - **注入后游戏里没变化**：大退重登游戏同步。
 - **游戏进不去 / 网络异常**：检查系统代理是否已关闭（Windows 设置 → 网络和 Internet → 代理）。
 - **sign 过期**：重新走一遍登录抓取。
+- **首次启动要求选择游戏客户端**：只用来读取本机 STC / 注入，不上传；可自动检测或浏览选择 `GIRLS' FRONTLINE`
+  根目录（含 `GrilsFrontLine.exe` 与 `GrilsFrontLine_Data`）。后续在「登录抓取 → 游戏客户端」可修改。
+  选择无效会提示具体缺项；纯浏览可先用内置数据，注入前再选。
 - **积分关卡是怎么判定的？**：不是按名字带 `+`，而是读 STC 的 `mission.event_score`（积分结算配置）、
   `mission.score_prize`（积分奖励）和 `rank`（常驻积分榜）；混合活动会拆出「XX · 积分关卡」章节；
   普通 EX 关卡没有该结算配置，仍属活动/普通结算。
@@ -218,6 +233,17 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.9.0（2026-11-07）
+
+- **自包含发行**：仓库内置精简 GF Forge 数据层（`unit_model` 最小集 + `project_paths.py` + `scripts/gflh_target_train.py`）
+  以及预构建 `catalog.json` / icons；**不再需要 GF Forge 主仓库**，克隆后可直接 `python -m targetforge`。
+- **首次启动游戏客户端向导**：类似文件浏览的前置步骤，自动检测运行中游戏 / Steam 目录，或浏览文件夹选择；
+  无效路径明确提示（目录不存在 / 未找到 `GrilsFrontLine.exe` / 不是有效客户端目录缺 stc）；
+  之后可在「登录抓取 → 游戏客户端」修改并重建数据。
+- 新增 `targetforge/gamepath.py` 与 `/api/game/status|detect|pick|confirm`；游戏路径写入本地 `local_paths.json`（不入 git）。
+- 仓库体积约 43MB（预构建数据约 39MB）；纯浏览无需启动游戏，注入/刷新数据仍需本机客户端。
+- 版本号 v1.9.0。
 
 ### v1.8.1（2026-11-07）
 
@@ -323,7 +349,7 @@ gflh_advance/
 ## 相关项目
 
 - [GFLH](https://github.com/MaaGF1/GFLH) / [ZIRC](https://github.com/MaaGF1/ZIRC) —— 社区 GFL 协议库（`gflzirc`），本项目的注入与抓包基于它。
-- **GF Forge** —— 本项目的配套主仓库，提供本机 STC 数据层与 `gflh_target_train.py` 编号规划脚本（未包含在本仓库中）。
+- **GF Forge** —— 本项目的配套主仓库（数据层来源）；自 v1.9.0 起本仓库已内置所需精简数据层，无需单独安装。
 
 ---
 

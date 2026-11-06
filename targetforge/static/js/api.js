@@ -175,6 +175,10 @@ export const api = {
   saveSettings: (body) => post("/api/settings", body),
 
   catalogRefresh: () => post("/api/catalog/refresh", {}),
+  gameStatus: () => get("/api/game/status"),
+  gameDetect: () => post("/api/game/detect", {}),
+  gamePick: () => post("/api/game/pick", {}),
+  gameConfirm: (path) => post("/api/game/confirm", { path }),
 
   setSystemProxy: (enable, addr = `127.0.0.1:${runtime.capturePort}`) =>
     post("/api/system/proxy", { enable, addr }),

@@ -357,13 +357,13 @@ STATIC_KEY = "yundoudou"
 API_ADD = "Targettrain/addCollect"; API_DEL = "Targettrain/delCollect"
 
 def player_status() -> dict
-# {"game_running":true,"pid":12345,"game_window_title":"少女前线",
+# {"game_running":true,"pid":82816,"game_window_title":"少女前线",
 #  "system_proxy":"127.0.0.1:18080"|None,"gflzirc_ok":true}
 
 def capture_status() -> dict
 # {"state":"idle|starting|running|stopped|error","port":18080,
 #  "proxy_active":bool,"system_proxy_on":bool,"auto_restore_proxy":bool,
-#  "uid":"100000001"|None,"sign_set":true,"base_url":"...",
+#  "uid":"558472"|None,"sign_set":true,"base_url":"...",
 #  "targets_count":30,"login_captured":true,"targets_captured":true,
 #  "started_at":iso|null,"elapsed_s":12.3,"creds_path":null,
 #  "logs":[{"t":iso,"level":"info|warn|error","text":"..."}...最多200]}
@@ -377,7 +377,7 @@ def capture_restart_game() -> dict
 def list_creds() -> list[dict]  # [{name,path,updated_at,uid,base_url,targets_count}]（不返回 sign）
 def current_targets(source: str = "auto") -> dict
 # source: auto|creds|state
-# {"source":"creds","creds_file":"creds_latest.json","uid":"100000001",
+# {"source":"creds","creds_file":"creds_latest.json","uid":"558472",
 #  "base_url":"http://...", "captured_at":"...","targets":[{"order":1,"team":770007},...],
 #  "duplicate_orders":{"3":[a,b]}, "max_targets":35, "warnings":["..."]}
 

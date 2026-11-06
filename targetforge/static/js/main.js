@@ -25,6 +25,7 @@ import { initSequencePanel } from "./components/sequence-panel.js";
 import { openTeamDrawer } from "./components/team-drawer.js";
 import { maybeShowTutorialOverlay } from "./components/tutorial-overlay.js";
 import { addTeamById } from "./components/add-by-id.js";
+import { fetchGameStatus, showGameSetupGate } from "./components/game-setup.js";
 
 /* 视图 */
 import * as overview from "./views/overview.js";
@@ -62,6 +63,7 @@ const viewEl = () => document.getElementById("view");
 let currentRoute = null;
 let routeToken = 0;
 let firstBoot = true;
+let appStarted = false;
 
 /* ================================================================== */
 /* 启动                                                               */
@@ -71,6 +73,36 @@ async function boot() {
   initTopbar();
   bindGlobalEvents();
   initNavHighlight();
+
+  // 首次启动前置：必须先选择游戏客户端目录（valid=false / needs_setup=true → 全屏 gate）
+  const gateShown = await maybeRequireGameSetup();
+  if (gateShown) return;
+  await startApp();
+}
+
+/** 启动前置 gate：返回 true 表示已显示 gate、等待用户选择后由 onReady 继续 */
+async function maybeRequireGameSetup() {
+  try {
+    const status = await fetchGameStatus();
+    if (!status) return false; // 旧后端无 /api/game/status：降级直接进入
+    if (status.valid && !status.needs_setup) return false;
+    showGameSetupGate({
+      status,
+      onReady: () => {
+        startApp();
+      },
+    });
+    return true;
+  } catch (err) {
+    // 状态接口异常不阻塞正常使用（避免旧版本/接口短暂失败导致进不去）
+    console.warn("读取游戏客户端状态失败，跳过 setup gate：", err);
+    return false;
+  }
+}
+
+async function startApp() {
+  if (appStarted) return;
+  appStarted = true;
 
   // 先注册全局事件，保证基础数据首次加载时顶栏/导航角标就能同步刷新
   store.on("health", (payload) => {

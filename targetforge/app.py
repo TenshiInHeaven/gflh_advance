@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -46,7 +46,8 @@ def now_iso() -> str:
 
 
 class HttpError(Exception):
-    def __init__(self, status: int, error: str, detail: str | None = None, hint: str | None = None):
+    def __init__(self, status: int, error: str, detail: str | None = None,
+                 hint: str | None = None, extra: dict | None = None):
         super().__init__(error)
         self.status = status
         self.payload = {"error": error}
@@ -54,6 +55,8 @@ class HttpError(Exception):
             self.payload["detail"] = detail
         if hint:
             self.payload["hint"] = hint
+        if extra:
+            self.payload.update(extra)
 
 
 def _jsonable(value):
@@ -76,6 +79,8 @@ DEFAULT_STATE = {
         "auto_restore_proxy": True,
         "preferred_creds": "creds_latest.json",
         "append_skip_existing": True,
+        "game_root": "",
+        "game_selected_at": None,
     },
     "last_execution": None,
     "updated_at": None,
@@ -169,6 +174,108 @@ def _gflh_module():
         raise HttpError(503, "GFLH 模块未安装 / 依赖缺失", detail=str(exc),
                         hint="确认已安装 gflzirc，并在仓库根目录运行 python -m targetforge。")
     return gflh
+
+
+def _gamepath_module():
+    from targetforge import gamepath  # noqa: WPS433 - 延迟导入
+    return gamepath
+
+
+# ---------------------------------------------------------------------------
+# 游戏客户端目录（v1.9）
+# ---------------------------------------------------------------------------
+def _game_status_payload(*, include_detected: bool = True,
+                         include_process: bool = True) -> dict:
+    settings = state_load().get("settings") or {}
+    catalog = catalog_status()
+    try:
+        return _gamepath_module().status(
+            settings=settings,
+            catalog_ready=catalog.get("state") == "ready",
+            include_detected=include_detected,
+            include_process=include_process,
+        )
+    except Exception as exc:  # noqa: BLE001 - 状态接口不能 500
+        return {
+            "configured": bool(str(settings.get("game_root") or "").strip()),
+            "path": str(settings.get("game_root") or ""),
+            "source": "settings" if settings.get("game_root") else None,
+            "exists": False, "valid": False, "missing": [str(exc)],
+            "missing_codes": [], "game_running": False, "process_path": "",
+            "detected": None, "catalog_ready": catalog.get("state") == "ready",
+            "needs_setup": True, "selected_at": settings.get("game_selected_at"),
+        }
+
+
+def api_game_status() -> dict:
+    return _game_status_payload()
+
+
+def api_game_detect() -> dict:
+    candidates = _gamepath_module().detect(force=True)
+    detected = None
+    for item in candidates:
+        if item.get("valid"):
+            detected = {"path": item.get("path"), "source": item.get("source") or ""}
+            break
+    return {"detected": detected, "candidates": candidates}
+
+
+def api_game_pick() -> dict:
+    try:
+        path = _gamepath_module().pick_folder()
+    except _gamepath_module().GamePathError as exc:
+        raise HttpError(400, exc.message, hint=exc.hint or None,
+                        extra={"code": getattr(exc, "code", "game_path_error")})
+    return {"path": path}
+
+
+def _confirm_game_error(missing: list[str]) -> tuple[str, list[str]]:
+    messages = _gamepath_module().missing_messages(missing)
+    error = messages[0] if messages else "不是有效的少女前线客户端目录"
+    return error, messages
+
+
+def api_game_confirm(body: dict) -> dict:
+    gamepath = _gamepath_module()
+    path = str(body.get("path") or "").strip()
+    if not path:
+        raise HttpError(400, "缺少游戏目录路径",
+                        hint="请先选择（或手动输入）游戏客户端目录。",
+                        extra={"missing": ["缺少游戏目录路径"],
+                               "missing_codes": ["missing_path"], "path": ""})
+    valid, missing = gamepath.validate(path)
+    if not valid:
+        error, messages = _confirm_game_error(missing)
+        raise HttpError(400, error,
+                        detail="；".join(messages),
+                        hint=("请选择包含 GrilsFrontLine.exe 的游戏根目录"
+                              "（其下应有 *_Data/StreamingAssets/Res/Pc/stc）。"),
+                        extra={"missing": messages, "missing_codes": missing,
+                               "path": path})
+    applied = gamepath.apply(path, persist=True)
+    if not applied.get("ok"):
+        error, messages = _confirm_game_error(applied.get("missing_codes") or [])
+        raise HttpError(400, error, detail="；".join(messages),
+                        extra={"missing": messages,
+                               "missing_codes": applied.get("missing_codes") or [],
+                               "path": path})
+    state = state_load()
+    settings = state.get("settings") or {}
+    settings["game_root"] = applied["path"]
+    settings["game_selected_at"] = now_iso()
+    state["settings"] = settings
+    state_save(state)
+    return {
+        "ok": True,
+        "path": applied["path"],
+        "saved": True,
+        "applied": {key: applied.get(key) for key in
+                    ("path", "saved", "local_paths_file", "env")},
+        "status": _game_status_payload(include_detected=False),
+        "message": "游戏客户端目录已保存",
+        "hint": "如果这个目录对应新版本客户端，可在设置中重建数据缓存（catalog）。",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +530,8 @@ def api_health() -> dict:
         "catalog": catalog,
         "gflzirc_ok": gflzirc_ok,
         "game": player,
+        "game_setup": _game_status_payload(include_detected=False,
+                                           include_process=False),
         "data_dir": str(DATA_DIR),
         "icon_dir": str(ICON_DIR),
         "icons": icon_count,
@@ -660,7 +769,8 @@ def api_settings_get() -> dict:
 def api_settings_post(body: dict) -> dict:
     state = state_load()
     settings = state.get("settings") or {}
-    for key in ("capture_port", "auto_restore_proxy", "preferred_creds", "append_skip_existing"):
+    for key in ("capture_port", "auto_restore_proxy", "preferred_creds",
+                "append_skip_existing", "game_root", "game_selected_at"):
         if key in body:
             settings[key] = body[key]
     if "capture_port" in settings:
@@ -712,6 +822,7 @@ def api_grayzone_teams(qs: dict) -> dict:
 
 GET_ROUTES = [
     (re.compile(r"^/api/health$"), lambda ctx: api_health()),
+    (re.compile(r"^/api/game/status$"), lambda ctx: api_game_status()),
     (re.compile(r"^/api/meta$"), lambda ctx: api_meta()),
     (re.compile(r"^/api/chapters$"), lambda ctx: get_catalog().chapters()),
     (re.compile(r"^/api/chapters/(?P<cid>[^/]+)$"), lambda ctx: api_chapter(unquote(ctx["match"].group("cid")), ctx["qs"])),
@@ -744,6 +855,9 @@ GET_ROUTES = [
 
 POST_ROUTES = [
     (re.compile(r"^/api/sequence$"), lambda ctx: api_sequence_post(ctx["json"])),
+    (re.compile(r"^/api/game/detect$"), lambda ctx: api_game_detect()),
+    (re.compile(r"^/api/game/pick$"), lambda ctx: api_game_pick()),
+    (re.compile(r"^/api/game/confirm$"), lambda ctx: api_game_confirm(ctx["json"])),
     (re.compile(r"^/api/execute/preview$"), lambda ctx: api_execute_preview(ctx["json"])),
     (re.compile(r"^/api/execute$"), lambda ctx: api_execute(ctx["json"])),
     (re.compile(r"^/api/jobs/(?P<jid>[0-9a-f]+)/cancel$"), lambda ctx: _job_cancel(ctx["match"].group("jid"))),
@@ -970,6 +1084,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     ensure_dirs()
+    # v1.9：启动时先解析游戏客户端目录（settings → env → local_paths → 自动检测），
+    # 保证后续 catalog 构建用正确的 game_root；检测到的路径不自动保存（需用户确认）。
+    bootstrap = {"ok": False, "path": "", "source": None}
+    try:
+        bootstrap = _gamepath_module().bootstrap(
+            settings=state_load().get("settings") or {})
+    except Exception as exc:  # noqa: BLE001 - 启动不能因为游戏目录检测失败而崩溃
+        print(f"   ! 游戏目录解析失败：{type(exc).__name__}: {exc}")
     warm_catalog(rebuild=args.rebuild_catalog)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
@@ -977,6 +1099,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"== 靶机工坊 TargetForge v{VERSION} ==")
     print(f"   本地地址: {url}")
     print(f"   数据目录: {DATA_DIR}")
+    if bootstrap.get("ok"):
+        source_names = {"settings": "设置", "env": "环境变量",
+                        "local_paths": "local_paths.json", "detected": "自动检测"}
+        source = source_names.get(str(bootstrap.get("source")), bootstrap.get("source"))
+        print(f"   游戏目录: {bootstrap.get('path')}（来源：{source}）")
+    else:
+        print("   游戏目录: 未配置 / 无效 —— 启动后请在设置中选择客户端目录")
     print("   Ctrl+C 退出")
     if args.open:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()

@@ -540,6 +540,10 @@ def run_checks(base_url: str, mock: bool) -> int:
             load("/overview", ".hero", allow_overlay_shot=True)
             ensure_overlay_shot()
             checker.wait(".quick-card")
+            if page.locator(".setup-gate").count() == 0:
+                checker.passed.append("本地游戏客户端有效 → 首次 setup gate 未出现")
+            else:
+                checker.failures.append("本地客户端有效但仍出现 setup gate")
             checker.assert_count(".stat-tile", 6)
             checker.assert_count(".hero-butterfly .butterfly .bf-fore", 2)
             checker.passed.append("hero 使用大蓝闪蝶 SVG（前后翅 / 黑色翅缘 / 渐变）")
@@ -1309,7 +1313,101 @@ def run_checks(base_url: str, mock: bool) -> int:
                 checker.passed.append("抓取页说明 TARGETFORGE_DATA_DIR 可覆盖数据目录")
             else:
                 checker.failures.append("抓取页缺少 TARGETFORGE_DATA_DIR 说明")
-            checker.shot("10_capture.png", ".capture-cols")
+
+            # 游戏客户端卡片（路径/来源/状态/进程 + 自动检测/浏览/应用）
+            try:
+                page.wait_for_selector(".game-client-card", timeout=15000)
+            except Exception:  # noqa: BLE001
+                pass
+            game_card = page.locator(".game-client-card").first
+            if game_card.count() > 0:
+                card_text = game_card.inner_text()
+                if "游戏客户端" in card_text and "来源" in card_text and "进程" in card_text:
+                    checker.passed.append("抓取页存在「游戏客户端」卡片（路径/来源/进程状态）")
+                else:
+                    checker.failures.append(f"游戏客户端卡片内容不完整：{card_text[:160]}")
+                path_el = page.locator("[data-game-path-current]").first
+                if path_el.count() > 0 and path_el.inner_text().strip() not in ("", "未配置"):
+                    checker.passed.append(f"游戏客户端卡片显示路径：{path_el.inner_text().strip()[:80]}")
+                else:
+                    checker.failures.append("游戏客户端卡片未显示有效路径")
+                if (
+                    page.locator("[data-game-detect]").count() > 0
+                    and page.locator("[data-game-pick]").count() > 0
+                    and page.locator("[data-game-apply]").count() > 0
+                ):
+                    checker.passed.append("游戏客户端卡片含 自动检测 / 浏览 / 应用并重建数据 按钮")
+                else:
+                    checker.failures.append("游戏客户端卡片缺少操作按钮")
+            else:
+                checker.failures.append("抓取页缺少「游戏客户端」卡片")
+
+            # /api/game/status + /api/game/detect + invalid confirm(400)
+            try:
+                game_status = http_json(base_url.rstrip("/") + "/api/game/status")
+                if game_status.get("valid") is True:
+                    checker.passed.append("GET /api/game/status valid=true")
+                else:
+                    checker.failures.append(f"/api/game/status valid!=true：{str(game_status)[:160]}")
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"GET /api/game/status 失败：{exc}")
+            try:
+                detect_data = http_post(base_url.rstrip("/") + "/api/game/detect", {})
+                if "candidates" in detect_data or "detected" in detect_data:
+                    checker.passed.append(
+                        f"POST /api/game/detect 返回 200（候选 {len(detect_data.get('candidates') or [])} 个）"
+                    )
+                else:
+                    checker.failures.append(f"/api/game/detect 返回结构异常：{str(detect_data)[:160]}")
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"POST /api/game/detect 失败：{exc}")
+            try:
+                bad_req = urllib.request.Request(
+                    base_url.rstrip("/") + "/api/game/confirm",
+                    data=json.dumps({"path": "Z:\\TargetForge_Invalid_Game_Dir_Not_Exists"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    method="POST",
+                )
+                try:
+                    with urllib.request.urlopen(bad_req, timeout=10) as response:
+                        checker.failures.append(f"无效路径 confirm 未返回 400（HTTP {response.status}）")
+                except urllib.error.HTTPError as http_err:
+                    error_text = http_err.read().decode("utf-8", "replace")
+                    if http_err.code == 400 and any(key in error_text for key in ("未找到", "无效", "不存在")):
+                        checker.passed.append(f"无效路径 POST /api/game/confirm 返回 400（错误文案明确：{error_text[:80]}）")
+                    else:
+                        checker.failures.append(f"无效路径 confirm 错误不明确（HTTP {http_err.code}）：{error_text[:160]}")
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"无效路径 confirm 校验失败：{exc}")
+            EVIDENCE["game_setup"] = {"status_ok": True}
+
+            checker.shot("10_capture.png", "#view")
+
+            # ---------------- 26 首次启动 setup gate（mock 强制 setup=1 展示） ----------------
+            gate_page = context.new_page()
+            _attach_error_hooks(gate_page, console_errors, page_errors)
+            try:
+                gate_page.goto(
+                    f"{base_url.rstrip('/')}/?mock=1&setup=1&_r=9201#/overview",
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                gate_page.wait_for_selector(".setup-gate", timeout=30000)
+                gate_page.wait_for_timeout(1200)
+                if "先选择游戏客户端" in gate_page.locator(".setup-gate").inner_text():
+                    checker.passed.append("首启 setup gate 显示「先选择游戏客户端」（mock 强制）")
+                else:
+                    checker.failures.append("setup gate 标题异常")
+                old_page = checker.page
+                checker.page = gate_page
+                try:
+                    checker.shot("26_game_setup.png", ".setup-gate", scroll_top=False)
+                finally:
+                    checker.page = old_page
+            except Exception as exc:  # noqa: BLE001
+                checker.failures.append(f"setup gate 截图失败：{exc}")
+            finally:
+                gate_page.close()
 
             # ---------------- 11 使用教程 ----------------
             load("/tutorial", ".faq-item")
@@ -1497,7 +1595,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 25
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 26
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

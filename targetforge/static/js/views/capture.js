@@ -2,7 +2,7 @@
  * 抓包端口可配置（默认 18080，范围 1024-65535，持久化到 /api/settings）。
  */
 import { api, setCapturePort, getCapturePort, markCapturePortLoaded } from "../api.js";
-import { store, refreshHealth, refreshCurrent, tryRefreshCurrent } from "../store.js";
+import { store, refreshHealth, refreshCurrent, tryRefreshCurrent, loadChapters } from "../store.js";
 import {
   icon,
   pageHeadHtml,
@@ -24,6 +24,15 @@ import {
   powerFilterMeta,
   defaultPowerFilter,
 } from "../components/power-filter.js";
+import {
+  gameClientCardHtml,
+  fetchGameStatus,
+  detectGameClient,
+  pickGameClient,
+  confirmGameClient,
+  refreshCatalogForGame,
+  gameErrorMessage,
+} from "../components/game-setup.js";
 
 const STATE_LABEL = {
   idle: "空闲",
@@ -86,6 +95,7 @@ export async function render(root) {
         <button class="btn btn-danger" type="button" data-act="stop">${icon("power", 14)} 完成并关闭代理</button>
       `,
     })}
+    <div data-game-client></div>
     <div class="capture-cols">
       <div>
         <div class="capture-panel" data-capture-panel>
@@ -246,7 +256,9 @@ export async function render(root) {
 async function loadSettings() {
   try {
     const settings = await api.settings();
-    const port = validPort(settings?.capture_port);
+    loadGameClientCard();
+
+  const port = validPort(settings?.capture_port);
     if (port) {
       currentPort = setCapturePort(port);
     }
@@ -829,5 +841,129 @@ function renderCurrent() {
     el.addEventListener("click", () => {
       window.location.hash = `#/teams/${el.dataset.currentTeam}`;
     });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* 游戏客户端卡片：显示路径/来源/进程状态，支持自动检测/浏览/应用并重建 */
+/* ------------------------------------------------------------------ */
+async function loadGameClientCard() {
+  const host = rootEl?.querySelector("[data-game-client]");
+  if (!host) return;
+  try {
+    const status = await fetchGameStatus();
+    host.innerHTML = gameClientCardHtml(status);
+    if (status && status.missing?.length) {
+      const el = host.querySelector("[data-game-error]");
+      if (el) {
+        el.textContent = gameErrorMessage(null);
+        el.classList.remove("hidden");
+      }
+    }
+    bindGameClientCard(host, status);
+  } catch (err) {
+    host.innerHTML = gameClientCardHtml(null);
+    const el = host.querySelector("[data-game-error]");
+    if (el) {
+      el.textContent = gameErrorMessage(err, "读取游戏客户端状态失败");
+      el.classList.remove("hidden");
+    }
+  }
+}
+
+function setGameCardError(host, message) {
+  const el = host.querySelector("[data-game-error]");
+  if (!el) return;
+  el.textContent = message || "";
+  el.classList.toggle("hidden", !message);
+}
+
+function bindGameClientCard(host, status) {
+  if (!host || !status) return;
+  const input = host.querySelector("[data-game-path-input]");
+  const detectBtn = host.querySelector("[data-game-detect]");
+  const pickBtn = host.querySelector("[data-game-pick]");
+  const applyBtn = host.querySelector("[data-game-apply]");
+
+  detectBtn?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setBusy(button, true, "检测中…");
+    setGameCardError(host, "");
+    try {
+      const data = await detectGameClient();
+      const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+      const detected = data.detected;
+      const detectedPath =
+        (typeof detected === "string" ? detected : detected?.path) ||
+        candidates.find((item) => item.valid !== false)?.path ||
+        "";
+      if (detectedPath) {
+        if (input) input.value = detectedPath;
+        toastOk("已检测到客户端", detectedPath);
+      } else {
+        toastErr("未检测到候选", "没有自动检测到客户端目录，请点「浏览…」手动选择。");
+        setGameCardError(host, "自动检测未找到客户端目录，请点「浏览…」选择或手动输入。");
+      }
+    } catch (err) {
+      const msg = gameErrorMessage(err, "自动检测失败");
+      setGameCardError(host, `自动检测失败：${msg}`);
+      toastErr("自动检测失败", msg);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+
+  pickBtn?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setBusy(button, true, "打开选择框…");
+    setGameCardError(host, "");
+    try {
+      const data = await pickGameClient();
+      const path = String(data.path || "").trim();
+      if (!path) throw new Error("未返回文件夹路径");
+      if (input) input.value = path;
+      toastOk("已选择文件夹，点「应用并重建数据」生效");
+    } catch (err) {
+      const msg = /取消|cancel/i.test(gameErrorMessage(err, "")) ? "已取消选择文件夹" : gameErrorMessage(err, "无法打开文件夹选择框");
+      setGameCardError(host, msg);
+      toastErr("浏览文件夹失败", msg);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+
+  applyBtn?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const path = String(input?.value || "").trim();
+    if (!path) {
+      setGameCardError(host, "请输入游戏客户端目录，或点「浏览…」选择。");
+      toastErr("请选择客户端目录", "路径不能为空。");
+      return;
+    }
+    setBusy(button, true, "校验中…");
+    setGameCardError(host, "");
+    try {
+      const next = await confirmGameClient(path);
+      if (next.valid === false && next.missing?.length) {
+        throw Object.assign(new Error(gameErrorMessage(null)), { payload: { missing: next.missing } });
+      }
+      toastOk("游戏客户端已保存", "正在重建游戏数据索引…");
+      const ready = await refreshCatalogForGame();
+      try {
+        await refreshHealth();
+        await loadChapters();
+      } catch {
+        /* 忽略 */
+      }
+      await loadGameClientCard();
+      if (ready) toastOk("游戏数据已刷新", "目录已更新，数据索引已就绪。");
+      else toastErr("数据重建超时", "游戏数据索引可能仍在构建，请稍后点顶栏刷新状态。");
+    } catch (err) {
+      const msg = gameErrorMessage(err, "客户端目录无效，请重新选择");
+      setGameCardError(host, msg);
+      toastErr("客户端目录无效", msg);
+    } finally {
+      setBusy(button, false);
+    }
   });
 }

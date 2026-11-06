@@ -14,3 +14,10 @@ data/
 Thumbs.db
 .idea/
 .vscode/
+
+# 本机运行数据（自包含包不提交）
+local_paths.json
+dataMiner/derived/targetforge/state.json
+dataMiner/derived/targetforge/creds_*.json
+dataMiner/derived/target_injection_state.json
+
