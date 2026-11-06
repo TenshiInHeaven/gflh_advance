@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { addTeam } from "../store.js";
 import { icon, pageHeadHtml, skeletonRows, handleViewError, toastOk, toastErr, setBusy } from "../ui.js";
-import { esc, fmtNum, fmtPower, factionColor, factionClass, navigate } from "../util.js";
+import { esc, fmtNum, factionColor, factionClass, navigate, powerDisplay } from "../util.js";
 import { teamDetailBodyHtml } from "../components/team-drawer.js";
 
 export async function render(root, { params }) {
@@ -21,6 +21,7 @@ export async function render(root, { params }) {
 
   try {
     const detail = await api.team(teamId);
+    const powerDisp = powerDisplay(detail.power, detail.power_known);
     root.innerHTML = `
       ${pageHeadHtml({
         crumbs: [
@@ -29,7 +30,7 @@ export async function render(root, { params }) {
         ],
         title: `队伍 #${detail.id}`,
         badge: "ENEMY TEAM",
-        sub: `${esc(detail.faction || "其它")} · 效能 <b class="mono-inline">${fmtPower(detail.power)}</b> · ${detail.units} 个单位 · 总血量 <b class="mono-inline">${fmtNum(detail.hp_total)}</b>。本页只展示数值 / 编制 / 参数 / 关卡出处。`,
+        sub: `${esc(detail.faction || "其它")} · 效能 <b class="mono-inline">${powerDisp.known ? powerDisp.text : "未标注"}</b> · ${detail.units} 个单位 · 总血量 <b class="mono-inline">${fmtNum(detail.hp_total)}</b>。本页只展示数值 / 编制 / 参数 / 关卡出处。`,
         actions: `
           <button class="btn btn-ghost" type="button" data-act="back">${icon("chevronLeft", 14)} 返回</button>
           <button class="btn btn-primary" type="button" data-act="add">${icon("plus", 14)} 加入序列</button>
@@ -46,7 +47,7 @@ export async function render(root, { params }) {
           <span class="mono-inline text-mute" style="font-size:10.5px">team_id ${esc(detail.id)}</span>
         </div>
         <div class="drawer-stats" style="margin-top:16px">
-          <div class="ds-item"><b class="amber">${fmtPower(detail.power)}</b><span>${Number(detail.power) > 0 ? "效能" : "未标注效能"}</span></div>
+          <div class="ds-item"><b class="amber ${powerDisp.known ? (powerDisp.negative ? "neg" : "") : ""}">${powerDisp.known ? powerDisp.text : "未标注"}</b><span>${powerDisp.negative ? "效能（可能为负）" : "效能"}</span></div>
           <div class="ds-item"><b>${fmtNum(detail.units)}</b><span>单位数</span></div>
           <div class="ds-item"><b>${fmtNum(detail.hp_total)}</b><span>总血量</span></div>
           <div class="ds-item"><b class="cyan">${fmtNum((detail.members || []).length)}</b><span>编制组</span></div>

@@ -24,13 +24,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
-DATA_DIR = ROOT / "dataMiner" / "derived" / "targetforge"
-STATE_FILE = DATA_DIR / "state.json"
 MAX_TARGETS = 35
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from targetforge.datapaths import DATA_DIR, ICON_DIR, STATE_FILE, ensure_dirs  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -411,6 +411,10 @@ def api_health() -> dict:
         player = _gflh_module().player_status()
     except Exception as exc:  # noqa: BLE001
         player = {"error": str(exc)}
+    try:
+        icon_count = len(list(ICON_DIR.glob("*.png"))) if ICON_DIR.is_dir() else 0
+    except OSError:
+        icon_count = 0
     return {
         "ok": True,
         "app": "TargetForge",
@@ -420,6 +424,8 @@ def api_health() -> dict:
         "gflzirc_ok": gflzirc_ok,
         "game": player,
         "data_dir": str(DATA_DIR),
+        "icon_dir": str(ICON_DIR),
+        "icons": icon_count,
     }
 
 
@@ -455,14 +461,65 @@ def _team_matches(team: dict, query: str) -> bool:
     return query in " ".join(haystack).lower()
 
 
-def _paginate(items: list, qs: dict, default_limit: int = 60, max_limit: int = 200) -> dict:
+def _team_filters(qs: dict) -> dict:
+    """从 query string 解析队伍筛选/排序参数（效能/排序）。"""
+    def first(key: str, default: str = "") -> str:
+        return ((qs or {}).get(key) or [default])[0]
+
+    def maybe_float(key: str):
+        raw = first(key, "").strip()
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            raise HttpError(400, f"{key} 不是数字", detail=raw)
+
+    power_known_raw = first("power_known", "").strip().lower()
+    sort = first("sort", "default").strip() or "default"
+    if sort not in ("default", "power_desc", "power_asc", "hp_desc", "units_desc"):
+        raise HttpError(400, f"未知排序 {sort!r}",
+                        hint="可用：default / power_desc / power_asc / hp_desc / units_desc")
+    return {
+        "power_min": maybe_float("power_min"),
+        "power_max": maybe_float("power_max"),
+        "power_known": power_known_raw in ("1", "true", "yes"),
+        "sort": sort,
+    }
+
+
+def _apply_team_query(items: list[dict], qs: dict, *, default_limit: int = 60,
+                      max_limit: int = 200) -> dict:
+    """对队伍列表做 搜索 / 效能筛选 / 排序 / 分页（内存版，用于 orphan、species 等）。"""
     query = ((qs or {}).get("q") or [""])[0].strip().lower()
     offset = max(0, int(((qs or {}).get("offset") or ["0"])[0] or 0))
     limit = min(max_limit, max(1, int(((qs or {}).get("limit") or [str(default_limit)])[0] or default_limit)))
-    if query:
-        items = [item for item in items if _team_matches(item, query)]
-    return {"total": len(items), "offset": offset, "limit": limit,
-            "items": items[offset:offset + limit]}
+    filters = _team_filters(qs or {})
+    filtered = [item for item in items if _team_matches(item, query)] if query else list(items)
+    if filters["power_known"]:
+        filtered = [item for item in filtered if item.get("power_known")]
+    if filters["power_min"] is not None:
+        filtered = [item for item in filtered
+                    if item.get("power_known") and float(item.get("power") or 0) >= filters["power_min"]]
+    if filters["power_max"] is not None:
+        filtered = [item for item in filtered
+                    if item.get("power_known") and float(item.get("power") or 0) <= filters["power_max"]]
+    sort = filters["sort"]
+    if sort == "power_desc":
+        filtered.sort(key=lambda it: float(it.get("power") or 0) if it.get("power_known") else float("-inf"),
+                      reverse=True)
+    elif sort == "power_asc":
+        filtered.sort(key=lambda it: float(it.get("power") or 0) if it.get("power_known") else float("inf"))
+    elif sort == "hp_desc":
+        filtered.sort(key=lambda it: float(it.get("hp_total") or 0), reverse=True)
+    elif sort == "units_desc":
+        filtered.sort(key=lambda it: float(it.get("units") or 0), reverse=True)
+    return {"total": len(filtered), "offset": offset, "limit": limit,
+            "items": filtered[offset:offset + limit]}
+
+
+def _paginate(items: list, qs: dict, default_limit: int = 60, max_limit: int = 200) -> dict:
+    return _apply_team_query(items, qs or {}, default_limit=default_limit, max_limit=max_limit)
 
 
 def api_chapter(chapter_id: str, qs: dict | None = None) -> dict:
@@ -573,6 +630,17 @@ def api_creds_load(body: dict) -> dict:
 # ---------------------------------------------------------------------------
 # HTTP 层
 # ---------------------------------------------------------------------------
+def api_grayzone_teams(qs: dict) -> dict:
+    filters = _team_filters(qs or {})
+    return get_catalog().grayzone_teams(
+        area=(qs.get("area") or [""])[0],
+        offset=int((qs.get("offset") or ["0"])[0] or 0),
+        limit=min(200, int((qs.get("limit") or ["60"])[0] or 60)),
+        q=(qs.get("q") or [""])[0],
+        **filters,
+    )
+
+
 GET_ROUTES = [
     (re.compile(r"^/api/health$"), lambda ctx: api_health()),
     (re.compile(r"^/api/meta$"), lambda ctx: api_meta()),
@@ -581,12 +649,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/stages/(?P<mid>-?\d+)$"), lambda ctx: api_stage(int(ctx["match"].group("mid")))),
     (re.compile(r"^/api/teams/(?P<tid>-?\d+)$"), lambda ctx: api_team(int(ctx["match"].group("tid")))),
     (re.compile(r"^/api/grayzone/areas$"), lambda ctx: {"areas": get_catalog().grayzone_areas()}),
-    (re.compile(r"^/api/grayzone/teams$"), lambda ctx: get_catalog().grayzone_teams(
-        area=(ctx["qs"].get("area") or [""])[0],
-        offset=int((ctx["qs"].get("offset") or ["0"])[0] or 0),
-        limit=min(200, int((ctx["qs"].get("limit") or ["60"])[0] or 60)),
-        q=(ctx["qs"].get("q") or [""])[0],
-    )),
+    (re.compile(r"^/api/grayzone/teams$"), lambda ctx: api_grayzone_teams(ctx["qs"])),
     (re.compile(r"^/api/species$"), lambda ctx: get_catalog().species_list(
         q=(ctx["qs"].get("q") or [""])[0],
         faction=(ctx["qs"].get("faction") or [""])[0],
@@ -730,12 +793,36 @@ class Handler(BaseHTTPRequestHandler):
         content_type = STATIC_TYPES.get(candidate.suffix.lower(), "application/octet-stream")
         self._send(200, candidate.read_bytes(), content_type)
 
+    def _icon(self, name: str) -> None:
+        """敌人头像图标：从数据目录 icons/ 下按文件名读取（名称由 catalog 生成，已做白名单校验）。"""
+        clean = unquote(name)
+        if "/" in clean or "\\" in clean or clean.startswith("."):
+            self._error(403, "非法图标名")
+            return
+        candidate = (ICON_DIR / clean).resolve()
+        try:
+            candidate.relative_to(ICON_DIR.resolve())
+        except ValueError:
+            self._error(403, "非法图标路径")
+            return
+        if not candidate.is_file():
+            self._error(404, "图标不存在", detail=clean)
+            return
+        suffix = candidate.suffix.lower()
+        content_type = {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg"}.get(
+            suffix, "application/octet-stream")
+        self._send(200, candidate.read_bytes(), content_type, cache=True)
+
     # --- 分发 ---
     def _dispatch(self, method: str) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
         started = time.time()
         try:
+            if path.startswith("/api/icons/"):
+                self._icon(path[len("/api/icons/"):])
+                self._log(method, path, 200, started)
+                return
             if path.startswith("/api/"):
                 ctx = {
                     "method": method,
@@ -811,7 +898,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rebuild-catalog", action="store_true", help="启动时强制重建数据缓存")
     args = parser.parse_args(argv)
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_dirs()
     warm_catalog(rebuild=args.rebuild_catalog)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True

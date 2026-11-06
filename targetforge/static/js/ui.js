@@ -1,5 +1,5 @@
-/* ui.js —— 图标 / 弹窗 / 抽屉 / toast / 骨架 / 空态 / 通用卡片渲染 */
-import { esc, fmtNum, fmtPower, fmtTime, factionClass, factionColor } from "./util.js";
+/* ui.js —— 图标 / 蝴蝶 / 弹窗 / 抽屉 / toast / 骨架 / 空态 / 通用卡片渲染 */
+import { esc, fmtNum, fmtPower, fmtTime, factionClass, factionColor, powerDisplay, hash32 } from "./util.js";
 import { api } from "./api.js";
 
 /* ================================================================== */
@@ -65,30 +65,188 @@ export function icon(name, size = 16, cls = "") {
 }
 
 /* ------------------------------------------------------------------
- * 蓝蝴蝶（手写 inline SVG，主题装饰：logo / hero / 空态 / 加载 / hover）
+ * 大蓝闪蝶（Blue Morpho）—— 手写 inline SVG
+ * 亮蓝渐变翅膀 + 黑色翅缘/翅脉 + 白色斑点 + 对称展翅；
+ * 用于 logo / hero / 空态 / 加载 / 教程 / hover 等主题装饰。
  * ------------------------------------------------------------------ */
-export function butterflySvg({ size = 64, className = "", opacity = 1, style = "" } = {}) {
+let bfUid = 0;
+export function butterflySvg({ size = 64, className = "", opacity = 1, simple = false, style = "" } = {}) {
   const px = typeof size === "number" ? `${size}px` : size;
-  return `<svg class="butterfly ${className}" width="${px}" height="${px}" viewBox="0 0 64 64" fill="none" aria-hidden="true" style="--bf-op:${opacity};${style}">
-    <path class="bf-upper" d="M31.4 28.6C27.2 16.8 16.4 7.2 8.8 11.2C3 14.3 7.3 25.8 21.4 30.4C25.4 31.7 28.8 31 31.4 28.6Z"/>
-    <path class="bf-upper" d="M32.6 28.6C36.8 16.8 47.6 7.2 55.2 11.2C61 14.3 56.7 25.8 42.6 30.4C38.6 31.7 35.2 31 32.6 28.6Z"/>
-    <path class="bf-lower" d="M31.2 33.4C24.9 34.4 14.2 42.6 17.6 50.2C20.7 57.1 29.4 49.4 31.9 39.4Z"/>
-    <path class="bf-lower" d="M32.8 33.4C39.1 34.4 49.8 42.6 46.4 50.2C43.3 57.1 34.6 49.4 32.1 39.4Z"/>
-    <path class="bf-vein" d="M31 29.5C26 24 18.5 17.6 11.5 14.6"/>
-    <path class="bf-vein" d="M33 29.5C38 24 45.5 17.6 52.5 14.6"/>
-    <path class="bf-vein" d="M31.4 35.6C27.6 38.4 22 44.4 20.4 48"/>
-    <path class="bf-vein" d="M32.6 35.6C36.4 38.4 42 44.4 43.6 48"/>
-    <circle class="bf-spot" cx="15.5" cy="20" r="2.1"/>
-    <circle class="bf-spot" cx="48.5" cy="20" r="2.1"/>
-    <circle class="bf-spot" cx="22.8" cy="43.6" r="1.4"/>
-    <circle class="bf-spot" cx="41.2" cy="43.6" r="1.4"/>
-    <ellipse class="bf-body" cx="32" cy="36.5" rx="2.5" ry="12.6"/>
-    <circle class="bf-body" cx="32" cy="21.6" r="2.6"/>
-    <path class="bf-antenna" d="M30.6 19.6C28.3 15.9 25.4 13.6 22.2 12.7"/>
-    <path class="bf-antenna" d="M33.4 19.6C35.7 15.9 38.6 13.6 41.8 12.7"/>
-    <circle class="bf-tip" cx="21.6" cy="12.4" r="1.1"/>
-    <circle class="bf-tip" cx="42.4" cy="12.4" r="1.1"/>
+  const uid = `morpho${++bfUid}`;
+  const foreLeft = "M95 84 C86 58 66 30 42 16 C30 9 16 12 14 24 C12 40 24 62 42 77 C58 91 78 101 91 103 C95 104 96 94 95 84 Z";
+  const foreRight = "M105 84 C114 58 134 30 158 16 C170 9 184 12 186 24 C188 40 176 62 158 77 C142 91 122 101 109 103 C105 104 104 94 105 84 Z";
+  const hindLeft = "M95 106 C78 110 52 124 38 142 C27 156 32 168 46 169 C64 170 84 154 92 134 C97 122 98 112 95 106 Z";
+  const hindRight = "M105 106 C122 110 148 124 162 142 C173 156 168 168 154 169 C136 170 116 154 108 134 C103 122 102 112 105 106 Z";
+  const detail = simple ? "" : `
+    <g class="bf-detail">
+      <path class="bf-vein" d="M95 86 C78 72 56 52 36 36"/>
+      <path class="bf-vein" d="M95 90 C80 80 62 64 46 52"/>
+      <path class="bf-vein" d="M94 94 C82 88 66 78 52 68"/>
+      <path class="bf-vein" d="M95 106 C80 116 62 130 48 146"/>
+      <path class="bf-vein" d="M97 110 C86 124 74 142 66 156"/>
+      <path class="bf-vein" d="M105 86 C122 72 144 52 164 36"/>
+      <path class="bf-vein" d="M105 90 C120 80 138 64 154 52"/>
+      <path class="bf-vein" d="M106 94 C118 88 134 78 148 68"/>
+      <path class="bf-vein" d="M105 106 C120 116 138 130 152 146"/>
+      <path class="bf-vein" d="M103 110 C114 124 126 142 134 156"/>
+      <path class="bf-sheen" d="M93 84 C80 64 62 46 44 34 C58 44 76 62 90 92 Z"/>
+      <path class="bf-iridescence" d="M92 82 C82 62 62 38 36 22 C56 34 82 60 94 90 Z"/>
+      <path class="bf-iridescence" d="M108 82 C118 62 138 38 164 22 C144 34 118 60 106 90 Z"/>
+      <path class="bf-sheen" d="M107 84 C120 64 138 46 156 34 C142 44 124 62 110 92 Z"/>
+      <path class="bf-sheen" d="M95 108 C84 118 68 132 54 144 C66 128 82 114 96 106 Z"/>
+      <path class="bf-sheen" d="M105 108 C116 118 132 132 146 144 C134 128 118 114 104 106 Z"/>
+      <ellipse class="bf-spot" cx="26" cy="31" rx="3.6" ry="2.3" transform="rotate(-28 33 36)"/>
+      <ellipse class="bf-spot" cx="23" cy="44" rx="2.4" ry="1.6" transform="rotate(-20 27 47)"/>
+      <ellipse class="bf-spot" cx="41" cy="53" rx="2.1" ry="1.5" transform="rotate(-10 41 53)"/>
+      <ellipse class="bf-spot" cx="174" cy="31" rx="3.6" ry="2.3" transform="rotate(28 167 36)"/>
+      <ellipse class="bf-spot" cx="177" cy="44" rx="2.4" ry="1.6" transform="rotate(20 173 47)"/>
+      <ellipse class="bf-spot" cx="159" cy="53" rx="2.1" ry="1.5" transform="rotate(10 159 53)"/>
+    </g>`;
+  return `<svg class="butterfly${simple ? " is-simple" : ""} ${className}" width="${px}" height="${px}" viewBox="0 0 200 190" fill="none" aria-hidden="true" style="--bf-op:${opacity};${style}">
+    <defs>
+      <linearGradient id="${uid}-wing" x1="0.5" y1="0" x2="0.5" y2="1">
+        <stop offset="0" stop-color="#7df3ff"/>
+        <stop offset="0.22" stop-color="#4fd6ff"/>
+        <stop offset="0.46" stop-color="#29b6f6"/>
+        <stop offset="0.72" stop-color="#1e88e5"/>
+        <stop offset="1" stop-color="#0d47a1"/>
+      </linearGradient>
+      <linearGradient id="${uid}-hind" x1="0.5" y1="0" x2="0.5" y2="1">
+        <stop offset="0" stop-color="#3fc9ff"/>
+        <stop offset="0.45" stop-color="#1e88e5"/>
+        <stop offset="1" stop-color="#0a3d8f"/>
+      </linearGradient>
+      <linearGradient id="${uid}-body" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3a4f7d"/>
+        <stop offset="0.4" stop-color="#14203c"/>
+        <stop offset="1" stop-color="#050a18"/>
+      </linearGradient>
+    </defs>
+    <g class="bf-wings">
+      <!-- 后翅：黑色翅缘 + 蓝渐变 -->
+      <path class="bf-glow-rim" d="${hindLeft}"/>
+      <path class="bf-rim" d="${hindLeft}"/>
+      <path class="bf-glow-rim" d="${hindRight}"/>
+      <path class="bf-rim" d="${hindRight}"/>
+      <path class="bf-hind" d="${hindLeft}" fill="url(#${uid}-hind)"/>
+      <path class="bf-hind" d="${hindRight}" fill="url(#${uid}-hind)"/>
+      <!-- 前翅：黑色翅缘 + 亮蓝渐变 -->
+      <path class="bf-glow-rim" d="${foreLeft}"/>
+      <path class="bf-rim" d="${foreLeft}"/>
+      <path class="bf-glow-rim" d="${foreRight}"/>
+      <path class="bf-rim" d="${foreRight}"/>
+      <path class="bf-fore" d="${foreLeft}" fill="url(#${uid}-wing)"/>
+      <path class="bf-fore" d="${foreRight}" fill="url(#${uid}-wing)"/>
+      <!-- 前翅黑色翅尖 -->
+      <path class="bf-tip-dark" d="M14 24 C12 40 24 62 42 77 C33 58 29 40 32 25 C27 18 17 17 14 24 Z"/>
+      <path class="bf-tip-dark" d="M186 24 C188 40 176 62 158 77 C167 58 171 40 168 25 C173 18 183 17 186 24 Z"/>
+      ${detail}
+    </g>
+    <!-- 触角 -->
+    <path class="bf-antenna" d="M97 74 C92 58 84 48 76 42"/>
+    <path class="bf-antenna" d="M103 74 C108 58 116 48 124 42"/>
+    <circle class="bf-antenna-tip" cx="76" cy="42" r="2.4"/>
+    <circle class="bf-antenna-tip" cx="124" cy="42" r="2.4"/>
+    <!-- 身体 -->
+    <ellipse class="bf-thorax" cx="100" cy="94" rx="7.2" ry="15" fill="url(#${uid}-body)"/>
+    <path class="bf-abdomen" d="M100 104 C106 113 106 136 100 153 C94 136 94 113 100 104 Z" fill="url(#${uid}-body)"/>
+    <path class="bf-body-line" d="M95.5 100 C99 104 101 104 104.5 100"/>
+    <path class="bf-body-line" d="M96.5 108 C99.4 111 100.6 111 103.5 108"/>
+    <path class="bf-body-line" d="M96.8 116 C99.4 119 100.6 119 103.2 116"/>
+    <circle class="bf-head" cx="100" cy="78" r="5.2" fill="url(#${uid}-body)"/>
   </svg>`;
+}
+
+/* ================================================================== */
+/* 小怪图标：真实头像 <img> + 按阵营着色的剪影 SVG 兜底                 */
+/* ================================================================== */
+export function speciesSilhouetteKind(item = {}, fallbackFaction = "") {
+  const faction = item.faction || fallbackFaction || "";
+  const tags = item.tags || [];
+  if (tags.includes("BOSS") || item.boss) return "boss";
+  const codex = Number(item.codex_no);
+  const seed = hash32(`silhouette:${Number.isFinite(codex) ? codex : item.name || item.code || ""}`);
+  if (faction === "军方") return seed % 10 < 7 ? "mecha" : "boss";
+  if (faction === "帕拉蒂斯") return seed % 10 < 6 ? "humanoid" : "boss";
+  if (faction === "铁血") return seed % 10 < 6 ? "insect" : "mecha";
+  return seed % 10 < 6 ? "insect" : "humanoid";
+}
+
+/** 按阵营着色的三种剪影（虫 / 机甲 / 首领）+ 人形兜底 */
+export function unitSilhouetteSvg({ size = 32, faction = "", kind = "", className = "" } = {}) {
+  const k = kind || speciesSilhouetteKind({}, faction);
+  const color = factionColor(faction);
+  let body = "";
+  if (k === "mecha") {
+    body = `
+      <rect x="9" y="12.4" width="14" height="10.6" rx="2"/>
+      <rect x="11.4" y="5.4" width="9.2" height="6" rx="1.4"/>
+      <rect x="13" y="7.3" width="6" height="1.9" rx="0.9" fill="rgba(4,9,20,.78)"/>
+      <rect x="5.8" y="14.8" width="3.2" height="6.2" rx="1"/>
+      <rect x="23" y="14.8" width="3.2" height="6.2" rx="1"/>
+      <rect x="12.4" y="23.6" width="3" height="4" rx="1"/>
+      <rect x="16.6" y="23.6" width="3" height="4" rx="1"/>
+      <rect x="13" y="15.2" width="6" height="1.5" fill="rgba(4,9,20,.6)"/>
+      <rect x="13" y="18" width="6" height="1.3" fill="rgba(4,9,20,.45)"/>`;
+  } else if (k === "boss") {
+    body = `
+      <path d="M16 3.6 19.2 9 24 7.4 22.4 12.4 26.8 14.8 22.2 17.4 24.4 22.4 18.8 20.8 16 26.4 13.2 20.8 7.6 22.4 9.8 17.4 5.2 14.8 9.6 12.4 8 7.4 12.8 9Z"/>
+      <circle cx="12.6" cy="14.2" r="1.5" fill="rgba(4,9,20,.72)"/>
+      <circle cx="19.4" cy="14.2" r="1.5" fill="rgba(4,9,20,.72)"/>`;
+  } else if (k === "humanoid") {
+    body = `
+      <circle cx="16" cy="9.8" r="4.3"/>
+      <path d="M6.6 27.4c0-5.3 4.2-9.1 9.4-9.1s9.4 3.8 9.4 9.1Z"/>
+      <circle cx="14.2" cy="9.2" r="1" fill="rgba(4,9,20,.65)"/>
+      <circle cx="17.8" cy="9.2" r="1" fill="rgba(4,9,20,.65)"/>`;
+  } else {
+    body = `
+      <ellipse cx="16" cy="19.6" rx="4.6" ry="7"/>
+      <circle cx="16" cy="10.2" r="3.5"/>
+      <path d="M13.4 7.8 10.8 4.6M18.6 7.8 21.2 4.6" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      <path d="M11.6 16 6 12.8M11.5 19.2 5.2 19.8M11.8 22.6 6.6 25.8M20.4 16 26 12.8M20.5 19.2 26.8 19.8M20.2 22.6 25.4 25.8" stroke="currentColor" stroke-width="1.15" fill="none" stroke-linecap="round"/>`;
+  }
+  return `<svg class="sp-silhouette ${className}" width="${size}" height="${size}" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" style="color:${color}">${body}</svg>`;
+}
+
+/**
+ * 小怪图标：有 icon 用真实头像（懒加载 + onerror 由 main.js 统一回退），否则用剪影。
+ * @param {object} item species/member 项（可能含 icon / codex_no / name / faction）
+ */
+export function speciesIconHtml(item = {}, { size = 32, variant = "chip", className = "", fallbackFaction = "" } = {}) {
+  const faction = item.faction || fallbackFaction || "";
+  const kind = speciesSilhouetteKind(item, faction);
+  const icon = item.icon ? String(item.icon) : "";
+  const src = icon.startsWith("data:")
+    ? icon
+    : `/api/icons/${encodeURIComponent(icon)}`;
+  const inner = icon
+    ? `<img class="species-icon" src="${src}" alt="" loading="lazy" decoding="async" data-icon-size="${size}" data-icon-faction="${esc(faction)}" data-icon-kind="${kind}" />`
+    : unitSilhouetteSvg({ size, faction, kind });
+  return `<span class="sp-icon sp-icon-${variant} ${className}" style="--fc:${factionColor(faction)};width:${size}px;height:${size}px" title="${esc(item.name || item.code || "")}">${inner}</span>`;
+}
+
+/* ================================================================== */
+/* 小怪图标覆盖率兜底（img error 时替换为剪影）                        */
+/* ================================================================== */
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "error",
+    (event) => {
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement) || !img.classList.contains("species-icon")) return;
+      const holder = img.parentElement;
+      if (!holder) return;
+      const size = Number(img.dataset.iconSize) || holder.clientWidth || 32;
+      holder.innerHTML = unitSilhouetteSvg({
+        size,
+        faction: img.dataset.iconFaction || "",
+        kind: img.dataset.iconKind || "",
+      });
+      holder.classList.add("sp-icon-fallback");
+    },
+    true,
+  );
 }
 
 /* ================================================================== */
@@ -540,11 +698,11 @@ export function tagsHtml(tags, { amberFirst = true, max = 6 } = {}) {
     .join("");
 }
 
-export function speciesChips(species, { max = 8 } = {}) {
+export function speciesChips(species, { max = 8, iconSize = 16 } = {}) {
   if (!species || !species.length) return "";
   const chips = species.slice(0, max).map(
     (item) =>
-      `<span class="sp-chip" style="--fc:${factionColor(item.faction)}" title="${esc(item.name)}">${esc(item.name || item.codex_no)}</span>`,
+      `<span class="sp-chip" style="--fc:${factionColor(item.faction)}" title="${esc(item.name)}">${speciesIconHtml(item, { size: iconSize, variant: "mini" })}<span class="sp-chip-name">${esc(item.name || item.codex_no)}</span></span>`,
   );
   if (species.length > max) chips.push(`<span class="sp-chip more">+${species.length - max}</span>`);
   return chips.join("");
@@ -570,7 +728,7 @@ export function teamCardHtml(team, options = {}) {
   const flags = [];
   if (team.gray_zone) flags.push('<span class="badge cyan">灰域</span>');
   if (team.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
-  const powerUnknown = !(Number(team.power) > 0);
+  const disp = powerDisplay(team.power, team.power_known);
   const stageLine = team.stage
     ? `${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
     : team.gray_zone
@@ -582,7 +740,7 @@ export function teamCardHtml(team, options = {}) {
     <article class="team-card ${selected ? "is-selected" : ""}" style="--fc:${fc}" data-team-detail="${team.id}">
       <div class="tc-top">
         <span class="tc-id">队伍 <b>#${esc(team.id)}</b></span>
-        <span class="tc-power">${powerUnknown ? '<b class="dim">—</b><span>未标注效能</span>' : `${powerHtml(team.power)}<span>效能</span>`}</span>
+        <span class="tc-power">${disp.known ? `<b class="${disp.negative ? "neg" : ""}"${disp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${disp.text}</b><span>效能</span>` : '<b class="dim">未标注</b><span>效能</span>'}</span>
       </div>
       <div class="tc-meta">
         <span class="m">${icon("users", 11)} ${team.units} 单位</span>
@@ -595,7 +753,7 @@ export function teamCardHtml(team, options = {}) {
       ${!compact && team.members?.length
         ? `<div class="tc-members">${team.members
             .slice(0, 5)
-            .map((member) => `<span class="mem-chip">${esc(member.name || member.code)}×${member.count ?? 1}</span>`)
+            .map((member) => `<span class="mem-chip">${member.icon ? speciesIconHtml(member, { size: 14, variant: "mini", fallbackFaction: team.faction }) : ""}${esc(member.name || member.code)}×${member.count ?? 1}</span>`)
             .join("")}</div>`
         : ""}
       <div class="tc-foot">
@@ -637,11 +795,10 @@ export function stageRowHtml(stage, options = {}) {
 
 /** 怪种卡片 */
 export function speciesCardHtml(item) {
-  const fc = factionColor(item.faction);
   const tags = tagsHtml(item.tags, { max: 2 });
   return `
     <button class="species-card" type="button" data-species-detail="${item.codex_no}">
-      <span class="sp-avatar" style="--fc:${fc}">${esc((item.name || "?").slice(0, 1))}</span>
+      ${speciesIconHtml(item, { size: 46, variant: "card" })}
       <span class="sp-main">
         <span class="sp-name-row">
           <span class="sp-name">${esc(item.name)}</span>

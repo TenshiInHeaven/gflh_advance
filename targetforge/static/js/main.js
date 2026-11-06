@@ -20,7 +20,7 @@ import {
   handleViewError,
   emptyState,
 } from "./ui.js";
-import { esc, fmtNum, fmtPower, fmtDate, timeAgo, navigate, parseRoute, debounce, bindSearch } from "./util.js";
+import { esc, fmtNum, fmtDate, timeAgo, navigate, parseRoute, debounce, bindSearch, powerDisplay } from "./util.js";
 import { initSequencePanel } from "./components/sequence-panel.js";
 import { openTeamDrawer } from "./components/team-drawer.js";
 import { maybeShowTutorialOverlay } from "./components/tutorial-overlay.js";
@@ -265,11 +265,31 @@ const runSearch = debounce(async (value, wait = 0) => {
     const teams = data.teams || [];
     const stages = data.stages || [];
     const speciesList = data.species || [];
-    if (!teams.length && !stages.length && !speciesList.length) {
+    const q = value.trim().toLowerCase();
+    const chapterHits = [];
+    (store.chapters?.groups || []).forEach((group) => {
+      (group.chapters || []).forEach((chapter) => {
+        if (chapterHits.length >= 6) return;
+        const hay = `${chapter.title || ""} ${chapter.subtitle || ""} ${(chapter.tags || []).join(" ")} ${group.title || ""}`.toLowerCase();
+        if (hay.includes(q)) chapterHits.push({ chapter, group });
+      });
+    });
+    if (!teams.length && !stages.length && !speciesList.length && !chapterHits.length) {
       drop.innerHTML = `<div class="sd-empty">没有找到「${esc(value)}」相关结果</div>`;
       return;
     }
     const groups = [];
+    if (chapterHits.length) {
+      groups.push(`<div class="sd-group-title">章节 / 活动</div>${chapterHits
+        .map(
+          ({ chapter, group }) => `
+        <div class="sd-item" data-search-nav="/chapters/${esc(chapter.id)}">
+          <span class="badge gold mono" style="height:18px">${esc(group.title)}</span>
+          <span class="sd-main"><span class="sd-title">${esc(chapter.title || chapter.id)}</span><span class="sd-sub">${esc(chapter.subtitle || "")}</span></span>
+        </div>`,
+        )
+        .join("")}`);
+    }
     if (stages.length) {
       groups.push(`<div class="sd-group-title">关卡</div>${stages
         .slice(0, 5)
@@ -301,7 +321,7 @@ const runSearch = debounce(async (value, wait = 0) => {
           (item) => `
         <div class="sd-item" data-search-nav="/teams/${esc(item.id)}">
           <span class="badge mono">#${esc(item.id)}</span>
-          <span class="sd-main"><span class="sd-title">效能 ${fmtPower(item.power)}</span><span class="sd-sub">${esc(item.faction || "")} · ${esc(String(item.units ?? ""))} 单位</span></span>
+          <span class="sd-main"><span class="sd-title">效能 ${powerDisplay(item.power, item.power_known).known ? powerDisplay(item.power, item.power_known).text : "未标注"}</span><span class="sd-sub">${esc(item.faction || "")} · ${esc(String(item.units ?? ""))} 单位</span></span>
         </div>`,
         )
         .join("")}`);

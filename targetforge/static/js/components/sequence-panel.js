@@ -1,7 +1,7 @@
 /* sequence-panel.js —— 右侧常驻「序列」面板（可收起 / 拖拽排序 / n/35 进度） */
 import { store, refreshSequence, sequenceStats, removeTeam, moveTeam, clearSequence, importCurrentSequence } from "../store.js";
 import { icon, toast, toastErr, toastOk, confirmDialog, butterflySvg } from "../ui.js";
-import { esc, fmtNum, fmtPower, factionColor, navigate } from "../util.js";
+import { esc, fmtNum, factionColor, navigate, powerDisplay } from "../util.js";
 import { bindDragSort } from "./drag-sort.js";
 import { openExecuteModal } from "./execute-modal.js";
 
@@ -51,8 +51,8 @@ function render() {
       </div>
       <div class="seq-progress">${progressBlocks(stats.count, stats.max)}</div>
       <div class="seq-summary">
-        <span>总效能 <b>${stats.power > 0 ? fmtNum(stats.power) : "—"}</b></span>
-        <span>单位 <b>${stats.units}</b></span>
+        <span>总效能 <b>${stats.powerKnown ? fmtNum(stats.power) : "—"}</b></span>
+        <span>已标注 <b>${stats.powerKnown}</b> / 未标注 <b>${stats.powerUnknown}</b></span>
       </div>
     </div>
     <div class="seq-list-wrap">
@@ -86,6 +86,7 @@ function render() {
 
 function seqItemHtml(team, index) {
   const fc = factionColor(team.faction);
+  const disp = powerDisplay(team.power, team.power_known);
   const isGray = team.gray_zone;
   const isOrphan = team.orphan;
   return `
@@ -94,7 +95,7 @@ function seqItemHtml(team, index) {
       <div class="seq-body">
         <div class="seq-line1">
           <span class="seq-team-id">#${esc(team.id)}</span>
-          <span class="seq-power">${fmtPower(team.power)}</span>
+          <span class="seq-power ${disp.known ? (disp.negative ? "neg" : "") : "unknown"}"${disp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${disp.known ? disp.text : "未标注"}</span>
         </div>
         <div class="seq-line2">
           <i class="seq-faction-dot" style="background:${fc}"></i>

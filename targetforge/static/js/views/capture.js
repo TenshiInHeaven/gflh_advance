@@ -17,7 +17,13 @@ import {
   logLineHtml,
   butterflySvg,
 } from "../ui.js";
-import { esc, fmtNum, fmtPower, fmtTime, fmtDuration, timeAgo, navigate } from "../util.js";
+import { esc, fmtNum, fmtPower, fmtTime, fmtDuration, timeAgo, navigate, powerDisplay } from "../util.js";
+import {
+  bindPowerFilter,
+  powerFilterBarHtml,
+  powerFilterMeta,
+  defaultPowerFilter,
+} from "../components/power-filter.js";
 
 const STATE_LABEL = {
   idle: "空闲",
@@ -40,6 +46,8 @@ let credsData = null;
 let targetFillToken = 0;
 let currentPort = getCapturePort();
 let portSaveBusy = false;
+let currentFilter = defaultPowerFilter();
+let targetDataLoading = false;
 
 function cleanup() {
   if (pollTimer) {
@@ -99,6 +107,10 @@ export async function render(root) {
               <input type="number" class="port-input" data-port-input min="${PORT_MIN}" max="${PORT_MAX}" step="1" value="${currentPort}" aria-label="抓包端口" />
               <button class="btn btn-sm btn-cyan" type="button" data-act="save-port">${icon("check", 12)} 保存端口</button>
               <span class="pc-hint" data-port-hint>修改后点保存，下一次「开始抓取」生效</span>
+            </div>
+            <div class="pc-hint data-dir-line" style="margin-top:7px">
+              ${icon("database", 11)} 应用数据目录：<code data-data-dir>读取中…</code>
+              · 可用环境变量 <b class="mono-inline">TARGETFORGE_DATA_DIR</b> 覆盖；creds_latest.json 就放在该目录下
             </div>
           </div>
 
@@ -202,7 +214,8 @@ export async function render(root) {
 
         <div class="capture-panel mt16">
           ${sectionHeadHtml("当前靶机", { hint: "来自最新凭证 / 本地状态", iconName: "target", actions: `<span class="badge mono" data-current-count>—</span>` })}
-          <div data-current-targets>${skeletonRows(3)}</div>
+          <div class="mt12">${powerFilterBarHtml()}</div>
+          <div data-current-targets class="mt12">${skeletonRows(3)}</div>
         </div>
       </div>
     </div>
@@ -210,7 +223,11 @@ export async function render(root) {
 
   bindShellEvents(root);
   bindPortEvents(root);
-  await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadCurrent()]);
+  bindPowerFilter(root, (filter) => {
+    currentFilter = filter;
+    renderCurrent();
+  });
+  await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadCurrent(), applyDataDir()]);
   applyPortUi();
 
   pollTimer = setInterval(() => {
@@ -611,6 +628,24 @@ function renderCreds() {
   });
 }
 
+async function applyDataDir() {
+  if (!rootEl || !rootEl.isConnected) return;
+  let dir = store.health?.data_dir || "";
+  if (!dir) {
+    try {
+      const health = await refreshHealth();
+      dir = health?.data_dir || "";
+    } catch {
+      dir = "";
+    }
+  }
+  const el = rootEl.querySelector("[data-data-dir]");
+  if (el) el.textContent = dir || "默认 <GF Forge>/dataMiner/derived/targetforge（TARGETFORGE_DATA_DIR 可覆盖）";
+}
+
+/* ------------------------------------------------------------------ */
+/* 当前靶机 + 效能筛选（先补齐队伍数据，再本地筛选/排序）             */
+/* ------------------------------------------------------------------ */
 async function loadCurrent() {
   const areaEl = rootEl?.querySelector("[data-current-targets]");
   if (!areaEl) return;
@@ -618,6 +653,7 @@ async function loadCurrent() {
     const data = await refreshCurrent("auto");
     currentData = data;
     renderCurrent();
+    ensureTargetData(data.targets || []);
   } catch (err) {
     currentData = null;
     areaEl.innerHTML = emptyState({
@@ -632,7 +668,87 @@ async function loadCurrent() {
     });
     const countEl = rootEl?.querySelector("[data-current-count]");
     if (countEl) countEl.textContent = "—";
+    const pfMeta = rootEl?.querySelector("[data-pf-meta]");
+    if (pfMeta) pfMeta.textContent = "";
   }
+}
+
+function targetEntries() {
+  const targets = currentData?.targets || [];
+  return targets.map((item) => ({
+    order: item.order,
+    team: item.team,
+    data: teamCache.get(Number(item.team)) || null,
+  }));
+}
+
+function currentSortValue(entry) {
+  const disp = powerDisplay(entry.data?.power, entry.data?.power_known);
+  return disp.known ? disp.value : null;
+}
+
+function filterCurrentEntries(entries, state) {
+  const mode = state?.mode || "all";
+  const min = state?.min === "" || state?.min === undefined ? null : Number(state.min);
+  const max = state?.max === "" || state?.max === undefined ? null : Number(state.max);
+  let filtered = entries;
+  if (mode === "known") {
+    filtered = entries.filter((entry) => currentSortValue(entry) !== null);
+  } else if (mode === "custom") {
+    filtered = entries.filter((entry) => {
+      const value = currentSortValue(entry);
+      if (value === null) return false;
+      if (min !== null && Number.isFinite(min) && value < min) return false;
+      if (max !== null && Number.isFinite(max) && value > max) return false;
+      return true;
+    });
+  }
+  const sort = state?.sort || "default";
+  const sorted = filtered.slice();
+  if (sort === "power_desc") {
+    sorted.sort((a, b) => (currentSortValue(b) ?? -Infinity) - (currentSortValue(a) ?? -Infinity));
+  } else if (sort === "power_asc") {
+    sorted.sort((a, b) => (currentSortValue(a) ?? Infinity) - (currentSortValue(b) ?? Infinity));
+  } else if (sort === "hp_desc") {
+    sorted.sort((a, b) => (Number(b.data?.hp_total) || 0) - (Number(a.data?.hp_total) || 0));
+  } else if (sort === "units_desc") {
+    sorted.sort((a, b) => (Number(b.data?.units) || 0) - (Number(a.data?.units) || 0));
+  }
+  return sorted;
+}
+
+function targetsNeedData(entries) {
+  const filterActive = currentFilter.mode !== "all" || (currentFilter.sort && currentFilter.sort !== "default");
+  if (!filterActive) return entries.filter((entry) => !entry.data).length > 0;
+  return entries.some((entry) => entry.data === undefined || entry.data === null);
+}
+
+async function ensureTargetData(targets) {
+  if (targetDataLoading) return;
+  const ids = [...new Set((targets || []).map((item) => Number(item.team)))].filter(
+    (id) => Number.isFinite(id) && !teamCache.has(id),
+  );
+  if (!ids.length) return;
+  targetDataLoading = true;
+  try {
+    const queue = ids.slice();
+    const worker = async () => {
+      while (queue.length) {
+        const teamId = queue.shift();
+        if (teamCache.has(teamId)) continue;
+        try {
+          const team = await api.team(teamId);
+          teamCache.set(teamId, team);
+        } catch {
+          teamCache.set(teamId, null);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: 5 }, worker));
+  } finally {
+    targetDataLoading = false;
+  }
+  if (rootEl && rootEl.isConnected) renderCurrent();
 }
 
 function renderCurrent() {
@@ -641,7 +757,9 @@ function renderCurrent() {
   const targets = currentData?.targets || [];
   const countEl = rootEl?.querySelector("[data-current-count]");
   if (countEl) countEl.textContent = `${targets.length} / 35`;
+  const pfMeta = rootEl?.querySelector("[data-pf-meta]");
   if (!targets.length) {
+    if (pfMeta) pfMeta.textContent = "";
     areaEl.innerHTML = emptyState({
       iconName: "target",
       title: "当前靶机列表为空",
@@ -649,6 +767,30 @@ function renderCurrent() {
     });
     return;
   }
+
+  const entries = targetEntries();
+  const missing = targetsNeedData(entries);
+  if (missing && (currentFilter.mode !== "all" || (currentFilter.sort && currentFilter.sort !== "default"))) {
+    if (pfMeta) pfMeta.textContent = "正在读取当前靶机的效能数据…";
+    areaEl.innerHTML = skeletonRows(3);
+    ensureTargetData(targets);
+    return;
+  }
+
+  const filtered = filterCurrentEntries(entries, currentFilter);
+  if (pfMeta) {
+    const modeText = { all: "全部", known: "仅看有标注", custom: "自定义效能区间" }[currentFilter.mode] || "全部";
+    pfMeta.textContent = `${modeText} · 当前显示 ${filtered.length} / ${targets.length}`;
+  }
+  if (!filtered.length) {
+    areaEl.innerHTML = emptyState({
+      iconName: "search",
+      title: "没有符合效能条件的靶机",
+      desc: "当前靶机大多未标注效能（常规队伍），试试切回「全部」或缩小筛选范围。",
+    });
+    return;
+  }
+
   const duplicates = currentData?.duplicate_orders || {};
   areaEl.innerHTML = `
     ${
@@ -660,59 +802,32 @@ function renderCurrent() {
         : ""
     }
     <div class="targets-grid">
-      ${targets
-        .map(
-          (item) => `
-        <div class="target-item ${duplicates[item.order] ? "dup" : ""}" data-current-team="${item.team}">
-          <span class="target-order">${esc(item.order)}</span>
-          <span class="target-team">team ${esc(item.team)}</span>
-          <span class="target-extra" data-team-extra="${item.team}">…</span>
-        </div>`,
-        )
+      ${filtered
+        .map((entry) => {
+          const team = entry.data;
+          const disp = powerDisplay(team?.power, team?.power_known);
+          const species = (team?.species || []).slice(0, 1).map((item) => item.name).join("");
+          const extra = team
+            ? `${disp.known ? `效能 ${disp.text}` : "未标注效能"}${species ? ` · ${species}` : ""}`
+            : "…";
+          return `
+        <div class="target-item ${duplicates[entry.order] ? "dup" : ""}" data-current-team="${entry.team}">
+          <span class="target-order">${esc(entry.order)}</span>
+          <span class="target-team">team ${esc(entry.team)}</span>
+          <span class="target-extra ${disp.negative ? "neg" : ""}" ${disp.negative ? 'title="积分关卡数据，可能为负"' : ""}>${esc(extra)}</span>
+        </div>`;
+        })
         .join("")}
     </div>
     <div class="param-note" style="margin-top:10px">
       uid ${esc(currentData?.uid || "—")} · 来源 ${esc(currentData?.source || "—")}
       ${currentData?.captured_at ? ` · 抓取于 ${esc(fmtTime(currentData.captured_at, true))}` : ""}
-      · 上限 ${currentData?.max_targets || 35}
+      · 上限 ${currentData?.max_targets || 35} · 效能口径：0 = 未标注（常规队伍），负值来自积分关卡数据
     </div>
   `;
-  fillTargetExtras(targets.map((item) => item.team));
-}
-
-async function fillTargetExtras(teamIds) {
-  const token = ++targetFillToken;
-  const queue = [...new Set(teamIds)];
-  const worker = async () => {
-    while (queue.length) {
-      const teamId = queue.shift();
-      if (token !== targetFillToken) return;
-      let team = teamCache.get(teamId);
-      if (!team) {
-        try {
-          team = await api.team(teamId);
-          teamCache.set(teamId, team);
-        } catch {
-          team = null;
-        }
-      }
-      if (token !== targetFillToken || !rootEl?.isConnected) return;
-      const el = rootEl.querySelector(`[data-team-extra="${teamId}"]`);
-      if (el) {
-        if (team) {
-          const species = (team.species || []).slice(0, 1).map((item) => item.name).join("");
-          const powerText = fmtPower(team.power);
-          el.textContent = `${powerText}${species ? ` · ${species}` : ""}`;
-          el.title = `${Number(team.power) > 0 ? `效能 ${fmtNum(team.power)}` : "未标注效能"} · ${team.units} 单位${species ? ` · ${species}` : ""}`;
-        } else {
-          el.textContent = "不可收藏";
-          el.style.color = "var(--red)";
-        }
-      }
-      el?.closest("[data-current-team]")?.addEventListener("click", () => {
-        window.location.hash = `#/teams/${teamId}`;
-      });
-    }
-  };
-  await Promise.all(Array.from({ length: 5 }, worker));
+  areaEl.querySelectorAll("[data-current-team]").forEach((el) => {
+    el.addEventListener("click", () => {
+      window.location.hash = `#/teams/${el.dataset.currentTeam}`;
+    });
+  });
 }

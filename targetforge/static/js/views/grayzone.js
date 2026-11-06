@@ -1,4 +1,4 @@
-/* views/grayzone.js —— 灰域区域：队伍分页 + 搜索 */
+/* views/grayzone.js —— 灰域区域：队伍服务端分页 + 搜索 + 效能筛选/排序 */
 import { api } from "../api.js";
 import { store, sequenceStats, addTeams } from "../store.js";
 import {
@@ -14,22 +14,37 @@ import {
   toastErr,
   confirmDialog,
   setBusy,
-  sortTeamsByPower,
 } from "../ui.js";
+import {
+  filterAndSortTeams,
+  bindPowerFilter,
+  powerFilterBarHtml,
+  powerFilterMeta,
+  serverPowerParams,
+  defaultPowerFilter,
+} from "../components/power-filter.js";
 import { esc, fmtNum, navigate, bindSearch } from "../util.js";
 
 const PAGE_SIZE = 30;
-const state = { page: 1, query: "", total: 0, items: [], area: null, loading: false };
+const state = {
+  page: 1,
+  query: "",
+  total: 0,
+  items: [],
+  area: null,
+  loading: false,
+  filter: defaultPowerFilter(),
+};
 let rootEl = null;
-let searchTimer = null;
 
 export async function render(root, { params }) {
   rootEl = root;
-  const areaId = params.area;
+  const areaId = (params.area || "").trim();
   state.page = 1;
   state.query = "";
   state.items = [];
   state.total = 0;
+  state.filter = defaultPowerFilter();
 
   root.innerHTML = pageHeadHtml({
     crumbs: [
@@ -39,17 +54,18 @@ export async function render(root, { params }) {
     ],
     title: areaId,
     badge: "GRAY ZONE",
-    sub: "灰域区域内的可收藏队伍。灰域不逐节点列举关卡，这里按区域分页浏览，支持搜索队伍 id。",
+    sub: "灰域区域内的可收藏队伍。灰域不逐节点列举关卡，这里按区域分页浏览，支持搜索队伍 id 与效能筛选/排序。",
     actions: `<button class="btn btn-primary" type="button" data-act="add-page" disabled>${icon("plus", 14)} 本页全部加入序列</button>`,
   }) + `
     <div class="toolbar">
       <div class="input-wrap">
         <span class="in-ico">${icon("search", 14)}</span>
-        <input type="text" placeholder="搜索队伍 id…" data-gz-search />
+        <input type="text" placeholder="搜索队伍 id / 阵营 / 怪种…" data-gz-search />
       </div>
       <button class="btn btn-ghost" type="button" data-act="reload">${icon("refresh", 13)} 刷新</button>
       <span class="spacer"></span>
       <span class="tb-meta" data-gz-meta>${icon("radar", 11)} 读取中…</span>
+      <div style="flex-basis:100%">${powerFilterBarHtml()}</div>
     </div>
     <div data-gz-area>${skeletonCards(8)}</div>
   `;
@@ -67,9 +83,10 @@ export async function render(root, { params }) {
         offset: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         q: state.query,
+        ...serverPowerParams(state.filter),
       });
       state.total = data.total || 0;
-      state.items = sortTeamsByPower(data.items || []);
+      state.items = filterAndSortTeams(data.items || [], state.filter);
       state.page = page;
       renderList();
     } catch (err) {
@@ -91,17 +108,24 @@ export async function render(root, { params }) {
     if (metaEl) {
       metaEl.innerHTML = `${icon("users", 11)} 共 <b>${fmtNum(state.total)}</b> 支可收藏队伍 · 每页 ${PAGE_SIZE}`;
     }
+    const pfMeta = root.querySelector("[data-pf-meta]");
+    if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, state.total, state.items.length);
     if (!state.items.length) {
+      const filtering = state.query || state.filter.mode !== "all";
       areaEl.innerHTML = emptyState({
-        iconName: state.query ? "search" : "users",
-        title: state.query ? "没有匹配的队伍" : "该区域暂无队伍",
-        desc: state.query ? `没有找到包含「${state.query}」的队伍 id，换个关键词试试。` : "换一个灰域区域看看。",
+        iconName: filtering ? "search" : "users",
+        title: filtering ? "没有匹配的队伍" : state.total === 0 ? "该区域暂无可收藏队伍" : "该区域暂无队伍",
+        desc: filtering
+          ? "换个关键词或效能条件试试。"
+          : state.total === 0
+            ? "该区域在 mission 表里有节点，但没有可收藏队伍，这里只作为区域展示；换一个区域看看。"
+            : "换一个灰域区域看看。",
       });
       return;
     }
     areaEl.innerHTML = `
       <div class="team-grid">${state.items.map((team) => teamCardHtml(team)).join("")}</div>
-      ${renderPager({ page: state.page, total: state.total, pageSize: PAGE_SIZE })}
+      ${renderPager({ page: state.page, total: Math.max(state.total, state.items.length), pageSize: PAGE_SIZE })}
     `;
     bindPager(areaEl, {
       page: state.page,
@@ -148,6 +172,12 @@ export async function render(root, { params }) {
 
   bindSearch(root.querySelector("[data-gz-search]"), (value) => {
     state.query = value;
+    load(1);
+  });
+
+  bindPowerFilter(root, (filter) => {
+    state.filter = filter;
+    state.page = 1;
     load(1);
   });
 

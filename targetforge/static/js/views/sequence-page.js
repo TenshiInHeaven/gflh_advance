@@ -11,7 +11,7 @@ import {
   setBusy,
   skeletonRows,
 } from "../ui.js";
-import { esc, fmtNum, fmtPower, factionColor, navigate } from "../util.js";
+import { esc, fmtNum, factionColor, navigate, powerDisplay } from "../util.js";
 import { bindDragSort } from "../components/drag-sort.js";
 import { openExecuteModal } from "../components/execute-modal.js";
 
@@ -131,7 +131,8 @@ function renderPage() {
           <div class="summary-big"><b>${stats.count}</b><span>/ ${stats.max}</span></div>
           <div class="summary-sub">上限 35 个收藏标靶 · ${stats.count > 0 ? `还可加入 ${stats.max - stats.count} 个` : "建议先配好一整套再执行"}</div>
           <div class="summary-rows">
-            <div class="summary-row"><span>总效能</span><b class="amber">${stats.power > 0 ? fmtNum(stats.power) : "—"}</b></div>
+            <div class="summary-row"><span>总效能（已标注）</span><b class="amber">${stats.powerKnown ? fmtNum(stats.power) : "—"}</b></div>
+            <div class="summary-row"><span>效能标注情况</span><b>${stats.powerKnown} 有 · ${stats.powerUnknown} 无</b></div>
             <div class="summary-row"><span>总单位</span><b>${fmtNum(stats.units)}</b></div>
             <div class="summary-row"><span>总血量</span><b>${fmtNum(stats.hp)}</b></div>
             <div class="summary-row"><span>草稿更新时间</span><b>${esc(seq?.updated_at ? new Date(seq.updated_at).toLocaleTimeString("zh-CN") : "—")}</b></div>
@@ -183,6 +184,7 @@ function renderPage() {
 
 function seqBigItemHtml(team, index, total) {
   const fc = factionColor(team.faction);
+  const disp = powerDisplay(team.power, team.power_known);
   return `
     <div class="seq-big-item" draggable="true" data-drag-index="${index}" data-team-detail="${team.id}">
       <span class="sbi-idx">${String(index + 1).padStart(2, "0")}</span>
@@ -191,7 +193,7 @@ function seqBigItemHtml(team, index, total) {
         <div class="sbi-top">
           <span class="sbi-team">#${esc(team.id)}</span>
           <span class="badge ${team.gray_zone ? "cyan" : ""}" style="height:18px;font-size:9.5px">${team.gray_zone ? "灰域" : team.orphan ? "无固定关卡" : "固定关卡"}</span>
-          <span class="sbi-power">${fmtPower(team.power)}</span>
+          <span class="sbi-power ${disp.known ? (disp.negative ? "neg" : "") : "unknown"}"${disp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${disp.known ? disp.text : "未标注"}</span>
         </div>
         <div class="sbi-sub">
           <span><i class="seq-faction-dot" style="background:${fc};display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px"></i>${esc(team.faction || "其它")}</span>

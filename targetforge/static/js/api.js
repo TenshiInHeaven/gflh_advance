@@ -103,19 +103,19 @@ export const api = {
   meta: () => get("/api/meta"),
 
   chapters: () => get("/api/chapters"),
-  chapter: (chapterId, { offset = 0, limit = 60, q = "" } = {}) =>
-    get(`/api/chapters/${encodeURIComponent(chapterId)}`, { offset, limit, q }),
+  chapter: (chapterId, params = {}) =>
+    get(`/api/chapters/${encodeURIComponent(chapterId)}`, { offset: 0, limit: 60, q: "", ...params }),
   stage: (missionId) => get(`/api/stages/${encodeURIComponent(missionId)}`),
   team: (teamId) => get(`/api/teams/${encodeURIComponent(teamId)}`),
 
   grayzoneAreas: () => get("/api/grayzone/areas"),
-  grayzoneTeams: ({ area = "", offset = 0, limit = 60, q = "" } = {}) =>
-    get("/api/grayzone/teams", { area, offset, limit, q }),
+  grayzoneTeams: (params = {}) =>
+    get("/api/grayzone/teams", { area: "", offset: 0, limit: 60, q: "", ...params }),
 
   species: ({ q = "", faction = "", category = "all", offset = 0, limit = 60 } = {}) =>
     get("/api/species", { q, faction, category, offset, limit }),
-  speciesDetail: (codexNo, { offset = 0, limit = 60, q = "" } = {}) =>
-    get(`/api/species/${encodeURIComponent(codexNo)}`, { offset, limit, q }),
+  speciesDetail: (codexNo, params = {}) =>
+    get(`/api/species/${encodeURIComponent(codexNo)}`, { offset: 0, limit: 60, q: "", ...params }),
   search: (q, limit = 20) => get("/api/search", { q, limit }),
 
   current: (source = "auto") => get("/api/current", { source }),

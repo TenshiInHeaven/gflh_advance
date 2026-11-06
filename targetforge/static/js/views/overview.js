@@ -204,10 +204,11 @@ export async function render(root, options = {}) {
       <div class="hero-right">
         <div class="radar">
           ${radarSvg()}
-          <div class="hero-butterfly">${butterflySvg({ size: 152, className: "float-slow" })}</div>
+          <div class="hero-butterfly">${butterflySvg({ size: 176 })}</div>
         </div>
-        <div class="hero-bf-a">${butterflySvg({ size: 34, opacity: 0.55, className: "float" })}</div>
-        <div class="hero-bf-b">${butterflySvg({ size: 26, opacity: 0.45, className: "float-alt" })}</div>
+        <div class="hero-bf-a">${butterflySvg({ size: 46, opacity: 0.55, className: "float" })}</div>
+        <div class="hero-bf-b">${butterflySvg({ size: 30, opacity: 0.42, className: "float-alt" })}</div>
+        <div class="hero-bf-c">${butterflySvg({ size: 22, opacity: 0.34, className: "float-slow" })}</div>
       </div>
     </section>
 

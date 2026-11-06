@@ -1,4 +1,4 @@
-"""靶机工坊 TargetForge —— STC → 章节/关卡/怪种/怪组 数据层。
+"""靶机工坊 TargetForge —— STC → 章节/关卡/怪种/怪组 数据层（v1.2）。
 
 职责（见 ``contract.md`` §2）：
 
@@ -8,6 +8,29 @@
 * :class:`Catalog` 提供 ``/api/chapters``、``/api/stages``、``/api/teams``、
   ``/api/species``、``/api/grayzone/*``、``/api/search`` 需要的查询。
 
+v1.2 变化（用户实测反馈）
+------------------------
+
+1. **章节 7 组**：``main``（主线）/ ``event``（活动）/ ``score``（积分关卡）/
+   ``tutorial``（教学）/ ``simulation``（模拟作战）/ ``grayzone``（灰域探查）/
+   ``orphan``（无固定关卡）。往期复刻、特殊作战并入 event（用 subtitle/tags 标记）。
+   积分关卡 = campaign ∈ {-40401..-40405} 或活动/章节名里带「+」的 campaign。
+2. **灰域 14 个区域**：区域名直接取 client_text 的 mission 标题前缀
+   （去掉尾部 ``-I/II`` 编号和空格），包含 庇护所旧址 / 坍缩狭缝。
+3. **怪种分类改为非互斥 flag**：``has_normal`` / ``has_grayzone`` / ``has_orphan``
+   + ``normal_team_count`` / ``gray_zone_team_count`` / ``orphan_team_count``。
+   ``species_list(category=...)`` 按 flag 过滤（灰域过滤 = 所有在灰域有队伍的物种）。
+4. **效能（power = enemy_team.effect_ext）**：队伍 summary/detail 带
+   ``power`` 与 ``power_known``；列表支持 ``power_min/power_max/power_known/sort``。
+   **结论（不要编公式）**：常规关卡/普通队伍在客户端里 ``effect_ext == 0``
+   （即客户端根本没有这个值，也没有可用的数值反推公式）；只有积分关卡及部分特殊
+   队伍有标注，且存在负值（例如 660011 = -100085）。因此 0 一律视为「未标注」，
+   负值原样保留，不做任何推断。
+5. **小怪头像**：``targetforge/tools/build_icons.py`` 从游戏 ``character<code>.ab``
+   导出 ``pic_<Code>_SS`` 到 ``ICON_DIR/<code>.png``；catalog build 扫描
+   :data:`ICON_DIR`，在 species / team_summary.species / 队伍详情 members 上加
+   ``icon`` 字段（缺失为 ``None``，前端退化显示）。
+
 设计取舍
 --------
 catalog.json 不存"前端完整详情"，而是存**查询所需的紧凑索引**：
@@ -15,18 +38,19 @@ catalog.json 不存"前端完整详情"，而是存**查询所需的紧凑索引
 * 每支队伍只存槽位（type_id / level / number / def_percent / batch / x / y）
   和汇总字段，队伍详情（成员数值、出处）在 ``Catalog.team()`` 里按需计算，
   展示数值统一走 ``unit_model.core.enemy.enemy_attributes(..., scale_by_level=True)``
-  （660011 实测口径：总血 359,580）。这样 JSON 只有 ~5MB，load 远低于 5s。
-* 怪种图鉴、类型索引只保留名称/阵营/图鉴号等标签，**不写任何技能字段**
+  （660011 实测口径：总血 359,580）。这样 JSON 只有 ~7MB，load 远低于 5s。
+* 怪种图鉴、类型索引只保留名称/阵营/图鉴号/图标等标签，**不写任何技能字段**
   （skill / trigger / action / buff 等一律不进 JSON）。
 
 数据口径（与 Lead 侦查一致）
-----------------------------
+---------------------------
 * 可收藏有效队伍 = ``enemy_team.targettrain_cancollect == "1"`` 且 ``enemy_in_team``
   有编制 → 13700；
 * 队伍↔关卡 = ``spot.enemy_team_id`` ∪ ``mission.boss_team_id``；
-* 有可收藏队伍的关卡 → 2345（灰域 1288 / 活动 743 / 主线 140 / 特殊 84 /
-  往期复刻 40 / 教学 40 / 模拟作战 9 / 未知 1）；
-* 灰域 = ``campaign == -404``，按标题前缀（如「共生净土-I」→ 共生净土）分 12 个区域；
+* 有可收藏队伍的关卡 → 2345（灰域 1288 / 活动 / 积分关卡 / 主线 140 /
+  教学 40 / 模拟作战 9 / 未知 1）；
+* 灰域 = ``campaign == -404``，按标题前缀分 14 个区域（有可收藏队伍的 12 个区域
+  共 1288 个节点，另 2 个区域暂时没有可收藏队伍，也保留展示）；
 * 可收藏怪种 = enemy_full_model.csv 的 type→codex 映射 → 264 个 codex。
 """
 from __future__ import annotations
@@ -39,19 +63,20 @@ import re
 import sys
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-#: catalog 缓存文件（整个 dataMiner/derived/targetforge/ 不入 git，可重建）
-DATA_DIR = ROOT / "dataMiner" / "derived" / "targetforge"
-CATALOG_FILE = DATA_DIR / "catalog.json"
+#: 路径常量统一来自 targetforge/datapaths.py（支持 TARGETFORGE_DATA_DIR 覆盖）
+from targetforge.datapaths import CATALOG_FILE, DATA_DIR, ICON_DIR  # noqa: E402
+
+#: 跨进程构建锁（同数据目录）
 LOCK_FILE = DATA_DIR / "catalog.lock"
 
 #: 只读数据源
@@ -59,35 +84,39 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: mission 文本 key 前缀：``mission-{10000000 + mission_id}``
 MISSION_TEXT_BASE = 10_000_000
 
-#: 章节组顺序与标题（contract §2.2 排序）
+#: 章节组顺序与标题（v1.2：7 组）
 GROUPS: tuple[tuple[str, str], ...] = (
     ("main", "主线"),
     ("event", "活动"),
-    ("rerun", "往期复刻"),
+    ("score", "积分关卡"),
     ("tutorial", "教学"),
-    ("special", "特殊作战"),
     ("simulation", "模拟作战"),
     ("grayzone", "灰域探查"),
     ("orphan", "无固定关卡"),
 )
 GROUP_TITLES = dict(GROUPS)
 
-#: 章节/组的标签文案
+#: 章节默认标签（活动内部还会按 往期复刻/特殊作战/积分关卡 细化）
 GROUP_TAGS = {
     "main": ["主线"],
     "event": ["活动"],
-    "rerun": ["往期复刻"],
+    "score": ["积分关卡"],
     "tutorial": ["教学"],
-    "special": ["特殊作战"],
     "simulation": ["模拟作战"],
     "grayzone": ["打灰"],
     "orphan": ["无固定关卡"],
 }
+
+#: 固定属于「积分关卡」的 campaign（用户实测：贝蒂数/逃亡圣咏/自画像/从潘洛斯阶梯跃下/铁雨礼赞）
+SCORE_SPECIAL_CAMPAIGNS: frozenset[int] = frozenset({-40401, -40402, -40403, -40404, -40405})
+
+#: 模拟作战的固定 mission id 段（1104..1106 的 map_res 是 OPS5_Y，1701..1745 是靶场系列）
+SIMULATION_ID_RANGES: tuple[tuple[int, int], ...] = ((1101, 1106), (1701, 1745))
 
 #: 章节列表里关卡摘要的字段（contract §2.3）
 STAGE_LIST_KEYS = (
@@ -101,10 +130,14 @@ STAT_KEYS = (
     "range", "speed", "shield", "def", "crit", "crit_dmg", "tenacity",
 )
 
-#: 图鉴类别（contract §2.4）
+#: 怪种 flag 类别（v1.2：非互斥）
 SPECIES_CATEGORIES = ("normal", "grayzone", "orphan")
 
+#: 排序方式（列表查询用）
+SORT_MODES = ("default", "power_desc", "power_asc", "hp_desc", "units_desc")
+
 _TAG_RE = re.compile(r"<[^>]*>")
+_ICON_UNSAFE_RE = re.compile(r"[^a-z0-9]+")
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +191,41 @@ def _clean_text(value: Any) -> str:
 def _is_collectable(value: Any) -> bool:
     """``targettrain_cancollect`` 兼容 int / str 两种存储。"""
     return str(value).strip() == "1"
+
+
+def _icon_filename(code: Any) -> str | None:
+    """code → ICON_DIR 下的图标文件名（小写，非字母数字转 ``_``）。"""
+    code = str(code or "").strip()
+    if not code:
+        return None
+    stem = _ICON_UNSAFE_RE.sub("_", code.lower()).strip("_")
+    return f"{stem}.png" if stem else None
+
+
+def _bundle_code_key(code: Any) -> str:
+    """code → 游戏 ``character<code>.ab`` 的归一化 key（去掉所有非字母数字）。"""
+    return re.sub(r"[^a-z0-9]+", "", str(code or "").lower())
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """``power_known`` 之类的三态参数：None/'' → 不过滤；1/true/yes → True。"""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("", "all", "any", "none"):
+        return None
+    if text in ("1", "true", "yes", "y", "on"):
+        return True
+    if text in ("0", "false", "no", "n", "off"):
+        return False
+    return None
+
+
+def _has_plus(text: Any) -> bool:
+    text = str(text or "")
+    return "+" in text or "＋" in text
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +296,15 @@ def _atomic_write(payload: dict) -> int:
     return len(raw)
 
 
+def _icon_files() -> set[str]:
+    """ICON_DIR 下现有图标文件名（小写比较）。"""
+    try:
+        files = {path.name.lower() for path in ICON_DIR.glob("*.png")}
+    except OSError:
+        return set()
+    return files
+
+
 def _source_mtime_ns() -> int:
     """所有数据源里最新的 mtime（用于 build 的缓存新鲜度判断）。"""
     latest = 0
@@ -236,6 +313,15 @@ def _source_mtime_ns() -> int:
             latest = max(latest, path.stat().st_mtime_ns)
         except OSError:
             pass
+    # 图标目录：build_icons 重新导出后应触发 catalog 重建
+    try:
+        for path in ICON_DIR.glob("*.png"):
+            try:
+                latest = max(latest, path.stat().st_mtime_ns)
+            except OSError:
+                pass
+    except OSError:
+        pass
     try:
         from unit_model.core import stc
 
@@ -373,7 +459,7 @@ def _type_display_name(row: dict, text: dict[str, str]) -> str:
 
 
 def _gray_area(title: str) -> str:
-    """灰域区域 = 标题里第一个 ``-`` 之前的前缀（兼容全角/不换行空格）。"""
+    """灰域区域 = 标题第一个 ``-`` 之前的前缀（去尾部编号/空格，兼容不换行空格）。"""
     title = _clean_text(title)
     if "-" in title:
         return title.split("-")[0].strip()
@@ -406,61 +492,44 @@ def _stage_code(mission: dict | None) -> str:
     return f"{_int(mission.get('campaign'))}-{mission.get('sub')}{suffix}"
 
 
+def _is_simulation_mission(mid: int, mission: dict) -> bool:
+    map_res = str(mission.get("map_res_name") or "")
+    if map_res.startswith("Moni"):
+        return True
+    return any(low <= mid <= high for low, high in SIMULATION_ID_RANGES)
+
+
 def _classify_mission(
     mid: int,
     mission: dict,
     *,
-    campaign_to_act: dict[int, dict],
-    campaign_to_event: dict[int, str],
-) -> tuple[str | None, str | None, str, str]:
-    """返回 ``(category, chapter_id, title, subtitle)``。
+    score_campaigns: set[int],
+) -> tuple[str | None, str | None]:
+    """返回 ``(category, chapter_id)``；None 表示该关卡不产生章节。
 
-    ``category`` 为 None 表示该关卡不产生章节（contract §2.2 规则 7）；
-    活动章节按 (标题, 副标题) 归并后再分配 ``chapter_id``，因此这里 chapter_id 为 None。
+    活动/积分关卡按 campaign 一章（不跨 campaign 合并），章节标题在聚合阶段补。
     """
     campaign = _int(mission.get("campaign"))
     map_res = str(mission.get("map_res_name") or "")
 
     # 1. 灰域（不产关卡列表，单独成章）
     if campaign == -404:
-        return ("grayzone", "grayzone", "灰域探查", "")
-
+        return ("grayzone", "grayzone")
     # 2. 教学：按 campaign 一章
     if -10006 <= campaign <= -10000:
-        return ("tutorial", f"tutorial-{campaign}", "", "")
-
-    # 3. 模拟作战/靶场：map_res_name 以 Moni 开头（经验特训 / 模拟作战），
-    #    外加固定 id 段 1101..1106（经验/特种特训，其中 1104..1106 的 map 是 OPS5_Y）
-    #    与 1701..1745（模拟作战系列，campaign 6）。
-    if map_res.startswith("Moni") or 1101 <= mid <= 1106 or 1701 <= mid <= 1745:
-        return ("simulation", "simulation", "模拟作战·靶场", "")
-
+        return ("tutorial", f"tutorial-{campaign}")
+    # 3. 模拟作战/靶场（Moni 图 / 1101..1106 / 1701..1745）
+    if _is_simulation_mission(mid, mission):
+        return ("simulation", "simulation")
     # 4. 主线：campaign 0..13、id < 90000、非模拟作战地图
     if 0 <= campaign <= 13 and mid < 90000 and not map_res.startswith("Moni"):
-        title = "序章" if campaign == 0 else f"第{campaign}章"
-        return ("main", f"main-{campaign}", title, "")
+        return ("main", f"main-{campaign}")
+    # 5. 积分关卡
+    if campaign in score_campaigns:
+        return ("score", f"score-{campaign}")
+    # 6. 其余全部并入活动（往期复刻 / 特殊作战 也在这里，靠 subtitle/tags 区分）
+    return ("event", f"event-{campaign}")
 
-    # 5. 往期活动复刻：id >= 90000 且 campaign >= 0
-    if mid >= 90000 and campaign >= 0:
-        event_name = str(campaign_to_event.get(campaign) or "")
-        return ("rerun", f"rerun-{campaign}", f"往期活动·第{campaign}章", event_name)
-
-    # 6. 其它负 campaign：活动 / 特殊作战
-    if campaign < 0:
-        activity = campaign_to_act.get(campaign)
-        event_name = str(campaign_to_event.get(campaign) or "")
-        if activity:
-            title = (_clean_text(activity.get("chapter_name"))
-                     or _clean_text(activity.get("name"))
-                     or event_name or f"活动 {campaign}")
-            subtitle = _clean_text(activity.get("name")) or event_name
-            return ("event", None, title, subtitle)
-        if event_name:
-            return ("event", None, event_name, "")
-        return ("special", f"special-{campaign}", f"特殊作战 {campaign}", "")
-
-    # 7. 其余（campaign 14+ 等）不产生章节
-    return (None, None, "", "")
 
 def _build_payload() -> dict:
     """解析全部数据源，构造 catalog payload（纯函数，不写文件）。"""
@@ -511,16 +580,12 @@ def _build_payload() -> dict:
 
     # 图鉴（codex 编号 = enemy_illustration.id；名称 = 行内 name 文本 key）
     illustration_by_id: dict[int, list[dict]] = defaultdict(list)
-    illustration_by_code: dict[str, list[dict]] = defaultdict(list)
     for row in tables["enemy_illustration"]:
         illustration_by_id[_int(row.get("id"))].append(row)
-        illustration_by_code[str(row.get("code") or "")].append(row)
     for rows in illustration_by_id.values():
         rows.sort(key=lambda item: _int(item.get("sub_id")))
-    for rows in illustration_by_code.values():
-        rows.sort(key=lambda item: _int(item.get("sub_id")))
 
-    # 活动 / 复刻名映射
+    # 活动 / 复刻名映射 + 积分关卡判定
     campaign_to_event: dict[int, str] = {}
     for row in tables["mission_event"]:
         event_name = _clean_text(text.get(str(row.get("event_name") or ""), ""))
@@ -531,10 +596,17 @@ def _build_payload() -> dict:
     campaign_to_act: dict[int, dict] = {}
     for row in tables["normal_activity"]:
         campaign_to_act[_int(row.get("campaign_id"))] = {
-            "name": text.get(str(row.get("name") or ""), ""),
-            "chapter_name": text.get(str(row.get("chapter_name") or ""), ""),
-            "tag": text.get(str(row.get("tag") or ""), ""),
+            "name": _clean_text(text.get(str(row.get("name") or ""), "")),
+            "chapter_name": _clean_text(text.get(str(row.get("chapter_name") or ""), "")),
+            "tag": _clean_text(text.get(str(row.get("tag") or ""), "")),
         }
+    score_campaigns: set[int] = set(SCORE_SPECIAL_CAMPAIGNS)
+    for campaign, activity in campaign_to_act.items():
+        if _has_plus(activity.get("chapter_name")):
+            score_campaigns.add(campaign)
+    for campaign, event_name in campaign_to_event.items():
+        if _has_plus(event_name):
+            score_campaigns.add(campaign)
 
     # ---- 可收藏有效队伍 -------------------------------------------------
     collectable: set[int] = {
@@ -562,65 +634,49 @@ def _build_payload() -> dict:
                 mission_teams[mission_id].add(team_id)
                 team_missions[team_id].add(mission_id)
 
-    # ---- 关卡归类 → 章节骨架 -------------------------------------------
+    # ---- 关卡归类 → 章节骨架（每个 campaign 一章，不跨 campaign 合并） --
     gray_stage_ids: list[int] = []
     mid_chapter: dict[int, str] = {}
     chapters: dict[str, dict] = {}
-    event_groups: dict[tuple[str, str], dict] = {}
-    event_campaigns: dict[tuple[str, str], list[int]] = defaultdict(list)
+    chapter_campaign: dict[str, int | None] = {}
 
     for mission_id in mission_teams:
         mission = missions.get(mission_id)
         if mission is None:
-            # spot 里有 mission_id 不在 mission 表（例 404101）→ 归「特殊作战·未知」
-            chapter = chapters.setdefault("special-unknown", {
-                "category": "special",
+            # spot 里有 mission_id 不在 mission 表（例 404101）→ 「特殊作战·未知」
+            chapter = chapters.setdefault("event-unknown", {
+                "category": "event",
+                "kind": "unknown",
                 "title": "特殊作战·未知",
-                "subtitle": "",
+                "subtitle": "mission 表缺失的节点",
+                "tags": ["特殊作战"],
                 "stage_ids": [],
-                "campaign": None,
             })
             chapter["stage_ids"].append(mission_id)
-            mid_chapter[mission_id] = "special-unknown"
+            mid_chapter[mission_id] = "event-unknown"
             continue
-        category, chapter_id, title, subtitle = _classify_mission(
-            mission_id, mission,
-            campaign_to_act=campaign_to_act,
-            campaign_to_event=campaign_to_event,
-        )
+        category, chapter_id = _classify_mission(
+            mission_id, mission, score_campaigns=score_campaigns)
         if category is None:
             continue
+        campaign = _int(mission.get("campaign"))
         if category == "grayzone":
             gray_stage_ids.append(mission_id)
             mid_chapter[mission_id] = "grayzone"
             continue
-        if category == "event":
-            key = (title, subtitle)
-            group = event_groups.setdefault(key, {
-                "category": "event",
-                "title": title,
-                "subtitle": subtitle,
+        chapter = chapters.get(chapter_id)
+        if chapter is None:
+            chapter = chapters[chapter_id] = {
+                "category": category,
+                "kind": "normal",
+                "title": "",
+                "subtitle": "",
+                "tags": list(GROUP_TAGS.get(category, [])),
                 "stage_ids": [],
-            })
-            group["stage_ids"].append(mission_id)
-            event_campaigns[key].append(_int(mission.get("campaign")))
-            mid_chapter[mission_id] = ""  # 活动章节 id 归并后回填
-            continue
-        chapter = chapters.setdefault(chapter_id, {
-            "category": category,
-            "title": title,
-            "subtitle": subtitle,
-            "stage_ids": [],
-        })
+            }
+            chapter_campaign[chapter_id] = campaign
         chapter["stage_ids"].append(mission_id)
         mid_chapter[mission_id] = chapter_id
-
-    # 活动章节：同 (标题, 副标题) 的不同 campaign 合成一章，id 取最小 campaign
-    for key, group in event_groups.items():
-        chapter_id = f"event-{min(event_campaigns[key])}"
-        chapters[chapter_id] = group
-        for mission_id in group["stage_ids"]:
-            mid_chapter[mission_id] = chapter_id
 
     # ---- 队伍记录（详情数值按需计算，这里只存紧凑索引） ----------------
     team_records: list[dict] = []
@@ -628,6 +684,7 @@ def _build_payload() -> dict:
     team_flags: dict[int, dict] = {}
     team_gray_mission_count: dict[int, int] = {}
     used_type_ids: set[int] = set()
+    type_slot_counts: Counter = Counter()
 
     def scaled_attributes(type_id: int, level: int):
         try:
@@ -639,7 +696,8 @@ def _build_payload() -> dict:
         team_row = teams_by_id[team_id]
         raw_slots = sorted(
             slots_by_team[team_id],
-            key=lambda item: (_float(item.get("coordinator_x")), -_float(item.get("coordinator_y"))),
+            key=lambda item: (_float(item.get("coordinator_x")),
+                              -_float(item.get("coordinator_y"))),
         )
         slots: list[list] = []
         species: set[int] = set()
@@ -657,6 +715,7 @@ def _build_payload() -> dict:
             x = _float(slot.get("coordinator_x"))
             y = _float(slot.get("coordinator_y"))
             used_type_ids.add(type_id)
+            type_slot_counts[type_id] += 1
             batch_max = max(batch_max, batch)
             codex = type_codex.get(type_id, 0)
             if codex:
@@ -664,7 +723,8 @@ def _build_payload() -> dict:
             faction = type_faction.get(type_id) or ""
             if faction:
                 faction_counter[faction][0] += 1
-                faction_counter[faction][1] += max(1.0, _float((type_rows.get(type_id) or {}).get("maxlife")))
+                faction_counter[faction][1] += max(
+                    1.0, _float((type_rows.get(type_id) or {}).get("maxlife")))
             if type_boss.get(type_id):
                 has_boss = True
             if def_percent >= 100:
@@ -675,23 +735,26 @@ def _build_payload() -> dict:
                 if not faction:
                     faction_counter["其它"][0] += 1
             slots.append([
-                type_id, level, number, _json_num(def_percent), batch, _json_num(x), _json_num(y),
+                type_id, level, number, _json_num(def_percent), batch,
+                _json_num(x), _json_num(y),
             ])
 
         appearances = sorted(team_missions.get(team_id, ()))
-        gray_missions = [mid for mid in appearances
-                         if _int((missions.get(mid) or {}).get("campaign")) == -404]
-        non_gray = [mid for mid in appearances if mid not in set(gray_missions)]
+        gray_mission_ids = [mid for mid in appearances
+                            if _int((missions.get(mid) or {}).get("campaign")) == -404]
+        gray_set = set(gray_mission_ids)
+        non_gray = [mid for mid in appearances if mid not in gray_set]
         rep_stage = None
         if non_gray:
             rep_stage = min(
                 non_gray,
                 key=lambda mid: (_int((missions.get(mid) or {}).get("order")), mid),
             )
-        is_gray = bool(gray_missions)
+        is_gray = bool(gray_mission_ids)
         is_orphan = not appearances
-        team_flags[team_id] = {"fixed": bool(non_gray), "gray": is_gray, "orphan": is_orphan}
-        team_gray_mission_count[team_id] = len(gray_missions)
+        team_flags[team_id] = {"fixed": bool(non_gray), "gray": is_gray,
+                               "orphan": is_orphan}
+        team_gray_mission_count[team_id] = len(gray_mission_ids)
         team_species[team_id] = species
 
         if faction_counter:
@@ -708,9 +771,11 @@ def _build_payload() -> dict:
         if full_forcefield:
             tags.append("满力场")
 
+        power = _int(team_row.get("effect_ext"))
         team_records.append({
             "id": team_id,
-            "power": _int(team_row.get("effect_ext")),
+            "power": power,
+            "power_known": power != 0,
             "units": len(slots),
             "hp_total": int(round(hp_total)),
             "faction": faction_name,
@@ -726,31 +791,39 @@ def _build_payload() -> dict:
             "batch_max": batch_max,
         })
 
-    # ---- 类型标签（成员/怪种展示用；不含任何技能信息） ----------------
+    # ---- 类型标签 + 图标（成员/怪种展示用；不含任何技能信息） ----------
+    icon_file_set = _icon_files()
     type_info: dict[str, dict] = {}
     for type_id in used_type_ids:
         row = type_rows.get(type_id) or {}
+        code = str(row.get("code") or "")
+        icon = _icon_filename(code)
         type_info[str(type_id)] = {
-            "code": str(row.get("code") or ""),
+            "code": code,
             "name": _type_display_name(row, text) if row else str(type_id),
             "codex_no": type_codex.get(type_id, 0),
             "faction": type_faction.get(type_id) or "",
             "boss": 1 if type_boss.get(type_id) else 0,
+            "icon": icon if icon and icon in icon_file_set else None,
         }
 
-    # ---- 怪种（264 个可收藏 codex） ------------------------------------
+    # ---- 怪种（264 个可收藏 codex；v1.2 非互斥 flag） ------------------
     codex_types: dict[int, set[int]] = defaultdict(set)
     for type_id, codex in type_codex.items():
         if type_id in used_type_ids:
             codex_types[codex].add(type_id)
 
     species_items: list[dict] = []
+    codex_rep_type: dict[int, int] = {}
     for codex_no in sorted(codex_types):
         member_teams = sorted(team_id for team_id in collectable
                               if codex_no in team_species.get(team_id, ()))
         if not member_teams:
             continue
         used_types = sorted(codex_types[codex_no])
+        # 代表类型 = 该 codex 在可收藏队伍里出现次数（槽位数）最多的 type
+        rep_type = max(used_types, key=lambda tid: (type_slot_counts.get(tid, 0), -tid))
+        codex_rep_type[codex_no] = rep_type
         illu_rows = illustration_by_id.get(codex_no) or []
         illu = illu_rows[0] if illu_rows else None
         if illu is not None:
@@ -758,7 +831,7 @@ def _build_payload() -> dict:
             species_type = _int(illu.get("type"))
         else:
             name = ""
-            species_type = _int((type_rows.get(used_types[0]) or {}).get("type"))
+            species_type = _int((type_rows.get(rep_type) or {}).get("type"))
         if not name:
             # 少数灰域 BOSS codex 在 enemy_illustration 里没有行：退化用类型名
             fallback = ""
@@ -778,15 +851,17 @@ def _build_payload() -> dict:
             faction = type_faction.get(type_id) or ""
             if faction:
                 faction_counter[faction] += 1
-        faction = max(faction_counter, key=lambda key: faction_counter[key]) if faction_counter else ""
+        faction = (max(faction_counter, key=lambda key: faction_counter[key])
+                   if faction_counter else "")
         capturable = any(type_capturable.get(type_id) for type_id in used_types)
 
-        has_fixed = any(team_flags[tid]["fixed"] for tid in member_teams)
-        has_gray_only = any(team_flags[tid]["gray"] and not team_flags[tid]["fixed"]
-                            for tid in member_teams)
+        has_normal = any(team_flags[tid]["fixed"] for tid in member_teams)
+        has_grayzone = any(team_flags[tid]["gray"] for tid in member_teams)
         has_orphan = any(team_flags[tid]["orphan"] for tid in member_teams)
-        category = "normal" if has_fixed else ("grayzone" if has_gray_only else
+        category = "normal" if has_normal else ("grayzone" if has_grayzone else
                                               ("orphan" if has_orphan else "normal"))
+        rep_code = str((type_rows.get(rep_type) or {}).get("code") or "")
+        icon = _icon_filename(rep_code)
         species_items.append({
             "codex_no": codex_no,
             "name": name,
@@ -795,9 +870,14 @@ def _build_payload() -> dict:
             "capturable": bool(capturable),
             "tags": ["契约捕获"] if capturable else [],
             "category": category,
+            "has_normal": bool(has_normal),
+            "has_grayzone": bool(has_grayzone),
+            "has_orphan": bool(has_orphan),
             "team_count": len(member_teams),
+            "normal_team_count": sum(1 for tid in member_teams if team_flags[tid]["fixed"]),
             "gray_zone_team_count": sum(1 for tid in member_teams if team_flags[tid]["gray"]),
             "orphan_team_count": sum(1 for tid in member_teams if team_flags[tid]["orphan"]),
+            "icon": icon if icon and icon in icon_file_set else None,
             "teams": member_teams,
         })
     species_by_codex = {item["codex_no"]: item for item in species_items}
@@ -841,51 +921,159 @@ def _build_payload() -> dict:
         stage_records.append(record)
         stage_by_id[mission_id] = record
 
-    # ---- 灰域区域 ------------------------------------------------------
-    area_stage_ids: dict[str, list[int]] = defaultdict(list)
+    # ---- 灰域区域（14 个：含没有可收藏队伍的 庇护所旧址 / 坍缩狭缝） ----
+    all_gray_missions = [mid for mid, mission in missions.items()
+                         if _int(mission.get("campaign")) == -404]
+    gray_set_for_teams = set(gray_stage_ids)
+    area_stage_ids: dict[str, list[int]] = defaultdict(list)   # 有可收藏队伍的节点
+    area_all_count: Counter = Counter()                        # 该区域全部灰域节点数
     area_team_ids: dict[str, set[int]] = defaultdict(set)
-    for mission_id in gray_stage_ids:
+    for mission_id in all_gray_missions:
         mission = missions.get(mission_id) or {}
-        area = _gray_area(_mission_title(mission_id, mission, text))
-        if not area:
-            area = "未分类"
-        area_stage_ids[area].append(mission_id)
-        area_team_ids[area] |= mission_teams.get(mission_id, set())
+        area = _gray_area(_mission_title(mission_id, mission, text)) or "未分类"
+        area_all_count[area] += 1
+        if mission_id in gray_set_for_teams:
+            area_stage_ids[area].append(mission_id)
+            area_team_ids[area] |= mission_teams.get(mission_id, set())
     areas: list[dict] = []
-    for area in sorted(area_stage_ids,
-                       key=lambda key: (-len(area_stage_ids[key]),
-                                        -len(area_team_ids[key]), key)):
+    for area in sorted(area_all_count,
+                       key=lambda key: (-len(area_stage_ids.get(key, [])),
+                                        -len(area_team_ids.get(key, set())),
+                                        -area_all_count[key], key)):
         area_species: set[int] = set()
-        for team_id in area_team_ids[area]:
+        for team_id in area_team_ids.get(area, set()):
             area_species |= team_species.get(team_id, set())
         areas.append({
             "id": area,
             "title": area,
-            "stage_count": len(area_stage_ids[area]),
-            "team_count": len(area_team_ids[area]),
+            "stage_count": len(area_stage_ids.get(area, [])),
+            "team_count": len(area_team_ids.get(area, set())),
             "species_count": len(area_species),
         })
     grayzone_team_ids = sorted({team_id for ids in area_team_ids.values() for team_id in ids})
     gray_stage_count = len(gray_stage_ids)
 
-    # ---- 章节聚合 ------------------------------------------------------
+    # ---- 章节标题/副标题/标签（活动按 campaign 一章，不合并） ----------
     mission_by_id = missions
 
-    def _first_stage(chapter: dict) -> dict | None:
-        stage_ids = chapter.get("stage_ids") or []
-        if not stage_ids:
-            return None
-        ordered = sorted(stage_ids, key=lambda mid: (
+    def _sorted_stage_ids(stage_ids: Iterable[int]) -> list[int]:
+        return sorted(stage_ids, key=lambda mid: (
             _int((mission_by_id.get(mid) or {}).get("order")), mid))
-        return stage_by_id.get(ordered[0])
 
-    for chapter in chapters.values():
+    def _first_stage_title(stage_ids: Iterable[int]) -> str:
+        ordered = _sorted_stage_ids(stage_ids)
+        if not ordered:
+            return ""
+        record = stage_by_id.get(ordered[0])
+        return str(record.get("title") or "") if record else ""
+
+    for chapter_id, chapter in chapters.items():
+        stage_ids = _sorted_stage_ids(chapter.get("stage_ids") or [])
+        chapter["stage_ids"] = stage_ids
+        category = chapter["category"]
+        campaign = chapter_campaign.get(chapter_id)
+        first_title = _first_stage_title(stage_ids)
+        activity = campaign_to_act.get(campaign, {}) if campaign is not None else {}
+        event_name = campaign_to_event.get(campaign, "") if campaign is not None else ""
+        chapter_name = _clean_text(activity.get("chapter_name"))
+        activity_name = _clean_text(activity.get("name"))
+        kind = "normal"
+        title = ""
+        subtitle = ""
+        tags = list(GROUP_TAGS.get(category, []))
+        if category == "main":
+            title = "序章" if campaign == 0 else f"第{campaign}章"
+            subtitle = ""
+        elif category == "tutorial":
+            head = re.split(r"[:：]", first_title)[0].strip() if first_title else ""
+            title = head or "教学关卡"
+        elif category == "simulation":
+            title = "模拟作战·靶场"
+        elif category == "score":
+            if campaign in SCORE_SPECIAL_CAMPAIGNS:
+                # -404xx：章节名可能被大活动名占用（-40403 = 慢休克 / 自画像），优先 event_name
+                title = event_name or chapter_name or first_title or f"积分关卡 {campaign}"
+            else:
+                # 带「+」的积分关卡：优先活动内章节名（如 终焉花海+ / 混沌落幕+）
+                title = chapter_name or event_name or first_title
+            parent = activity_name or event_name
+            subtitle = f"{parent} · 积分关卡" if parent else "积分关卡"
+            tags = ["积分关卡"]
+        elif category == "event":
+            if chapter.get("kind") == "unknown":
+                kind = "unknown"
+                title = "特殊作战·未知"
+                subtitle = "mission 表缺失的节点"
+                tags = ["特殊作战"]
+            elif campaign is not None and campaign >= 0:
+                # 旧 rerun：id >= 90000 的往期活动复刻
+                kind = "rerun"
+                title = event_name or first_title
+                subtitle = f"往期复刻 · 第{campaign}章"
+                tags = ["往期复刻"]
+            elif activity or event_name:
+                title = chapter_name or event_name or first_title
+                subtitle = activity_name or "往期活动"
+                tags = ["活动"]
+            else:
+                # 旧 special：没有任何活动表映射的负 campaign
+                kind = "special"
+                title = first_title or f"特殊作战 {campaign}"
+                subtitle = f"特殊作战 {campaign}" if campaign is not None else "特殊作战"
+                tags = ["特殊作战"]
+        chapter["title"] = title or first_title or chapter_id
+        chapter["subtitle"] = subtitle
+        chapter["tags"] = tags
+        chapter["kind"] = kind
+
+    # 灰域章节（不产关卡列表，只产 areas；v1.2：14 区域）
+    gray_team_species: set[int] = set()
+    for team_id in grayzone_team_ids:
+        gray_team_species |= team_species.get(team_id, set())
+    gray_difficulties = [stage_by_id[mid]["difficulty"] for mid in gray_stage_ids
+                         if mid in stage_by_id]
+    grayzone_chapter = {
+        "id": "grayzone",
+        "category": "grayzone",
+        "kind": "grayzone",
+        "title": "灰域探查",
+        "subtitle": f"{len(areas)} 个区域 · {gray_stage_count} 个节点",
+        "tags": list(GROUP_TAGS["grayzone"]),
+        "stage_count": gray_stage_count,
+        "team_count": len(grayzone_team_ids),
+        "species_count": len(gray_team_species),
+        "difficulty_min": min(gray_difficulties) if gray_difficulties else 0,
+        "difficulty_max": max(gray_difficulties) if gray_difficulties else 0,
+        "areas": areas,
+    }
+    chapters["grayzone"] = grayzone_chapter
+    chapter_campaign["grayzone"] = -404
+
+    # 无固定关卡章节（按队伍列出）
+    orphan_team_ids = sorted(team_id for team_id in collectable
+                             if team_flags[team_id]["orphan"])
+    orphan_species: set[int] = set()
+    for team_id in orphan_team_ids:
+        orphan_species |= team_species.get(team_id, set())
+    chapters["orphan"] = {
+        "id": "orphan",
+        "category": "orphan",
+        "kind": "orphan",
+        "title": "无固定关卡",
+        "subtitle": f"{len(orphan_team_ids)} 支队伍",
+        "tags": list(GROUP_TAGS["orphan"]),
+        "stage_count": 0,
+        "team_count": len(orphan_team_ids),
+        "species_count": len(orphan_species),
+        "difficulty_min": 0,
+        "difficulty_max": 0,
+    }
+
+    # ---- 章节聚合（关卡数/队伍数/怪种数/难度） -------------------------
+    for chapter_id, chapter in chapters.items():
+        if chapter.get("kind") in ("grayzone", "orphan"):
+            continue
         stage_ids = chapter.get("stage_ids") or []
-        chapter["stage_ids"] = sorted(
-            stage_ids,
-            key=lambda mid: (_int((mission_by_id.get(mid) or {}).get("order")), mid),
-        )
-        chapter["stage_count"] = len(stage_ids)
         team_union: set[int] = set()
         species_union: set[int] = set()
         difficulties: list[int] = []
@@ -897,69 +1085,11 @@ def _build_payload() -> dict:
             species_union |= {codex for team_id in mission_teams.get(mission_id, set())
                               for codex in team_species.get(team_id, set())}
             difficulties.append(record["difficulty"])
+        chapter["stage_count"] = len(stage_ids)
         chapter["team_count"] = len(team_union)
         chapter["species_count"] = len(species_union)
         chapter["difficulty_min"] = min(difficulties) if difficulties else 0
         chapter["difficulty_max"] = max(difficulties) if difficulties else 0
-        chapter["tags"] = list(GROUP_TAGS.get(chapter["category"], []))
-        category = chapter["category"]
-        if category == "tutorial":
-            first = _first_stage(chapter)
-            first_title = first["title"] if first else ""
-            head = re.split(r"[:：]", first_title)[0].strip() if first_title else ""
-            chapter["title"] = head or "教学关卡"
-            chapter["subtitle"] = ""
-        elif category == "special":
-            if chapter.get("title") == "特殊作战·未知":
-                chapter["subtitle"] = "mission 表缺失的节点"
-            else:
-                first = _first_stage(chapter)
-                chapter["subtitle"] = first["title"] if first else ""
-
-    # 灰域章节（不产关卡列表，只产 areas）
-    gray_team_species: set[int] = set()
-    for team_id in grayzone_team_ids:
-        gray_team_species |= team_species.get(team_id, set())
-    gray_difficulties = [stage_by_id[mid]["difficulty"] for mid in gray_stage_ids
-                         if mid in stage_by_id]
-    chapters["grayzone"] = {
-        "id": "grayzone",
-        "category": "grayzone",
-        "title": "灰域探查",
-        "subtitle": f"{len(areas)} 个区域 · {gray_stage_count} 个节点",
-        "stage_count": gray_stage_count,
-        "team_count": len(grayzone_team_ids),
-        "species_count": len(gray_team_species),
-        "difficulty_min": min(gray_difficulties) if gray_difficulties else 0,
-        "difficulty_max": max(gray_difficulties) if gray_difficulties else 0,
-        "tags": list(GROUP_TAGS["grayzone"]),
-        "areas": areas,
-    }
-
-    # 无固定关卡章节（按队伍列出）
-    orphan_team_ids = sorted(team_id for team_id in collectable
-                             if team_flags[team_id]["orphan"])
-    orphan_species: set[int] = set()
-    for team_id in orphan_team_ids:
-        orphan_species |= team_species.get(team_id, set())
-    chapters["orphan"] = {
-        "id": "orphan",
-        "category": "orphan",
-        "title": "无固定关卡",
-        "subtitle": f"{len(orphan_team_ids)} 支队伍",
-        "stage_count": 0,
-        "team_count": len(orphan_team_ids),
-        "species_count": len(orphan_species),
-        "difficulty_min": 0,
-        "difficulty_max": 0,
-        "tags": list(GROUP_TAGS["orphan"]),
-    }
-
-    # 补齐 id / stage_ids 之外的展示字段
-    for chapter_id, chapter in chapters.items():
-        chapter.setdefault("id", chapter_id)
-        chapter["id"] = chapter_id
-        chapter.setdefault("subtitle", "")
 
     # ---- 章节排序 / 分组 ------------------------------------------------
     group_chapter_ids: dict[str, list[str]] = {group_id: [] for group_id, _ in GROUPS}
@@ -970,9 +1100,9 @@ def _build_payload() -> dict:
         chapter = chapters[chapter_id]
         stage_ids = chapter.get("stage_ids") or []
         if stage_ids:
-            return min((_int((mission_by_id.get(mid) or {}).get("order")), mid)
-                       for mid in stage_ids)
-        return (0, 0)
+            return (0, min((_int((mission_by_id.get(mid) or {}).get("order")), mid)
+                           for mid in stage_ids))
+        return (1, (0, 0))
 
     ordered_chapter_ids: list[str] = []
     groups_payload: list[dict] = []
@@ -991,6 +1121,7 @@ def _build_payload() -> dict:
         payload_chapter = {
             "id": chapter_id,
             "category": chapter.get("category"),
+            "kind": chapter.get("kind", "normal"),
             "title": chapter.get("title") or "",
             "subtitle": chapter.get("subtitle") or "",
             "stage_count": chapter.get("stage_count", 0),
@@ -1018,6 +1149,24 @@ def _build_payload() -> dict:
         "missions": len(missions),
     }
 
+    codes_needed = sorted({
+        str((type_rows.get(type_id) or {}).get("code") or "")
+        for type_id in used_type_ids
+        if str((type_rows.get(type_id) or {}).get("code") or "")
+    })
+    codes_covered = [code for code in codes_needed
+                     if _icon_filename(code) in icon_file_set]
+    species_with_icon = [item for item in species_items if item.get("icon")]
+    icons_meta = {
+        "files": len(icon_file_set),
+        "codes_needed": len(codes_needed),
+        "codes_covered": len(codes_covered),
+        "species_total": len(species_items),
+        "species_covered": len(species_with_icon),
+        "missing_codes": [code for code in codes_needed
+                          if _icon_filename(code) not in icon_file_set][:40],
+    }
+
     sources = {
         "stc_version": str(getattr(tables["stc_module"], "MAPPING_VERSION", "")),
         "tables": {
@@ -1032,6 +1181,7 @@ def _build_payload() -> dict:
         },
         "client_text": _source_file_info(TEXT_FILE),
         "enemy_full_model": _source_file_info(MODEL_FILE),
+        "icons": icons_meta,
         "elapsed_internal_s": round(time.time() - started, 2),
     }
 
@@ -1057,6 +1207,7 @@ def _build_payload() -> dict:
         "teams": team_records,
         "types": type_info,
         "species": species_items,
+        "score_campaigns": sorted(score_campaigns),
     }
     return payload
 
@@ -1084,7 +1235,7 @@ _CACHE: dict[str, Any] = {"catalog": None, "mtime": None}
 def build(force: bool = False) -> dict:
     """解析 STC + client_text + enemy_full_model.csv，写 catalog.json，返回 meta。
 
-    ``force=False`` 且 catalog.json 比所有数据源新时直接复用缓存。
+    ``force=False`` 且 catalog.json 比所有数据源（含 icons/）新时直接复用缓存。
     写文件是原子的（tmp + ``os.replace``），并用 ``catalog.lock`` 做跨进程互斥。
     """
     with _BUILD_LOCK:
@@ -1192,15 +1343,18 @@ class Catalog:
             str(key): [int(team) for team in value]
             for key, value in (grayzone.get("area_team_ids") or {}).items()
         }
-        self._grayzone_team_ids: list[int] = [int(team) for team in grayzone.get("team_ids") or []]
-        self._orphan_team_ids: list[int] = [int(team) for team in payload.get("orphan_team_ids") or []]
+        self._grayzone_team_ids: list[int] = [int(team) for team in
+                                              grayzone.get("team_ids") or []]
+        self._orphan_team_ids: list[int] = [int(team) for team in
+                                            payload.get("orphan_team_ids") or []]
         self._groups: list[dict] = []
         for group in payload.get("groups") or []:
             chapter_ids = [str(cid) for cid in group.get("chapter_ids") or []]
             self._groups.append({
                 "id": str(group.get("id")),
                 "title": str(group.get("title") or ""),
-                "chapters": [self._chapters[cid] for cid in chapter_ids if cid in self._chapters],
+                "chapters": [self._chapters[cid] for cid in chapter_ids
+                             if cid in self._chapters],
             })
 
     # -- 基础 ---------------------------------------------------------
@@ -1255,30 +1409,37 @@ class Catalog:
         return self._areas
 
     def grayzone_teams(self, area: str = "", offset: int = 0, limit: int = 60,
-                       q: str = "", *, area_id: str | None = None) -> dict:
-        """灰域区域队伍分页。
+                       q: str = "", *, area_id: str | None = None,
+                       power_min: float | None = None,
+                       power_max: float | None = None,
+                       power_known: Any = None,
+                       sort: str = "default") -> dict:
+        """灰域区域队伍：catalog 内部完成 q/power 筛选 + 排序 + 分页。
 
-        契约里参数名是 ``area_id``，app.py 实际用 ``area=`` 调用；两种都支持。
+        契约里参数名是 ``area_id``（app.py 实际用 ``area=`` 调用）；两种都支持。
         传空 area 则返回全部灰域队伍（3352 支）。
         """
         if area_id is not None:
             area = area_id
         area = str(area or "").strip()
         if area:
-            team_ids = self._area_team_ids.get(area, [])
+            team_ids: list[int] = list(self._area_team_ids.get(area, []))
         else:
-            team_ids = self._grayzone_team_ids
-        query = str(q or "").strip().lower()
-        if query:
-            team_ids = [team_id for team_id in team_ids
-                        if self._team_matches_query(team_id, query)]
-        total = len(team_ids)
-        offset = max(0, _int(offset))
-        limit = max(1, _int(limit, 60))
-        page = team_ids[offset:offset + limit]
+            team_ids = list(self._grayzone_team_ids)
+        total, page = self._query_team_ids(
+            team_ids, offset=offset, limit=limit, q=q,
+            power_min=power_min, power_max=power_max, power_known=power_known,
+            sort=sort,
+        )
         items = [summary for summary in (self._team_summary(team_id) for team_id in page)
                  if summary is not None]
-        payload = {"total": total, "offset": offset, "limit": limit, "items": items}
+        payload = {
+            "total": total,
+            "offset": max(0, _int(offset)),
+            "limit": max(1, _int(limit, 60)),
+            "sort": str(sort or "default"),
+            "items": items,
+        }
         if area:
             payload["area"] = area
         return payload
@@ -1296,6 +1457,7 @@ class Catalog:
         return {
             "id": record["id"],
             "power": record["power"],
+            "power_known": record.get("power_known", False),
             "units": record["units"],
             "hp_total": record["hp_total"],
             "faction": record["faction"],
@@ -1304,12 +1466,13 @@ class Catalog:
             "orphan": record["orphan"],
             "params": {
                 "effect_ext": record["power"],
+                "power_known": record.get("power_known", False),
                 "fight_type": record.get("fight_type", 0),
                 "use_building": record.get("use_building", ""),
                 "batch_max": record.get("batch_max", 0),
                 "gray_zone_missions": sum(1 for entry in appearances if entry["gray_zone"]),
                 "mission_count": len(record.get("appearances") or []),
-                "note": "数值按队伍等级缩放（单位实测口径）",
+                "note": "数值按队伍等级缩放（单位实测口径）；effect_ext=0 表示客户端未标注效能",
             },
             "appearances": appearances[:24],
             "species": self._team_species_detail(record),
@@ -1332,9 +1495,14 @@ class Catalog:
         category = str(category or "").strip().lower()
         if category == "all":
             category = ""
+        flag_name = {
+            "normal": "has_normal",
+            "grayzone": "has_grayzone",
+            "orphan": "has_orphan",
+        }.get(category)
         items = []
         for item in self._species_items:
-            if category and item.get("category") != category:
+            if flag_name and not item.get(flag_name):
                 continue
             if faction and item.get("faction") != faction:
                 continue
@@ -1349,7 +1517,19 @@ class Catalog:
         return {"total": total, "offset": offset, "limit": limit,
                 "items": items[offset:offset + limit]}
 
-    def species(self, codex_no: int) -> dict | None:
+    def species(self, codex_no: int, offset: int | None = None,
+                limit: int | None = None, q: str | None = None,
+                power_min: float | None = None, power_max: float | None = None,
+                power_known: Any = None, sort: str | None = None) -> dict | None:
+        """怪种详情 + 队伍。
+
+        兼容两种调用：
+
+        * ``species(codex_no)``（无参）→ 返回**全量** teams（app.py 内存筛选/分页用）；
+        * 显式传入 ``offset/limit/q/power_min/power_max/power_known/sort`` 中任意一个
+          → 走 catalog 内部筛选 + 排序 + 分页（``sort`` 默认 ``"default"``，
+          ``offset`` 默认 0，``limit`` 默认 60）。
+        """
         try:
             codex_no = int(codex_no)
         except (TypeError, ValueError):
@@ -1357,15 +1537,41 @@ class Catalog:
         item = self._species_by_codex.get(codex_no)
         if item is None:
             return None
-        teams = [summary for summary in
-                 (self._team_summary(team_id) for team_id in item.get("teams") or [])
+        public = self._species_public(item)
+        team_ids = list(item.get("teams") or [])
+        paged = any(value is not None for value in
+                    (offset, limit, q, power_min, power_max, power_known, sort))
+        if not paged:
+            teams = [summary for summary in
+                     (self._team_summary(team_id) for team_id in team_ids)
+                     if summary is not None]
+            return {
+                "species": public,
+                "total": len(teams),
+                "teams_total": len(teams),
+                "offset": 0,
+                "limit": len(teams),
+                "teams": teams,
+            }
+        total, page = self._query_team_ids(
+            team_ids,
+            offset=_int(offset, 0),
+            limit=_int(limit, 60),
+            q=q or "",
+            power_min=power_min,
+            power_max=power_max,
+            power_known=power_known,
+            sort=sort or "default",
+        )
+        teams = [summary for summary in (self._team_summary(team_id) for team_id in page)
                  if summary is not None]
         return {
-            "species": self._species_public(item),
-            "total": len(teams),
-            "teams_total": len(teams),
-            "offset": 0,
-            "limit": len(teams),
+            "species": public,
+            "total": total,
+            "teams_total": total,
+            "offset": max(0, _int(offset, 0)),
+            "limit": max(1, _int(limit, 60)),
+            "sort": str(sort or "default"),
             "teams": teams,
         }
 
@@ -1390,19 +1596,34 @@ class Catalog:
         team_hits.sort(key=lambda pair: pair[0])
         teams = [summary for _, summary in team_hits[:limit]]
 
+        # 关卡搜索也命中章节标题/副标题/标签（活动名、自画像、积分关卡等可搜）
+        chapters_haystack: dict[str, str] = {}
         stages = []
         for mission_id in self._stage_ids:
             stage = self._stages.get(mission_id)
             if stage is None:
                 continue
-            haystack = f"{stage.get('title')} {stage.get('code')} {mission_id}".lower()
+            chapter_id = stage.get("chapter_id") or ""
+            chapter_hay = chapters_haystack.get(chapter_id)
+            if chapter_hay is None:
+                chapter = self._chapters.get(chapter_id) or {}
+                chapter_hay = " ".join([
+                    str(chapter.get("title") or ""),
+                    str(chapter.get("subtitle") or ""),
+                    " ".join(str(tag) for tag in chapter.get("tags") or []),
+                    str(chapter.get("category") or ""),
+                ]).lower()
+                chapters_haystack[chapter_id] = chapter_hay
+            haystack = (f"{stage.get('title')} {stage.get('code')} "
+                        f"{mission_id} {chapter_hay}").lower()
             if lowered in haystack:
-                chapter = self._chapters.get(stage.get("chapter_id") or "")
+                chapter = self._chapters.get(chapter_id) or {}
                 stages.append({
                     "id": mission_id,
                     "title": stage.get("title"),
                     "code": stage.get("code"),
-                    "chapter_title": chapter.get("title") if chapter else "",
+                    "chapter_id": chapter_id,
+                    "chapter_title": chapter.get("title") or "",
                 })
                 if len(stages) >= limit:
                     break
@@ -1416,6 +1637,49 @@ class Catalog:
                     break
 
         return {"teams": teams, "stages": stages, "species": species}
+
+    # -- 内部：列表筛选/排序 ------------------------------------------
+    def _query_team_ids(self, team_ids: Iterable[int], *, offset: int = 0,
+                        limit: int = 60, q: str = "",
+                        power_min: Any = None, power_max: Any = None,
+                        power_known: Any = None,
+                        sort: str = "default") -> tuple[int, list[int]]:
+        """按 q / power 条件筛选并排序，返回 ``(过滤后总数, 当前页 id)``。"""
+        query = str(q or "").strip().lower()
+        known = _optional_bool(power_known)
+        low = None if power_min is None or str(power_min).strip() == "" else _float(power_min)
+        high = None if power_max is None or str(power_max).strip() == "" else _float(power_max)
+        filtered: list[int] = []
+        for team_id in team_ids:
+            record = self._teams.get(int(team_id))
+            if record is None:
+                continue
+            if query and not self._team_matches_query(int(team_id), query):
+                continue
+            if known is not None and bool(record.get("power_known")) != known:
+                continue
+            power = _int(record.get("power"))
+            if low is not None and power < low:
+                continue
+            if high is not None and power > high:
+                continue
+            filtered.append(int(team_id))
+        sort = str(sort or "default")
+        if sort in ("power_desc", "power_asc"):
+            reverse = sort == "power_desc"
+            filtered.sort(key=lambda tid: (
+                not self._teams[tid].get("power_known"),
+                -self._teams[tid]["power"] if reverse else self._teams[tid]["power"],
+                tid,
+            ))
+        elif sort == "hp_desc":
+            filtered.sort(key=lambda tid: (-_int(self._teams[tid].get("hp_total")), tid))
+        elif sort == "units_desc":
+            filtered.sort(key=lambda tid: (-_int(self._teams[tid].get("units")), tid))
+        total = len(filtered)
+        offset = max(0, _int(offset))
+        limit = max(1, _int(limit, 60))
+        return total, filtered[offset:offset + limit]
 
     # -- 内部：摘要 / 详情 --------------------------------------------
     def _stage_list_item(self, mission_id: int) -> dict | None:
@@ -1442,6 +1706,7 @@ class Catalog:
                     "name": str(info.get("name") or code),
                     "number": number,
                     "count": 0,
+                    "icon": info.get("icon"),
                 }
                 by_code[code] = group
                 groups.append(group)
@@ -1455,13 +1720,15 @@ class Catalog:
         for codex_no in record.get("species") or []:
             item = self._species_by_codex.get(codex_no)
             if item is None:
-                out.append({"codex_no": codex_no, "name": f"图鉴 {codex_no}", "faction": "", "type": 0})
+                out.append({"codex_no": codex_no, "name": f"图鉴 {codex_no}",
+                            "faction": "", "type": 0, "icon": None})
                 continue
             out.append({
                 "codex_no": codex_no,
                 "name": item.get("name"),
                 "faction": item.get("faction"),
                 "type": item.get("type", 0),
+                "icon": item.get("icon"),
             })
         return out
 
@@ -1476,8 +1743,11 @@ class Catalog:
         species = []
         for codex_no in (record.get("species") or [])[:8]:
             item = self._species_by_codex.get(codex_no)
-            species.append({"codex_no": codex_no,
-                            "name": item.get("name") if item else f"图鉴 {codex_no}"})
+            species.append({
+                "codex_no": codex_no,
+                "name": item.get("name") if item else f"图鉴 {codex_no}",
+                "icon": item.get("icon") if item else None,
+            })
         stage = None
         rep_stage = record.get("rep_stage")
         if rep_stage is not None:
@@ -1493,6 +1763,7 @@ class Catalog:
         return {
             "id": record["id"],
             "power": record["power"],
+            "power_known": record.get("power_known", False),
             "units": record["units"],
             "hp_total": record["hp_total"],
             "faction": record["faction"],
@@ -1561,6 +1832,7 @@ class Catalog:
                 "code": str(info.get("code") or ""),
                 "name": str(info.get("name") or type_id),
                 "codex_no": _int(info.get("codex_no")),
+                "icon": info.get("icon"),
                 "level": level,
                 "number": number,
                 "count": counts[type_id],
@@ -1602,8 +1874,10 @@ __all__ = [
     "CATALOG_FILE",
     "DATA_DIR",
     "GROUPS",
+    "ICON_DIR",
     "LOCK_FILE",
     "MODEL_FILE",
+    "SORT_MODES",
     "Catalog",
     "TEXT_FILE",
     "build",

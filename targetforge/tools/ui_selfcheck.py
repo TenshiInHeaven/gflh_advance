@@ -517,12 +517,42 @@ def run_checks(base_url: str, mock: bool) -> int:
             ensure_overlay_shot()
             checker.wait(".quick-card")
             checker.assert_count(".stat-tile", 6)
+            checker.assert_count(".hero-butterfly .butterfly .bf-fore", 2)
+            checker.passed.append("hero 使用大蓝闪蝶 SVG（前后翅 / 黑色翅缘 / 渐变）")
             checker.shot("01_overview.png", ".hero", settle=500)
 
-            # ---------------- 02 关卡图鉴 ----------------
+            # ---------------- 02 关卡图鉴（7 分组 + 积分关卡） ----------------
             load("/chapters", ".chapter-card")
             checker.assert_count(".chapter-card", 8)
+            checker.assert_count(".group-tab", 7)
+            if checker.assert_count(".group-tab.score", 1):
+                checker.passed.append("分组 tab 含「积分关卡」金色分组")
+            if checker.assert_count(".chapter-card.score", 1):
+                checker.passed.append("章节卡含积分关卡特殊描边/金色徽章")
+            else:
+                checker.failures.append("缺少积分关卡章节卡（.chapter-card.score）")
             checker.shot("02_chapters.png", ".chapter-grid")
+            # 搜索「自画像」应命中（章节搜索匹配 title/subtitle/tags/活动名）
+            page.fill("[data-chapter-search]", "自画像")
+            page.wait_for_timeout(700)
+            hits = page.locator(".chapter-card").count()
+            if hits > 0:
+                checker.passed.append(f"章节搜索「自画像」命中 {hits} 个章节")
+            else:
+                checker.failures.append("章节搜索「自画像」无结果")
+            page.fill("[data-chapter-search]", "")
+            page.wait_for_timeout(500)
+            # 顶栏全局搜索「自画像」：前端会用已加载章节做 title/subtitle/tags 命中
+            page.fill("#global-search", "自画像")
+            page.wait_for_timeout(1300)
+            drop_text = page.locator("#search-drop").inner_text()
+            if "自画像" in drop_text:
+                checker.passed.append("全局搜索「自画像」命中章节/活动组")
+            else:
+                checker.failures.append(f"全局搜索「自画像」未命中：{drop_text[:160]}")
+            page.fill("#global-search", "")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
 
             # ---------------- 03 章节详情（main-1） ----------------
             load("/chapters/main-1", ".stage-row")
@@ -547,6 +577,12 @@ def run_checks(base_url: str, mock: bool) -> int:
             checker.wait(".team-card")
             checker.shot("04_stage_teams.png", ".team-grid")
 
+            # 效能筛选控件存在性（关卡队伍为本地过滤；有标注队伍主要在积分/特殊队伍里）
+            if page.locator(".power-filter").count() > 0:
+                checker.passed.append("关卡队伍页含效能筛选/排序控件")
+            else:
+                checker.failures.append("关卡队伍页缺少效能筛选控件")
+
             # 加入序列，供序列页 / 执行预览使用
             add_all = page.locator('[data-act="add-all"]')
             if add_all.count() > 0:
@@ -562,9 +598,29 @@ def run_checks(base_url: str, mock: bool) -> int:
                 except Exception as exc:  # noqa: BLE001
                     checker.failures.append(f"加入序列失败：{exc}")
 
-            # ---------------- 05 怪种图鉴 ----------------
+            # ---------------- 05 怪种图鉴（真实头像 / 剪影兜底） ----------------
             load("/species", ".species-card")
             checker.assert_count(".species-card", 10)
+            card_count = page.locator(".species-card").count()
+            icon_count = page.locator(".species-card .sp-icon").count()
+            letter_count = page.locator(".species-card .sp-avatar").count()
+            if icon_count >= card_count:
+                checker.passed.append(f"怪种卡使用图标（{icon_count}/{card_count} 个 .sp-icon）")
+            else:
+                checker.failures.append(f"怪种卡图标缺失：{icon_count}/{card_count}")
+            if letter_count == 0:
+                checker.passed.append("怪种卡已不再用单个汉字当图标")
+            else:
+                checker.failures.append("怪种卡仍存在 .sp-avatar 文字图标")
+            # 等图片加载，统计真实头像 / 剪影兜底数量
+            page.wait_for_timeout(1500)
+            img_n = page.locator(".species-card .sp-icon img.species-icon").count()
+            sil_n = page.locator(".species-card .sp-icon svg.sp-silhouette").count()
+            if (img_n + sil_n) >= card_count:
+                checker.passed.append(f"怪种卡头像覆盖：真实 PNG {img_n} + 剪影兜底 {sil_n}")
+            else:
+                checker.failures.append(f"怪种卡头像覆盖不足：img={img_n} silhouette={sil_n}")
+            EVIDENCE["species_icons"] = {"cards": card_count, "img": img_n, "silhouette": sil_n}
             checker.shot("05_species.png", ".species-grid")
 
             # ---------------- 06 怪种详情（服务端分页） ----------------
@@ -578,6 +634,12 @@ def run_checks(base_url: str, mock: bool) -> int:
             checker.wait(".drawer .data-table tbody tr")
             checker.wait(".drawer .appear-list", timeout=12000)
             checker.shot("07_team_detail.png", ".drawer .data-table")
+            member_rows = page.locator(".drawer .data-table tbody tr").count()
+            member_icons = page.locator(".drawer .data-table tbody tr .sp-icon").count()
+            if member_icons >= member_rows:
+                checker.passed.append(f"单位聚合表每行带图标（{member_icons}/{member_rows}）")
+            else:
+                checker.failures.append(f"单位聚合表图标缺失：{member_icons}/{member_rows}")
             drawer_text = page.locator(".drawer").inner_text()
             forbidden = ["技能", "skill", "Skill", "SKILL", "触发器", "trigger", "Trigger"]
             hits = [word for word in forbidden if word in drawer_text]
@@ -588,13 +650,19 @@ def run_checks(base_url: str, mock: bool) -> int:
             page.keyboard.press("Escape")
             page.wait_for_timeout(400)
 
-            # ---------------- 13 灰域区域 + 12 灰域队伍分页 ----------------
+            # ---------------- 13 灰域区域（14 个）+ 12 灰域队伍分页 ----------------
             load("/chapters/grayzone", ".area-card")
-            checker.assert_count(".area-card", 12)
+            checker.assert_count(".area-card", 14)
+            area_names = [name.strip() for name in page.locator(".area-name").all_inner_texts()]
+            if "庇护所旧址" in area_names or "坍缩狭缝" in area_names:
+                checker.passed.append(f"灰域区域含新增区域（共 {len(area_names)} 个）")
+            EVIDENCE["grayzone_areas"] = {"count": len(area_names), "names": area_names}
             checker.shot("13_grayzone_areas.png", ".area-grid")
 
             load("/grayzone/共生净土", ".team-card")
             checker.wait(".pager")
+            checker.wait(".power-filter")
+            checker.passed.append("灰域区域队伍页含效能筛选/排序条")
             title_text = page.locator(".page-title").first.inner_text()
             if "%E" in title_text:
                 checker.failures.append(f"灰域区域标题未解码：{title_text}")
@@ -639,16 +707,56 @@ def run_checks(base_url: str, mock: bool) -> int:
                 if start_btn.count() and not start_btn.is_disabled():
                     start_btn.click()
                     page.wait_for_timeout(3400)
+            data_dir_text = page.locator("[data-data-dir]").inner_text()
+            capture_full = page.locator(".capture-cols").inner_text()
+            if data_dir_text and data_dir_text.strip() not in ("", "读取中…"):
+                checker.passed.append(f"抓取页显示应用数据目录：{data_dir_text.strip()[:80]}")
+            else:
+                checker.failures.append("抓取页未显示应用数据目录（/api/health.data_dir）")
+            if "TARGETFORGE_DATA_DIR" in capture_full:
+                checker.passed.append("抓取页说明 TARGETFORGE_DATA_DIR 可覆盖数据目录")
+            else:
+                checker.failures.append("抓取页缺少 TARGETFORGE_DATA_DIR 说明")
             checker.shot("10_capture.png", ".capture-cols")
 
             # ---------------- 11 使用教程 ----------------
             load("/tutorial", ".faq-item")
             checker.assert_count(".faq-item", 7)
+            tutorial_text_all = page.locator(".tut-content").inner_text()
+            if "dataMiner/derived/targetforge/creds_latest.json" not in tutorial_text_all:
+                checker.passed.append("教程不再硬编码 creds 完整路径")
+            else:
+                checker.failures.append("教程仍硬编码 dataMiner/.../creds_latest.json")
+            if "TARGETFORGE_DATA_DIR" in tutorial_text_all and "应用数据目录" in tutorial_text_all:
+                checker.passed.append("教程使用「应用数据目录 + TARGETFORGE_DATA_DIR」口径")
+            else:
+                checker.failures.append("教程缺少应用数据目录/TARGETFORGE_DATA_DIR 说明")
             checker.shot("11_tutorial.png", ".tut-content")
 
-            # ---------------- 14 无固定关卡章节（badge 数据） ----------------
+            # ---------------- 14 无固定关卡章节（badge 数据 + 服务端效能筛选） ----------------
             load("/chapters/orphan", ".team-card")
             checker.shot("14_orphan_chapter.png", ".team-grid")
+
+            # ---------------- 15 效能筛选（无固定关卡 1005 支有标注队伍，服务端 power_* 参数） ----------------
+            before_known = page.locator("[data-orphan-meta]").inner_text()
+            page.select_option("[data-pf-mode]", "known")
+            page.select_option("[data-pf-sort]", "power_desc")
+            page.wait_for_timeout(2200)
+            known_cards = page.locator(".team-card").count()
+            after_known = page.locator("[data-orphan-meta]").inner_text()
+            if known_cards > 0:
+                checker.passed.append(f"无固定关卡效能筛选「有标注」生效（{before_known.strip()} → {after_known.strip()}，{known_cards} 张卡）")
+            else:
+                checker.failures.append("无固定关卡效能筛选「有标注」没有结果")
+            powers = [item.strip() for item in page.locator(".team-card .tc-power b").all_inner_texts()[:4]]
+            if powers and powers[0] not in ("", "未标注"):
+                checker.passed.append(f"效能降序排序生效（首张 {powers[0]}）")
+            else:
+                checker.failures.append(f"效能排序结果异常：{powers}")
+            checker.shot("15_power_filter.png", ".power-filter")
+            page.select_option("[data-pf-mode]", "all")
+            page.select_option("[data-pf-sort]", "default")
+            page.wait_for_timeout(900)
 
             # ---------------- A. overview 无限闪烁 / 路由劫持回归检查 ----------------
             run_stability_check(context, base_url, mock, checker, console_errors, page_errors)
@@ -694,7 +802,9 @@ def run_checks(base_url: str, mock: bool) -> int:
     if not mock:
         try:
             areas = http_json(base_url.rstrip("/") + "/api/grayzone/areas").get("areas") or []
-            assert len(areas) == 12, f"灰域区域数量 {len(areas)} != 12"
+            assert len(areas) == 14, f"灰域区域数量 {len(areas)} != 14"
+            names = [str(area.get("title") or area.get("id") or "").strip() for area in areas]
+            assert "庇护所旧址" in names and "坍缩狭缝" in names, f"缺少新增灰域区域：{names}"
             bad = []
             for area in areas:
                 data = http_json(
@@ -703,12 +813,16 @@ def run_checks(base_url: str, mock: bool) -> int:
                     + urllib.parse.quote(area["id"])
                     + "&limit=1"
                 )
-                if not (data.get("items") or []):
+                total = area.get("team_count")
+                has_items = bool(data.get("items"))
+                if total and not has_items:
                     bad.append(area["id"])
+                if not total and has_items:
+                    bad.append(f"{area['id']}(空区域却有队伍)")
             if bad:
                 checker.failures.append(f"灰域区域取队伍为空：{bad}")
             else:
-                checker.passed.append(f"灰域 12 个区域均能取到队伍（{areas[0]['id']} 等）")
+                checker.passed.append(f"灰域 14 个区域齐全（含庇护所旧址/坍缩狭缝），且有队伍区域均能取到队伍")
         except Exception as exc:  # noqa: BLE001
             checker.failures.append(f"灰域区域后端校验失败：{exc}")
 
@@ -749,7 +863,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 12
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 16
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

@@ -179,14 +179,29 @@ export async function importCurrentSequence() {
 }
 
 export function sequenceStats(sequence = state.sequence) {
-  if (!sequence) return { count: 0, max: 35, power: 0, hp: 0, units: 0 };
+  if (!sequence) return { count: 0, max: 35, power: 0, hp: 0, units: 0, powerKnown: 0, powerUnknown: 0 };
   const draft = sequence.draft || [];
+  let power = 0;
+  let powerKnown = 0;
+  let powerUnknown = 0;
+  draft.forEach((team) => {
+    const num = Number(team.power);
+    const known = typeof team.power_known === "boolean" ? team.power_known : Number.isFinite(num) && num !== 0;
+    if (known) {
+      power += Number.isFinite(num) ? num : 0;
+      powerKnown += 1;
+    } else {
+      powerUnknown += 1;
+    }
+  });
   return {
     count: draft.length,
     max: sequence.max || 35,
-    power: draft.reduce((acc, team) => acc + (Number(team.power) || 0), 0),
+    power,
     hp: draft.reduce((acc, team) => acc + (Number(team.hp_total) || 0), 0),
     units: draft.reduce((acc, team) => acc + (Number(team.units) || 0), 0),
+    powerKnown,
+    powerUnknown,
   };
 }
 

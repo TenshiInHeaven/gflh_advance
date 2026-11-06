@@ -11,8 +11,15 @@ import {
   teamCardHtml,
   renderPager,
   bindPager,
-  sortTeamsByPower,
 } from "../ui.js";
+import {
+  filterAndSortTeams,
+  bindPowerFilter,
+  powerFilterBarHtml,
+  powerFilterMeta,
+  serverPowerParams,
+  defaultPowerFilter,
+} from "../components/power-filter.js";
 import { esc, fmtNum, navigate, bindSearch } from "../util.js";
 
 const ORPHAN_PAGE_SIZE = 30;
@@ -75,9 +82,9 @@ export async function render(root, { params }) {
                 ${areas
                   .map(
                     (area, index) => `
-                  <button class="area-card" type="button" data-area-detail="${esc(area.id)}">
+                  <button class="area-card" type="button" data-area-detail="${esc(String(area.id || "").trim())}">
                     <div class="area-code">SECTOR ${String(index + 1).padStart(2, "0")} // GZ-${String(index + 1).padStart(2, "0")}</div>
-                    <div class="area-name">${esc(area.title || area.id)}</div>
+                    <div class="area-name">${esc(String(area.title || area.id || "").trim())}</div>
                     <div class="area-stats">
                       <div><b>${fmtNum(area.team_count)}</b><span>可收藏队伍</span></div>
                       <div><b>${fmtNum(area.species_count)}</b><span>怪种</span></div>
@@ -99,6 +106,7 @@ export async function render(root, { params }) {
                   </div>
                   <span class="spacer"></span>
                   <span class="tb-meta" data-orphan-meta>${icon("users", 11)} 读取中…</span>
+                  <div style="flex-basis:100%">${powerFilterBarHtml()}</div>
                 </div>
                 <div data-orphan-list>${skeletonRows(5)}</div>
               </section>`
@@ -124,7 +132,10 @@ export async function render(root, { params }) {
       });
     });
     root.querySelectorAll("[data-area-detail]").forEach((card) => {
-      card.addEventListener("click", () => navigate(`/grayzone/${encodeURIComponent(card.dataset.areaDetail)}`));
+      card.addEventListener("click", () => {
+        const areaId = String(card.dataset.areaDetail || "").trim();
+        navigate(`/grayzone/${encodeURIComponent(areaId)}`);
+      });
     });
     if (isOrphan) initOrphanSection(root, chapterId, chapter);
   } catch (err) {
@@ -139,46 +150,25 @@ function initOrphanSection(root, chapterId, chapter) {
   const listEl = root.querySelector("[data-orphan-list]");
   const metaEl = root.querySelector("[data-orphan-meta]");
   const addBtn = root.querySelector('[data-act="add-orphan"]');
-  const view = { page: 1, query: "", total: chapter.team_count || 0, items: [] };
-  let searchBound = false;
-
-  const load = async (page = 1, query = view.query) => {
-    listEl.innerHTML = skeletonRows(5);
-    try {
-      const data = await api.chapter(chapterId, {
-        offset: (page - 1) * ORPHAN_PAGE_SIZE,
-        limit: ORPHAN_PAGE_SIZE,
-        q: query,
-      });
-      view.page = page;
-      view.query = query;
-      view.items = sortTeamsByPower(data.teams || []);
-      view.total = data.teams_total ?? data.total ?? chapter.team_count ?? 0;
-      renderList();
-    } catch (err) {
-      if (err.status === 503 || err.status === 0) {
-        handleViewError(listEl, err, () => load(page, query));
-      } else {
-        listEl.innerHTML = emptyState({ iconName: "users", title: "队伍加载失败", desc: err.message });
-      }
-    }
-  };
+  const view = { page: 1, query: "", total: chapter.team_count || 0, items: [], filter: defaultPowerFilter() };
 
   const renderList = () => {
     if (metaEl) {
       metaEl.innerHTML = `${icon("users", 11)} 共 <b>${fmtNum(view.total)}</b> 支队伍 · 每页 ${ORPHAN_PAGE_SIZE}${view.query ? ` · 搜索「${esc(view.query)}」` : ""}`;
     }
+    const pfMeta = root.querySelector("[data-pf-meta]");
+    if (pfMeta) pfMeta.textContent = powerFilterMeta(view.filter, view.total, view.items.length);
     if (!view.items.length) {
       listEl.innerHTML = emptyState({
-        iconName: view.query ? "search" : "users",
-        title: view.query ? "没有匹配的队伍" : "暂无队伍",
-        desc: view.query ? "换个关键词试试（支持队伍 id / 阵营 / 怪种名）。" : "该章节没有可收藏队伍。",
+        iconName: view.query || view.filter.mode !== "all" ? "search" : "users",
+        title: view.query || view.filter.mode !== "all" ? "没有匹配的队伍" : "暂无队伍",
+        desc: view.query || view.filter.mode !== "all" ? "换个关键词或效能条件试试。" : "该章节没有可收藏队伍。",
       });
       return;
     }
     listEl.innerHTML = `
       <div class="team-grid">${view.items.map((team) => teamCardHtml(team)).join("")}</div>
-      ${renderPager({ page: view.page, total: view.total, pageSize: ORPHAN_PAGE_SIZE })}
+      ${renderPager({ page: view.page, total: Math.max(view.total, view.items.length), pageSize: ORPHAN_PAGE_SIZE })}
     `;
     bindPager(listEl, {
       page: view.page,
@@ -190,16 +180,39 @@ function initOrphanSection(root, chapterId, chapter) {
     });
   };
 
-  if (!searchBound) {
-    bindSearch(root.querySelector("[data-orphan-search]"), (value) => load(1, value));
-    searchBound = true;
-  }
+  const load = async (page = 1, query = view.query) => {
+    listEl.innerHTML = skeletonRows(5);
+    try {
+      const data = await api.chapter(chapterId, {
+        offset: (page - 1) * ORPHAN_PAGE_SIZE,
+        limit: ORPHAN_PAGE_SIZE,
+        q: query,
+        ...serverPowerParams(view.filter),
+      });
+      view.page = page;
+      view.query = query;
+      view.items = filterAndSortTeams(data.teams || [], view.filter);
+      view.total = data.teams_total ?? data.total ?? chapter.team_count ?? 0;
+      renderList();
+    } catch (err) {
+      if (err.status === 503 || err.status === 0) {
+        handleViewError(listEl, err, () => load(page, query));
+      } else {
+        listEl.innerHTML = emptyState({ iconName: "users", title: "队伍加载失败", desc: err.message });
+      }
+    }
+  };
+
+  bindSearch(root.querySelector("[data-orphan-search]"), (value) => load(1, value));
+  bindPowerFilter(root, (filter) => {
+    view.filter = filter;
+    load(1, view.query);
+  });
 
   if (addBtn) {
     addBtn.addEventListener("click", async () => {
       if (!view.items.length) return;
-      const remaining = 35 - (root._tfSequenceCount ?? 0);
-      const { sequenceStats, addTeams } = await import("../store.js");
+      const { sequenceStats, addTeams: addTeamsStore } = await import("../store.js");
       const { confirmDialog, toastOk, toastErr, setBusy } = await import("../ui.js");
       const left = 35 - sequenceStats().count;
       if (left <= 0) {
@@ -219,7 +232,7 @@ function initOrphanSection(root, chapterId, chapter) {
       }
       setBusy(addBtn, true, "加入中…");
       try {
-        const sequence = await addTeams(toAdd.map((team) => team.id));
+        const sequence = await addTeamsStore(toAdd.map((team) => team.id));
         toastOk("已加入序列", `成功加入 ${toAdd.length} 支队伍 · 当前序列 ${sequence.count}/${sequence.max}`);
       } catch (err) {
         toastErr("加入失败", err.message);

@@ -1,8 +1,8 @@
 /* team-drawer.js —— 队伍详情抽屉（只展示数值/编制/参数/出处，绝不展示技能信息） */
 import { api } from "../api.js";
 import { store, addTeam } from "../store.js";
-import { icon, openDrawer, toast, toastErr, toastOk, setBusy, errorState, skeletonRows } from "../ui.js";
-import { esc, fmtNum, fmtFloat, fmtPower, fmtForceField, factionColor, factionClass, navigate } from "../util.js";
+import { icon, openDrawer, toast, toastErr, toastOk, setBusy, errorState, skeletonRows, speciesIconHtml } from "../ui.js";
+import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay } from "../util.js";
 
 const unitName = (member) => member.name || member.code || "未知单位";
 
@@ -13,13 +13,14 @@ function statCell(value, { digits = 1, cls = "", title = "" } = {}) {
 
 export function teamDetailBodyHtml(detail) {
   const fc = factionColor(detail.faction);
+  const powerDisp = powerDisplay(detail.power, detail.power_known);
   const params = detail.params || {};
   const members = detail.members || [];
   const appearances = detail.appearances || [];
   const species = detail.species || [];
   const effectPower = Number(params.effect_ext ?? detail.power) || 0;
   const paramCells = [
-    ["效能 effect_ext", effectPower > 0 ? fmtNum(effectPower) : "0（未标注）"],
+    ["效能 effect_ext", effectPower === 0 ? "0（未标注）" : fmtNum(effectPower)],
     ["单位数 units", fmtNum(detail.units)],
     ["总血量 hp_total", fmtNum(detail.hp_total)],
     ["战斗类型 fight_type", params.fight_type ?? "—"],
@@ -76,7 +77,7 @@ export function teamDetailBodyHtml(detail) {
                     const defPercent = Number(member.def_percent ?? 0);
                     return `
               <tr>
-                <td class="name">${esc(unitName(member))}<span class="unit-code">${esc(member.code || "")}</span></td>
+                <td class="name"><span class="unit-cell">${speciesIconHtml(member, { size: 24, variant: "mini", fallbackFaction: detail.faction })}<span class="unit-name">${esc(unitName(member))}</span><span class="unit-code">${esc(member.code || "")}</span></span></td>
                 <td class="num">${member.level ?? "—"}</td>
                 <td class="num">${member.number ?? "—"}</td>
                 <td class="num">${member.count ?? "—"}</td>
@@ -129,7 +130,9 @@ export function teamDetailBodyHtml(detail) {
               .map(
                 (item) => `
           <button class="sp-chip" type="button" data-species-detail="${esc(item.codex_no)}" style="--fc:${factionColor(item.faction)};height:23px;padding:0 8px;font-size:10.5px" title="查看怪种图鉴">
-            ${esc(item.name)} <span style="color:var(--text-mute);font-family:var(--font-mono)">#${String(item.codex_no).padStart(3, "0")}</span>
+            ${speciesIconHtml(item, { size: 17, variant: "mini", fallbackFaction: detail.faction })}
+            <span class="sp-chip-name">${esc(item.name)}</span>
+            <span style="color:var(--text-mute);font-family:var(--font-mono)">#${String(item.codex_no).padStart(3, "0")}</span>
           </button>`,
               )
               .join("")
@@ -141,6 +144,7 @@ export function teamDetailBodyHtml(detail) {
 
 export function teamDetailHeadHtml(detail) {
   const fc = factionColor(detail.faction);
+  const powerDisp = powerDisplay(detail.power, detail.power_known);
   const flags = [];
   if (detail.gray_zone) flags.push('<span class="badge cyan">灰域队伍</span>');
   if (detail.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
@@ -155,7 +159,7 @@ export function teamDetailHeadHtml(detail) {
       ${(detail.tags || []).map((tag) => `<span class="tag amber">${esc(tag)}</span>`).join("")}
     </div>
     <div class="drawer-stats">
-      <div class="ds-item"><b class="amber">${fmtPower(detail.power)}</b><span>${Number(detail.power) > 0 ? "效能" : "未标注效能"}</span></div>
+      <div class="ds-item"><b class="amber ${powerDisp.known ? (powerDisp.negative ? "neg" : "") : ""}"${powerDisp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${powerDisp.known ? powerDisp.text : "未标注"}</b><span>${powerDisp.negative ? "效能（可能为负）" : "效能"}</span></div>
       <div class="ds-item"><b>${fmtNum(detail.units)}</b><span>单位数</span></div>
       <div class="ds-item"><b>${fmtNum(detail.hp_total)}</b><span>总血量</span></div>
       <div class="ds-item"><b class="cyan">${fmtNum((detail.members || []).length)}</b><span>编制组</span></div>

@@ -1,28 +1,50 @@
-/* views/stage.js —— 关卡详情：该关的可收藏队伍列表 */
+/* views/stage.js —— 关卡详情：该关的可收藏队伍列表（本地效能筛选/排序） */
 import { api } from "../api.js";
 import { store, addTeams, sequenceStats } from "../store.js";
-import { icon, pageHeadHtml, sectionHeadHtml, teamCardHtml, skeletonCards, handleViewError, emptyState, renderPager, bindPager, toastOk, toastErr, confirmDialog, setBusy, factionChip, sortTeamsByPower } from "../ui.js";
-import { esc, fmtNum, navigate, bindSearch, factionClass } from "../util.js";
+import {
+  icon,
+  pageHeadHtml,
+  teamCardHtml,
+  skeletonCards,
+  handleViewError,
+  emptyState,
+  renderPager,
+  bindPager,
+  toastOk,
+  toastErr,
+  confirmDialog,
+  setBusy,
+} from "../ui.js";
+import {
+  filterAndSortTeams,
+  bindPowerFilter,
+  powerFilterBarHtml,
+  powerFilterMeta,
+  defaultPowerFilter,
+} from "../components/power-filter.js";
+import { esc, fmtNum, navigate, bindSearch } from "../util.js";
 
-const state = { page: 1, pageSize: 24, query: "", faction: "" };
+const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter() };
 let rootEl = null;
 let loaded = null;
+let filteredTeams = [];
 
 export async function render(root, { params }) {
   rootEl = root;
   state.page = 1;
   state.query = "";
   state.faction = "";
+  state.filter = defaultPowerFilter();
   const missionId = params.id;
   root.innerHTML = pageHeadHtml({
-    crumbs: [{ label: "关卡图鉴", nav: "/chapters" }, { label: "关卡", nav: "" }, { label: `mission #${missionId}` }],
+    crumbs: [{ label: "关卡图鉴", nav: "/chapters" }, { label: "关卡" }, { label: `mission #${missionId}` }],
     title: "关卡队伍",
     sub: "正在读取关卡数据…",
   }) + `<div data-body>${skeletonCards(8)}</div>`;
 
   try {
     loaded = await api.stage(missionId);
-    loaded.teams = sortTeamsByPower(loaded.teams || []);
+    loaded.teams = loaded.teams || [];
     renderPage();
   } catch (err) {
     handleViewError(root, err, () => render(root, { params }));
@@ -65,6 +87,7 @@ function renderPage() {
       </div>
       <span class="spacer"></span>
       <span class="tb-meta" data-team-meta></span>
+      <div style="flex-basis:100%">${powerFilterBarHtml()}</div>
     </div>
     <div data-team-area></div>
   `;
@@ -76,6 +99,8 @@ function renderPage() {
     let filtered = teams;
     if (query) filtered = filtered.filter((team) => String(team.id).includes(query));
     if (state.faction) filtered = filtered.filter((team) => team.faction === state.faction);
+    filtered = filterAndSortTeams(filtered, state.filter);
+    filteredTeams = filtered;
     const total = filtered.length;
     const maxPage = Math.max(1, Math.ceil(total / state.pageSize));
     if (state.page > maxPage) state.page = maxPage;
@@ -84,12 +109,14 @@ function renderPage() {
 
     rootEl.querySelector("[data-team-meta]").innerHTML =
       `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍 · 每页 ${state.pageSize}`;
+    const pfMeta = rootEl.querySelector("[data-pf-meta]");
+    if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, teams.length, total);
 
     if (!total) {
       areaEl.innerHTML = emptyState({
         iconName: "users",
-        title: query || state.faction ? "没有匹配的队伍" : "本关暂无可收藏队伍",
-        desc: query || state.faction ? "换个关键词或阵营筛选试试。" : "该关卡没有可注入的可收藏队伍。",
+        title: query || state.faction || state.filter.mode !== "all" ? "没有匹配的队伍" : "本关暂无可收藏队伍",
+        desc: query || state.faction || state.filter.mode !== "all" ? "换个关键词、阵营或效能条件试试。" : "该关卡没有可注入的可收藏队伍。",
       });
       return;
     }
@@ -113,6 +140,12 @@ function renderPage() {
 
   bindSearch(rootEl.querySelector("[data-team-search]"), (value) => {
     state.query = value;
+    state.page = 1;
+    renderList();
+  });
+
+  bindPowerFilter(rootEl, (filter) => {
+    state.filter = filter;
     state.page = 1;
     renderList();
   });
@@ -142,22 +175,23 @@ function renderPage() {
 
   rootEl.querySelector('[data-act="add-all"]').addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    if (!teams.length) return;
+    const source = filteredTeams.length ? filteredTeams : teams;
+    if (!source.length) return;
     const remaining = 35 - sequenceStats().count;
     if (remaining <= 0) {
       toastErr("序列已满", "序列上限 35，请先移除一些队伍。");
       return;
     }
-    let toAdd = teams;
-    if (teams.length > remaining) {
+    let toAdd = source;
+    if (source.length > remaining) {
       const ok = await confirmDialog({
         title: "加入全部队伍",
-        message: `本关共 ${teams.length} 支队伍，序列剩余 ${remaining} 个位置。`,
-        detail: `将把前 ${remaining} 支加入序列，剩余 ${teams.length - remaining} 支需要先清出位置。`,
+        message: `当前筛选结果共 ${source.length} 支队伍，序列剩余 ${remaining} 个位置。`,
+        detail: `将把前 ${remaining} 支加入序列，剩余 ${source.length - remaining} 支需要先清出位置。`,
         confirmText: `加入前 ${remaining} 支`,
       });
       if (!ok) return;
-      toAdd = teams.slice(0, remaining);
+      toAdd = source.slice(0, remaining);
     }
     setBusy(button, true, "加入中…");
     try {
@@ -169,16 +203,4 @@ function renderPage() {
       setBusy(button, false);
     }
   });
-}
-
-function findChapterId(missionId) {
-  // 用缓存章节数据回查，找不到时退回关卡图鉴
-  const data = store.chapters;
-  if (!data) return null;
-  for (const group of data.groups || []) {
-    for (const chapter of group.chapters) {
-      if (chapter.id) return chapter.id;
-    }
-  }
-  return null;
 }

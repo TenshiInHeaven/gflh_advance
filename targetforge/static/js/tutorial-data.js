@@ -156,7 +156,7 @@ export const FAQ_ITEMS = [
     id: "safe",
     q: "uid / sign 会泄露吗？工具安全吗？",
     a: `
-      <p>凭证只保存在本机 <span class="tut-code">dataMiner/derived/targetforge/creds_latest.json</span>，不会上传到任何地方。请<b>不要提交到 git、不要外传</b>。</p>
+      <p>凭证只保存在本机<b>应用数据目录</b>（默认 <span class="tut-code">&lt;GF Forge&gt;/dataMiner/derived/targetforge</span>，可用环境变量 <span class="tut-code">TARGETFORGE_DATA_DIR</span> 覆盖）下的 <span class="tut-code">creds_latest.json</span>，不会上传到任何地方。请<b>不要提交到 git、不要外传</b>。</p>
       <p>应用只绑定 127.0.0.1，不访问外网；只有你点「开始抓取 / 执行注入 / 重启游戏」时才会操作本机代理或游戏进程。风险提示：修改游戏数据属于社区工具行为，请自行评估风险，仅用于单机研究 / 演示。</p>
     `,
   },

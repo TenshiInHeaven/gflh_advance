@@ -29,14 +29,14 @@ from targetforge import app  # noqa: E402
 # ---------------------------------------------------------------------------
 TEAMS = {
     101: {
-        "id": 101, "power": 50000, "units": 3, "hp_total": 12000, "faction": "铁血",
+        "id": 101, "power": 50000, "power_known": True, "units": 3, "hp_total": 12000, "faction": "铁血",
         "tags": ["测试"], "gray_zone": False, "orphan": False,
         "species": [{"codex_no": 5, "name": "稻草人"}],
         "members": [{"code": "Scarecrow", "name": "稻草人", "number": 1, "count": 1}],
         "stage": {"chapter_id": "main-1", "title": "第1章", "stage_title": "演习训练", "code": "1-1"},
     },
     102: {
-        "id": 102, "power": 60000, "units": 5, "hp_total": 20000, "faction": "军方",
+        "id": 102, "power": 0, "power_known": False, "units": 5, "hp_total": 20000, "faction": "军方",
         "tags": ["BOSS"], "gray_zone": False, "orphan": False,
         "species": [{"codex_no": 15, "name": "圣盾"}],
         "members": [{"code": "Aegis", "name": "圣盾", "number": 5, "count": 1}],
@@ -90,9 +90,12 @@ class FakeCatalog:
         return [{"id": "旅团商道", "title": "旅团商道", "stage_count": 1,
                  "team_count": 1, "species_count": 1}]
 
-    def grayzone_teams(self, area, offset, limit, q=""):
+    def grayzone_teams(self, area, offset, limit, q="", power_min=None, power_max=None,
+                       power_known=None, sort="default"):
         items = [TEAMS[101]] if not q else []
-        return {"total": 1, "offset": 0, "items": items}
+        if power_known:
+            items = [item for item in items if item.get("power_known")]
+        return {"total": len(items), "offset": 0, "items": items}
 
     def species_list(self, *, q="", faction="", category="", offset=0, limit=60):
         items = [{"codex_no": 5, "name": "稻草人", "faction": "铁血", "type": 1,
@@ -170,9 +173,13 @@ class AppTestBase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.tmp_path = Path(self.tmp.name)
+        self.icon_dir = self.tmp_path / "icons"
+        self.icon_dir.mkdir(parents=True, exist_ok=True)
+        (self.icon_dir / "test.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
         self.patches = [
             mock.patch.object(app, "STATE_FILE", self.tmp_path / "state.json"),
             mock.patch.object(app, "DATA_DIR", self.tmp_path),
+            mock.patch.object(app, "ICON_DIR", self.icon_dir),
             mock.patch.object(app, "_JOBS", {}),
             mock.patch.object(app, "_catalog_module", lambda: SimpleNamespace(
                 load=lambda: FakeCatalog(), build=lambda force=False: {"counts": FakeCatalog.counts,
@@ -237,6 +244,23 @@ class StateAndHelpersTest(AppTestBase):
     def test_jsonable_path_and_set(self):
         self.assertEqual(app._jsonable(self.tmp_path), str(self.tmp_path))
         self.assertEqual(app._jsonable({"b", "a"}), ["a", "b"])
+
+    def test_team_query_filters_and_sort(self):
+        teams = [
+            {"id": 1, "power": 100, "power_known": True, "hp_total": 10, "units": 1},
+            {"id": 2, "power": 0, "power_known": False, "hp_total": 30, "units": 3},
+            {"id": 3, "power": -50, "power_known": True, "hp_total": 20, "units": 2},
+        ]
+        page = app._apply_team_query(teams, {"power_known": ["1"]})
+        self.assertEqual([t["id"] for t in page["items"]], [1, 3])
+        page = app._apply_team_query(teams, {"sort": ["hp_desc"]})
+        self.assertEqual([t["id"] for t in page["items"]], [2, 3, 1])
+        page = app._apply_team_query(teams, {"sort": ["power_desc"]})
+        self.assertEqual([t["id"] for t in page["items"]], [1, 3, 2])
+        page = app._apply_team_query(teams, {"power_min": ["0"], "power_max": ["200"]})
+        self.assertEqual([t["id"] for t in page["items"]], [1])
+        with self.assertRaises(app.HttpError):
+            app._team_filters({"sort": ["bad"]})
 
 
 class HttpRoutesTest(AppTestBase):
@@ -324,6 +348,15 @@ class HttpRoutesTest(AppTestBase):
         with urllib.request.urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode()
         self.assertIn("TargetForge", html)
+
+    def test_icon_route_and_traversal_guard(self):
+        with urllib.request.urlopen(self.base + "/api/icons/test.png", timeout=10) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(resp.headers.get("Content-Type"), "image/png")
+            self.assertEqual(resp.read(), b"\x89PNG\r\n\x1a\nfake")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(self.base + "/api/icons/..%2Fstate.json", timeout=10)
+        self.assertIn(ctx.exception.code, (403, 404))
 
 
 if __name__ == "__main__":

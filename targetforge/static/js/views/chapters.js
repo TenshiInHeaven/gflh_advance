@@ -1,4 +1,4 @@
-/* views/chapters.js —— 关卡图鉴：7 个分组章节卡片 */
+/* views/chapters.js —— 关卡图鉴：分组章节卡片（main/event/score/tutorial/simulation/grayzone/orphan） */
 import { store, loadChapters } from "../store.js";
 import { icon, pageHeadHtml, skeletonCards, handleViewError, emptyState } from "../ui.js";
 import { esc, fmtNum, fmtCompact, navigate, bindSearch } from "../util.js";
@@ -14,12 +14,12 @@ export async function render(root) {
       crumbs: [{ label: "关卡图鉴" }],
       title: "关卡图鉴",
       badge: "CHAPTERS",
-      sub: "按章节浏览全部可选择的关卡；点章节进入关卡列表，再点关卡查看该关的可收藏队伍。灰域章节按 12 个区域分组，不逐节点列举。",
+      sub: "按章节浏览全部可选择的关卡；点章节进入关卡列表，再点关卡查看该关的可收藏队伍。灰域章节按区域分组，不逐节点列举。",
     })}
     <div class="toolbar">
       <div class="input-wrap">
         <span class="in-ico">${icon("search", 14)}</span>
-        <input type="text" placeholder="搜索章节 / 活动名…" data-chapter-search value="${esc(state.query)}" />
+        <input type="text" placeholder="搜索章节 / 活动名 / 标签…" data-chapter-search value="${esc(state.query)}" />
       </div>
       <span class="spacer"></span>
       <span class="tb-meta" data-chapter-meta>—</span>
@@ -44,14 +44,13 @@ export async function render(root) {
       renderTabs();
       renderGrid();
     });
-    // 卡片点击交给全局 data-chapter-detail 处理
   } catch (err) {
     handleViewError(root, err, () => render(root));
   }
 }
 
-function chapterCounts() {
-  return groupsCache.map((group) => ({ id: group.id, title: group.title, count: group.chapters.length }));
+function isScoreGroup(group) {
+  return group?.id === "score" || group?.category === "score";
 }
 
 function renderTabs() {
@@ -60,10 +59,10 @@ function renderTabs() {
   const total = groupsCache.reduce((acc, group) => acc + group.chapters.length, 0);
   const tabs = [
     `<button class="group-tab ${state.group === "all" ? "active" : ""}" type="button" data-group="all">全部<span class="gt-count">${total}</span></button>`,
-    ...chapterCounts().map(
-      (group) =>
-        `<button class="group-tab ${state.group === group.id ? "active" : ""}" type="button" data-group="${esc(group.id)}">${esc(group.title)}<span class="gt-count">${group.count}</span></button>`,
-    ),
+    ...groupsCache.map((group) => {
+      const score = isScoreGroup(group);
+      return `<button class="group-tab ${state.group === group.id ? "active" : ""} ${score ? "score" : ""}" type="button" data-group="${esc(group.id)}">${score ? `${icon("spark", 11)} ` : ""}${esc(group.title)}<span class="gt-count">${group.chapters.length}</span></button>`;
+    }),
   ];
   tabsEl.innerHTML = tabs.join("");
   const metaEl = container.querySelector("[data-chapter-meta]");
@@ -76,36 +75,67 @@ function renderTabs() {
   }
 }
 
+function chapterHaystack(chapter, group) {
+  const tags = (chapter.tags || []).join(" ");
+  const extra = [chapter.event_name, chapter.event_title, chapter.parent_title, chapter.activity_name, chapter.rerun_title]
+    .filter(Boolean)
+    .join(" ");
+  return `${chapter.title || ""} ${chapter.subtitle || ""} ${group.title || ""} ${tags} ${extra} ${chapter.id || ""}`.toLowerCase();
+}
+
 function visibleChapters() {
   const groups = state.group === "all" ? groupsCache : groupsCache.filter((group) => group.id === state.group);
   const query = state.query.trim().toLowerCase();
   const items = [];
   groups.forEach((group) => {
     group.chapters.forEach((chapter, index) => {
-      const haystack = `${chapter.title} ${chapter.subtitle || ""} ${group.title}`.toLowerCase();
-      if (query && !haystack.includes(query)) return;
+      if (query && !chapterHaystack(chapter, group).includes(query)) return;
       items.push({ chapter, group, index });
     });
   });
   return items;
 }
 
+function eventFlags(chapter) {
+  const kind = chapter.kind || "";
+  const subtitle = `${chapter.subtitle || ""} ${chapter.title || ""}`;
+  const tags = (chapter.tags || []).join(" ");
+  const rerun = kind === "rerun" || /往期复刻|复刻/.test(`${subtitle} ${tags}`);
+  const special = kind === "special" || /特殊作战/.test(`${subtitle} ${tags}`);
+  return { rerun, special };
+}
+
 function chapterCardHtml({ chapter, group, index }) {
-  const isGray = chapter.category === "grayzone";
-  const isOrphan = chapter.category === "orphan";
+  const category = chapter.category || "";
+  const isGray = category === "grayzone";
+  const isOrphan = category === "orphan";
+  const isScore = category === "score" || isScoreGroup(group);
   const areaCount = (chapter.areas || []).length;
   const diffMin = chapter.difficulty_min || 0;
   const diffMax = chapter.difficulty_max || 0;
-  const badge = isGray ? '<span class="badge cyan mono">GRAY ZONE</span>' : isOrphan ? '<span class="badge violet mono">ORPHAN</span>' : "";
+  const { rerun, special } = eventFlags(chapter);
+  const badge = isScore
+    ? '<span class="badge gold mono">SCORE</span>'
+    : isGray
+      ? '<span class="badge cyan mono">GRAY ZONE</span>'
+      : isOrphan
+        ? '<span class="badge violet mono">ORPHAN</span>'
+        : rerun
+          ? '<span class="badge gold mono">往期复刻</span>'
+          : special
+            ? '<span class="badge cyan mono">特殊作战</span>'
+            : "";
+  const subtitle = chapter.subtitle
+    || (isGray ? `${areaCount} 个区域` : isOrphan ? "没有固定关卡的可收藏队伍" : isScore ? "积分关卡 · 效能非 0" : "点击查看关卡列表");
   return `
-    <button class="chapter-card ${isGray ? "grayzone" : ""} ${isOrphan ? "orphan" : ""}" type="button" data-chapter-detail="${esc(chapter.id)}">
+    <button class="chapter-card ${isGray ? "grayzone" : ""} ${isOrphan ? "orphan" : ""} ${isScore ? "score" : ""}" type="button" data-chapter-detail="${esc(chapter.id)}">
       <div class="cc-top">
         <span class="cc-cat">${esc(group.title)}</span>
         ${badge}
         <span class="cc-index">${String(index + 1).padStart(2, "0")}</span>
       </div>
       <div class="cc-title">${esc(chapter.title)}</div>
-      <div class="cc-sub">${esc(chapter.subtitle || (isGray ? `${areaCount} 个区域` : isOrphan ? "没有固定关卡的可收藏队伍" : "点击查看关卡列表"))}</div>
+      <div class="cc-sub" title="${esc(subtitle)}">${esc(subtitle)}</div>
       <div class="cc-stats">
         ${
           isGray
@@ -119,7 +149,13 @@ function chapterCardHtml({ chapter, group, index }) {
           <div class="cc-stat"><b>${fmtNum(chapter.team_count)}</b><span>队伍</span></div>
           <div class="cc-stat"><b>${fmtNum(chapter.species_count)}</b><span>怪种</span></div>
           <div class="cc-stat gray" style="grid-column:span 2"><b>无固定关卡</b><span>直接按队伍列出</span></div>`
-              : `
+              : isScore
+                ? `
+          <div class="cc-stat"><b>${fmtNum(chapter.stage_count)}</b><span>关卡</span></div>
+          <div class="cc-stat"><b>${fmtNum(chapter.team_count)}</b><span>队伍</span></div>
+          <div class="cc-stat"><b>${fmtNum(chapter.species_count)}</b><span>怪种</span></div>
+          <div class="cc-stat gray"><b>${fmtCompact(diffMin)}-${fmtCompact(diffMax)}</b><span>效能范围</span></div>`
+                : `
           <div class="cc-stat"><b>${fmtNum(chapter.stage_count)}</b><span>关卡</span></div>
           <div class="cc-stat"><b>${fmtNum(chapter.team_count)}</b><span>队伍</span></div>
           <div class="cc-stat"><b>${fmtNum(chapter.species_count)}</b><span>怪种</span></div>
@@ -127,8 +163,15 @@ function chapterCardHtml({ chapter, group, index }) {
         }
       </div>
       <div class="cc-foot">
-        ${(chapter.tags || []).slice(0, 3).map((tag) => `<span class="tag ${isGray ? "cyan" : isOrphan ? "violet" : "amber"}">${esc(tag)}</span>`).join("")}
-        ${isGray ? `<span class="area-dots">${Array.from({ length: 12 }, (_, i) => `<i></i>`).join("")}</span>` : ""}
+        ${(chapter.tags || [])
+          .filter((tag) => !(isScore && String(tag).includes("积分关卡")))
+          .slice(0, 3)
+          .map((tag) => `<span class="tag ${isScore ? "gold" : isGray ? "cyan" : isOrphan ? "violet" : "amber"}">${esc(tag)}</span>`)
+          .join("")}
+        ${isScore ? '<span class="cc-score-badge">积分关卡</span>' : ""}
+        ${rerun && !isScore ? '<span class="tag gold">往期复刻</span>' : ""}
+        ${special && !rerun && !isScore ? '<span class="tag cyan">特殊作战</span>' : ""}
+        ${isGray ? `<span class="area-dots">${Array.from({ length: Math.max(areaCount, 1) }, () => "<i></i>").join("")}</span>` : ""}
         <span class="cc-arrow">${icon("chevronRight", 16)}</span>
       </div>
     </button>

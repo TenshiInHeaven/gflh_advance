@@ -20,7 +20,10 @@ targetforge/
   tools/             截图/自检脚本（Lead）
 ```
 
-数据根：`dataMiner/derived/targetforge/`（整个目录不入 git，可重建）：
+数据根：`dataMiner/derived/targetforge/`（整个目录不入 git，可重建）。
+**路径不再写死**：默认是 `<GF Forge>/dataMiner/derived/targetforge`，可用环境变量
+`TARGETFORGE_DATA_DIR` 覆盖（`datapaths.py` 是唯一来源；app/catalog/gflh 都从这里取）。
+其中 `icons/` 是小怪头像缓存（`tools/build_icons.py` 从本机游戏资源导出，可重建）。
 
 ```text
 catalog.json          catalog 缓存（catalog.py build 产出，load 读取）
@@ -73,10 +76,13 @@ class Catalog:
     def chapter(self, chapter_id: str) -> dict | None
     def stage(self, mission_id: int) -> dict | None
     def grayzone_areas(self) -> list[dict]
-    def grayzone_teams(self, area_id: str, offset: int, limit: int, q: str = "") -> dict
+    def grayzone_teams(self, area_id, offset, limit, q="",
+                       power_min=None, power_max=None, power_known=None, sort="default") -> dict
     def team(self, team_id: int) -> dict | None
     def team_summaries(self, team_ids: list[int]) -> list[dict]
     def species_list(self, *, q="", faction="", category="", offset=0, limit=60) -> dict
+    def species(self, codex_no, offset=None, limit=None, q="", power_min=None, power_max=None,
+                power_known=None, sort="default") -> dict | None   # 无参数调用返回全量 teams
     def species(self, codex_no: int) -> dict | None
     def search(self, q: str, limit: int = 30) -> dict
 ```
@@ -119,21 +125,31 @@ class Catalog:
    chapter id `"orphan"`，标题 `"无固定关卡"`（灰域/随机/往期事件队伍都在这；chapter 详情里直接带分页 teams）。
 9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 special 的「特殊作战·未知」章节。
 
-排序：组顺序 main → event → rerun → tutorial → special → simulation → grayzone → orphan；
-组内章节按 `min(mission.order/id)` 升序。**groups 共 8 个（含 orphan），章节约 110 个。**
+排序：组顺序 main → event → **score** → tutorial → simulation → grayzone → orphan；
+组内章节按 `min(mission.order/id)` 升序。**groups 共 7 个，章节 112 个**（main 14 / event 72 / score 17 / tutorial 6 / simulation 1 / grayzone 1 / orphan 1）。
+
+- `score`（积分关卡）：campaign ∈ {-40401,-40402,-40403,-40404,-40405}，或该 campaign 的
+  `mission_event.event_name` / `normal_activity.chapter_name` 文本含 `+`（例：终焉花海+ / 谜境守卫+ /
+  混沌落幕+ / 自画像 / 贝蒂数 / 逃亡圣咏 …）。章节标题用活动名，subtitle = 所属大活动 + 「积分关卡」。
+- 原 `rerun`/`special` 全部并入 `event`，不再单独分组；event 章节 id 用 `event-{campaign}`（不跨 campaign 合并），
+  subtitle/tags 标「往期复刻 · 第N章」「往期活动」等，保证搜索能命中活动名与副标题。
+- 灰域 **14 个区域**（按 mission 标题前缀去编号/空格）：共生净土/晶团挖掘点/旅团商道/放射区/人形复制工厂/
+  废弃居民区/秘密通道/图腾圣所/装甲突击/交易地/地坛遗迹/最终贮藏地/庇护所旧址/坍缩狭缝。
+- `spot` 里缺失 mission 表的 mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
 
 ### 2.3 返回结构（前端直接消费）
 
 ```jsonc
 // GET /api/chapters
-{"built_at": "...", "counts": {"chapters":110,"stages":2345,"teams":13700,"species":264},
+{"built_at": "...", "counts": {"chapters":112,"stages":2345,"teams":13700,"species":264},
  "groups": [
    {"id":"main","title":"主线","chapters":[...]},
-   ...
-   {"id":"orphan","title":"无固定关卡","chapters":[
-     {"id":"orphan","category":"orphan","title":"无固定关卡","subtitle":"...","stage_count":0,
-      "team_count":4381,"species_count":...}
-   ]}
+   {"id":"event","title":"活动","chapters":[...]},
+   {"id":"score","title":"积分关卡","chapters":[...]},
+   {"id":"tutorial","title":"教学","chapters":[...]},
+   {"id":"simulation","title":"模拟作战","chapters":[...]},
+   {"id":"grayzone","title":"灰域探查","chapters":[...]},
+   {"id":"orphan","title":"无固定关卡","chapters":[...]}
  ]}
 
 // GET /api/chapters/{id}
@@ -144,10 +160,10 @@ class Catalog:
 {"chapter":{...}, "stages":[], "teams":[team_summary...], "teams_total":4381, "offset":0, "limit":60}
 
 // team_summary（列表里到处用）
-{"id":6549244,"power":113600,"units":9,"hp_total":79300,
+{"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,
  "faction":"铁血","tags":["BOSS","满力场"],
- "species":[{"codex_no":5,"name":"稻草人"},...最多8个],
- "members":[{"code":"Aegis_GA","name":"圣盾_GA","number":5,"count":3},...最多6组],
+ "species":[{"codex_no":5,"name":"稻草人","icon":"scarecrow.png"},...最多8个],
+ "members":[{"code":"Aegis_GA","name":"圣盾_GA","icon":"aegis_ga.png","number":5,"count":3},...最多6组],
  "gray_zone":false,"orphan":false,
  "stage": {"chapter_id":"main-1","title":"第1章","stage_title":"演习训练","code":"1-1"} | null}
 
@@ -155,31 +171,30 @@ class Catalog:
 {"stage":{...}, "teams":[team_summary,...]}
 
 // GET /api/teams/{id}（详情）
-{"id":6549244,"power":113600,"units":9,"hp_total":79300,"faction":"铁血",
+{"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,"faction":"铁血",
  "tags":["BOSS"],"gray_zone":false,"orphan":false,
- "params":{"effect_ext":113600,"fight_type":0,"use_building":"","batch_max":0,
-           "gray_zone_missions":3,"mission_count":12,
-           "note":"数值按队伍等级缩放（单位实测口径）"},
- "appearances":[{"mission_id":5,"chapter_id":"main-1","chapter_title":"第1章",
-                "stage_title":"演习训练","code":"1-1","difficulty":200,"gray_zone":false},...最多24],
- "species":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1}],
- "members":[{"type_id":11028,"code":"Aegis_GA","name":"圣盾_GA","codex_no":15,
+ ...
+ "species":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1,"icon":"scarecrow.png"}],
+ "members":[{"type_id":11028,"code":"Aegis_GA","name":"圣盾_GA","codex_no":15,"icon":"aegis_ga.png",
    "level":140,"number":5,"count":3,"def_percent":0,"batch":0,"x":8.0,"y":0.0,
-   "stats":{"maxlife":3360,"pow":37.3,"hit":65.3,"dodge":0,"armor":338.3,"armor_piercing":81.6,
-            "range":3,"speed":40,"shield":0,"def":99999,"crit":0,"crit_dmg":0,"tenacity":0},
-   "base_stats":{"maxlife":1440,"pow":16,...}}]}
+   "stats":{...}}]}
 
 // GET /api/species?q=&faction=&category=&offset=&limit=
 {"total":264,"items":[{"codex_no":5,"name":"稻草人","faction":"铁血","type":1,
-  "team_count":20,"gray_zone_team_count":6,"orphan_team_count":3,"capturable":true,
+  "icon":"scarecrow.png",
+  "team_count":20,"normal_team_count":14,"gray_zone_team_count":6,"orphan_team_count":3,
+  "has_normal":true,"has_grayzone":true,"has_orphan":true,"capturable":true,
   "tags":["契约捕获"]}]}
-// category: all|normal|grayzone|orphan
+// category: normal|grayzone|orphan 为「出现在该场景」的非互斥过滤（grayzone 约 66 个，含法官）
 
-// GET /api/species/{codex_no}?offset=&limit=&q=
+// GET /api/species/{codex_no}?offset=&limit=&q=&power_min=&power_max=&power_known=&sort=
 {"species":{...},"total":N,"offset":0,"limit":60,"teams":[...分页 team_summary...]}
 
-// GET /api/grayzone/areas -> {"areas":[{"id":"共生净土","title":"共生净土","stage_count":240,"team_count":1104,"species_count":150}]}
-// GET /api/grayzone/teams?area=&offset=&limit=&q= -> {"total":1104,"offset":0,"items":[team_summary...]}
+// GET /api/grayzone/areas -> {"areas":[{"id":"共生净土","title":"共生净土","stage_count":240,"team_count":1104,"species_count":23},...14 个]}
+// GET /api/grayzone/teams?area=&offset=&limit=&q=&power_min=&power_max=&power_known=&sort=
+//   -> {"total":1104,"offset":0,"items":[team_summary...]}
+// sort: default|power_desc|power_asc|hp_desc|units_desc；power_known=1 只看有标注效能的队伍
+// GET /api/icons/{icon} -> PNG（怪种/单位头像，来自本机游戏资源，缺失 404）
 // GET /api/search?q= -> {"teams":[team_summary],"stages":[{id,title,code,chapter_title}],"species":[...]}
 ```
 
@@ -187,8 +202,13 @@ class Catalog:
 
 - 怪种 = `enemy_illustration.id`（= codex 编号）；264 个 = 所有出现在「可收藏且有效」队伍里的 codex。
 - `enemy_full_model.csv` 的 `codex_no` 映射 type→codex；名称用 `enemy_illustration` 行的文本 key 解析。
-- `category`: `normal` = 有固定关卡（非灰域、非孤儿）、`grayzone` = 只出现在灰域、`orphan` = 只出现在无固定关卡。
+- `has_normal` / `has_grayzone` / `has_orphan` = 该怪种在对应场景是否有可收藏队伍（**非互斥**）：
+  灰域过滤应返回约 66 个怪种（含 法官 codex 35），而不是只返回「只在灰域出现」的 4 个。
+- 头像：`dataMiner/derived/targetforge/icons/<code>.png` 由 `tools/build_icons.py` 从本机游戏
+  `character<code>.ab` 的 `pic_<Code>_SS` 纹理导出；catalog 扫描该目录填 `icon`（缺失为 null，前端退化）。
 - 队伍 13700 条（有编制的可收藏队伍），只做展示，不做注入合法性以外的过滤。
+- 效能：`power` 来自 `enemy_team.effect_ext`；`power_known=false` 表示客户端未标注（常规关卡绝大多数如此），
+  只有积分关卡/部分特殊队伍有值（含负值）。**不要伪造公式反推。**
 - **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。
 
 ---
@@ -197,7 +217,7 @@ class Catalog:
 
 ```python
 MAX_TARGETS = 35
-DEFAULT_CREDS = ROOT/"dataMiner/derived/targetforge/creds_latest.json"
+DEFAULT_CREDS = ROOT/"dataMiner/derived/targetforge/creds_latest.json"   # 随 TARGETFORGE_DATA_DIR 变化，见 datapaths.py
 CAPTURE_PORT = 18080   # 默认端口；可配置（别用 8080，另一个 bot 占用）
 STATIC_KEY = "yundoudou"
 API_ADD = "Targettrain/addCollect"; API_DEL = "Targettrain/delCollect"

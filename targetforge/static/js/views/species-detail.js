@@ -1,4 +1,4 @@
-/* views/species-detail.js —— 怪种详情：所有怪组（服务端分页 + 搜索） */
+/* views/species-detail.js —— 怪种详情：所有怪组（服务端分页 + 效能筛选 + 搜索） */
 import { api } from "../api.js";
 import { sequenceStats, addTeams } from "../store.js";
 import {
@@ -17,9 +17,18 @@ import {
   setBusy,
   factionChip,
   tagsHtml,
+  speciesIconHtml,
   sortTeamsByPower,
 } from "../ui.js";
-import { esc, fmtNum, factionColor, navigate, bindSearch } from "../util.js";
+import {
+  filterAndSortTeams,
+  bindPowerFilter,
+  powerFilterBarHtml,
+  powerFilterMeta,
+  serverPowerParams,
+  defaultPowerFilter,
+} from "../components/power-filter.js";
+import { esc, fmtNum, navigate, bindSearch } from "../util.js";
 
 const PAGE_SIZE = 48;
 
@@ -40,14 +49,14 @@ export async function render(root, { params }) {
 }
 
 function renderPage(root, codexNo, firstPage, species) {
-  const fc = factionColor(species.faction);
   const categoryLabel = { normal: "有固定关卡", grayzone: "灰域专属", orphan: "无固定关卡" }[species.category] || "未知分类";
   const view = {
     page: 1,
     query: "",
     total: firstPage.total ?? firstPage.teams_total ?? species.team_count ?? 0,
-    items: firstPage.teams || [],
+    items: filterAndSortTeams(firstPage.teams || [], defaultPowerFilter()),
     pageSize: PAGE_SIZE,
+    filter: defaultPowerFilter(),
   };
 
   root.innerHTML = `
@@ -65,7 +74,7 @@ function renderPage(root, codexNo, firstPage, species) {
     })}
 
     <div class="capture-panel" style="display:flex;align-items:center;gap:22px;margin-bottom:22px;flex-wrap:wrap">
-      <span class="sp-avatar" style="--fc:${fc};width:76px;height:76px;font-size:29px;flex:none">${esc((species.name || "?").slice(0, 1))}</span>
+      ${speciesIconHtml(species, { size: 84, variant: "hero" })}
       <div style="flex:1;min-width:220px">
         <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
           <span style="font-size:22px;font-weight:700;letter-spacing:1px">${esc(species.name || "")}</span>
@@ -94,6 +103,7 @@ function renderPage(root, codexNo, firstPage, species) {
         <span class="spacer"></span>
         <span class="tb-meta" data-sp-meta>${icon("users", 11)} 读取中…</span>
         <button class="btn btn-primary btn-sm" type="button" data-act="add-page">${icon("plus", 12)} 本页全部加入序列</button>
+        <div style="flex-basis:100%">${powerFilterBarHtml()}</div>
       </div>
       <div data-sp-teams>${skeletonCards(8)}</div>
     </section>
@@ -107,6 +117,8 @@ function renderPage(root, codexNo, firstPage, species) {
     if (metaEl) {
       metaEl.innerHTML = `${icon("users", 11)} 匹配 <b>${fmtNum(view.total)}</b> 支队伍 · 每页 ${PAGE_SIZE}`;
     }
+    const pfMeta = root.querySelector("[data-pf-meta]");
+    if (pfMeta) pfMeta.textContent = powerFilterMeta(view.filter, view.total, view.items.length);
     if (!view.items.length) {
       listEl.innerHTML = emptyState({
         iconName: "users",
@@ -117,7 +129,7 @@ function renderPage(root, codexNo, firstPage, species) {
     }
     listEl.innerHTML = `
       <div class="team-grid">${view.items.map((team) => teamCardHtml(team)).join("")}</div>
-      ${renderPager({ page: view.page, total: view.total, pageSize: PAGE_SIZE })}
+      ${renderPager({ page: view.page, total: Math.max(view.total, view.items.length), pageSize: PAGE_SIZE })}
     `;
     bindPager(listEl, {
       page: view.page,
@@ -134,8 +146,9 @@ function renderPage(root, codexNo, firstPage, species) {
         offset: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         q: query,
+        ...serverPowerParams(view.filter),
       });
-      view.items = sortTeamsByPower(data.teams || []);
+      view.items = filterAndSortTeams(data.teams || [], view.filter);
       view.total = data.total ?? data.teams_total ?? 0;
       view.page = page;
       view.query = query;
@@ -148,6 +161,10 @@ function renderPage(root, codexNo, firstPage, species) {
   renderList();
 
   bindSearch(root.querySelector("[data-sp-team-search]"), (value) => load(1, value));
+  bindPowerFilter(root, (filter) => {
+    view.filter = filter;
+    load(1, view.query);
+  });
 
   root.querySelector("[data-nav-back]")?.addEventListener("click", () => navigate("/species"));
 

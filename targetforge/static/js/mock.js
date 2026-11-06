@@ -38,7 +38,7 @@ const STAGE_TITLES = [
 ];
 
 const EVENT_NAMES = [
-  "异构体", "坍缩点", "有序紊流", "双联乱数", "裂变链接", "镜像论", "熵减焓增",
+  "自画像", "异构体", "坍缩点", "有序紊流", "双联乱数", "裂变链接", "镜像论", "熵减焓增",
   "深度异象", "沙罗蚀相", "临界角", "静风点", "纵向应变", "捩浪人", "控制区",
   "暗金潮", "雪夜行军", "铁血浪潮", "协议的终末", "归零重启", "逆流行动",
   "潮汐锁定", "反演螺旋", "无声剧场", "浊流彼岸", "破晓之前", "白夜极光",
@@ -49,8 +49,9 @@ const EVENT_NAMES = [
 const TUTORIAL_NAMES = ["人形教学", "基础操作", "战斗教学", "行进教学", "夜战教学", "靶机指引"];
 
 const GRAYZONE_AREAS = [
-  "旅团商道", "放射区", "限界区", "废弃区", "污染区", "隔离区",
-  "裂缝区", "深渊区", "工业区", "居住区", "军事区", "实验区",
+  "共生净土", "晶团挖掘点", "旅团商道", "放射区", "人形复制工厂", "废弃居民区",
+  "秘密通道", "交易地", "最终贮藏地", "图腾圣所", "地坛遗迹", "装甲突击",
+  "庇护所旧址", "坍缩狭缝",
 ];
 
 const TAGS_POOL = [
@@ -61,6 +62,20 @@ const TAGS_POOL = [
 /* ------------------------------------------------------------------ */
 /* 基础生成工具                                                       */
 /* ------------------------------------------------------------------ */
+function mockIconUri(faction, seed) {
+  const palette = { 铁血: "#ff7a6e", 军方: "#a3b86b", 帕拉蒂斯: "#b98cff", 其它: "#8aa0c4" };
+  const color = palette[faction] || "#8aa0c4";
+  const shape = Number(seed || 0) % 3;
+  const inner =
+    shape === 0
+      ? `<ellipse cx="32" cy="30" rx="12" ry="15" fill="${color}"/><circle cx="32" cy="16" r="8" fill="${color}"/><path d="M20 40 6 32M44 40l14-8M22 48 10 56M42 48l12 8" stroke="${color}" stroke-width="4" stroke-linecap="round" fill="none"/>`
+      : shape === 1
+        ? `<rect x="16" y="20" width="32" height="26" rx="5" fill="${color}"/><rect x="22" y="8" width="20" height="13" rx="4" fill="${color}"/><rect x="26" y="12" width="12" height="4" rx="2" fill="#0a1228" opacity=".65"/><rect x="8" y="26" width="6" height="12" rx="2" fill="${color}"/><rect x="50" y="26" width="6" height="12" rx="2" fill="${color}"/>`
+        : `<path d="M32 4 40 18 56 16 48 30 58 42 42 44 32 60 22 44 6 42 16 30 8 16 24 18Z" fill="${color}"/><circle cx="24" cy="30" r="3" fill="#0a1228" opacity=".65"/><circle cx="40" cy="30" r="3" fill="#0a1228" opacity=".65"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${color}" opacity=".14"/>${inner}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function seedOf(text) {
   return hash32(`tf-mock:${text}`);
 }
@@ -112,12 +127,11 @@ function makeStage(chapterSeed, ordinal, chapter) {
 /* ------------------------------------------------------------------ */
 const GROUP_DEFS = [
   { id: "main", title: "主线", category: "main", count: 13, tag: "主线" },
-  { id: "event", title: "活动", category: "event", count: 34, tag: "活动" },
-  { id: "rerun", title: "往期复刻", category: "rerun", count: 22, tag: "复刻" },
+  { id: "event", title: "活动", category: "event", count: 46, tag: "活动" },
+  { id: "score", title: "积分关卡", category: "score", count: 6, tag: "积分关卡" },
   { id: "tutorial", title: "教学", category: "tutorial", count: 6, tag: "教学" },
-  { id: "special", title: "特殊", category: "special", count: 17, tag: "特殊" },
   { id: "simulation", title: "模拟作战", category: "simulation", count: 1, tag: "靶场" },
-  { id: "grayzone", title: "灰域", category: "grayzone", count: 1, tag: "打灰" },
+  { id: "grayzone", title: "灰域探查", category: "grayzone", count: 1, tag: "打灰" },
   { id: "orphan", title: "无固定关卡", category: "orphan", count: 1, tag: "无固定关卡" },
 ];
 
@@ -217,6 +231,11 @@ function buildChapter(groupDef, ordinal) {
     title = `特殊作战 ${-(ordinal + 1) * 103}`;
     subtitle = `${EVENT_NAMES[(ordinal + 13) % EVENT_NAMES.length]} 特别行动`;
     codePrefix = `S${ordinal + 1}-`;
+  } else if (groupDef.id === "score") {
+    chapterId = `score-${ordinal}`;
+    title = `积分关卡·第${ordinal + 1}期`;
+    subtitle = "积分关卡 · 队伍效能有标注（可能为负）";
+    codePrefix = `S${ordinal + 1}-`;
   } else if (groupDef.id === "simulation") {
     chapterId = "simulation";
     title = "模拟作战·靶场";
@@ -235,12 +254,26 @@ function buildChapter(groupDef, ordinal) {
   }
 
   const stageCount =
-    groupDef.id === "grayzone" ? 1288 : groupDef.id === "simulation" ? 6 : groupDef.id === "orphan" ? 0 : randInt(rng, 8, 24);
+    groupDef.id === "grayzone"
+      ? 1288
+      : groupDef.id === "simulation"
+        ? 9
+        : groupDef.id === "orphan"
+          ? 0
+          : groupDef.id === "score"
+            ? randInt(rng, 4, 10)
+            : randInt(rng, 8, 24);
   const teamCount =
     groupDef.id === "grayzone" ? 3352 : groupDef.id === "orphan" ? 4381 : stageCount * randInt(rng, 14, 30);
   const speciesCount = groupDef.id === "grayzone" ? 199 : groupDef.id === "orphan" ? 211 : randInt(rng, 18, 96);
   const difficultyMin =
-    groupDef.id === "orphan" ? 0 : groupDef.id === "main" || groupDef.id === "tutorial" ? 200 + ordinal * 400 : 2000 + ordinal * 700;
+    groupDef.id === "orphan"
+      ? 0
+      : groupDef.id === "score"
+        ? randInt(rng, 1200, 9000)
+        : groupDef.id === "main" || groupDef.id === "tutorial"
+          ? 200 + ordinal * 400
+          : 2000 + ordinal * 700;
   const difficultyMax = groupDef.id === "orphan" ? 0 : difficultyMin + randInt(rng, 2400, 42000);
 
   const chapter = {
@@ -340,20 +373,25 @@ function makeTeamSummary(teamId, options = {}) {
   const grayZone = options.gray_zone ?? false;
   const orphan = options.orphan ?? false;
   const units = randInt(rng, 4, 9);
-  const power = randInt(rng, 18000, 176000);
-  const hpTotal = Math.round(power * randInt(rng, 4, 9) * 0.115);
+  // 只有积分关卡/部分特殊队伍有标注效能（约 18%），其余为 0 = 未标注；偶发负值
+  const knownRoll = rng();
+  const powerKnown = options.power_known ?? knownRoll < 0.18;
+  const power = powerKnown
+    ? (rng() < 0.12 ? -randInt(rng, 100, 4200) : randInt(rng, 18000, 176000))
+    : 0;
+  const hpTotal = Math.round(randInt(rng, 9000, 150000) * (units / 6));
   const speciesCount = randInt(rng, 2, 8);
   const species = [];
   const usedCodex = new Set();
   if (options.codex_no) {
-    species.push({ codex_no: options.codex_no, name: speciesName(options.codex_no) });
+    species.push({ codex_no: options.codex_no, name: speciesName(options.codex_no), icon: mockIconUri(factionByCodex(options.codex_no), options.codex_no) });
     usedCodex.add(options.codex_no);
   }
   while (species.length < speciesCount) {
     const codex = randInt(rng, 1, 264);
     if (usedCodex.has(codex)) continue;
     usedCodex.add(codex);
-    species.push({ codex_no: codex, name: speciesName(codex) });
+    species.push({ codex_no: codex, name: speciesName(codex), icon: mockIconUri(factionByCodex(codex), codex) });
   }
   const members = [];
   const usedUnits = new Set();
@@ -362,7 +400,13 @@ function makeTeamSummary(teamId, options = {}) {
     const unit = pick(rng, UNIT_PAIRS);
     if (usedUnits.has(unit[0])) continue;
     usedUnits.add(unit[0]);
-    members.push({ code: unit[0], name: unit[1], number: randInt(rng, 1, 5), count: randInt(rng, 1, 4) });
+    members.push({
+      code: unit[0],
+      name: unit[1],
+      number: randInt(rng, 1, 5),
+      count: randInt(rng, 1, 4),
+      icon: mockIconUri(faction, hash32(unit[0])),
+    });
   }
   let stage = null;
   if (!grayZone && !orphan) {
@@ -380,6 +424,7 @@ function makeTeamSummary(teamId, options = {}) {
   return {
     id: teamId,
     power,
+    power_known: powerKnown,
     units,
     hp_total: hpTotal,
     faction,
@@ -429,23 +474,19 @@ function orphanTeamIds() {
   return ids;
 }
 
-function orphanTeamsPage(offset, limit, q) {
+function orphanTeamsPage(offset, limit, queryObj = {}) {
   const ids = orphanTeamIds();
-  const query = String(q || "").trim().toLowerCase();
-  let filtered = ids;
-  if (query) {
-    filtered = ids.filter((teamId) => {
-      if (String(teamId).includes(query)) return true;
-      const rng = mulberry32(seedOf(`team:${teamId}`));
-      const faction = pick(rng, FACTIONS);
-      if (faction.toLowerCase().includes(query)) return true;
-      const codex = 1 + (hash32(`orphan-sp:${teamId}`) % 264);
-      return speciesName(codex).toLowerCase().includes(query);
-    });
+  const query = typeof queryObj === "string" ? { q: queryObj } : queryObj || {};
+  const q = String(query.q || "").trim().toLowerCase();
+  const filterRequested = Boolean(q) || query.power_known || query.power_min || query.power_max || query.sort;
+  if (filterRequested) {
+    const teams = ids.map((teamId) => makeTeamSummary(teamId, { orphan: true, stagePool: [] }));
+    const result = applyMockTeamQuery(teams, query);
+    return { total: result.total, offset, limit, items: result.items.slice(offset, offset + limit) };
   }
-  const slice = filtered.slice(offset, offset + limit);
+  const slice = ids.slice(offset, offset + limit);
   return {
-    total: filtered.length,
+    total: ids.length,
     offset,
     limit,
     items: slice.map((teamId) => makeTeamSummary(teamId, { orphan: true, stagePool: [] })),
@@ -475,6 +516,7 @@ function makeTeamDetail(teamId) {
   }
   const species = summary.species.map((item) => ({
     ...item,
+    icon: item.icon || mockIconUri(item.faction || factionByCodex(item.codex_no), item.codex_no),
     faction: factionByCodex(item.codex_no),
     type: (item.codex_no % 3) + 1,
   }));
@@ -518,6 +560,7 @@ function makeTeamDetail(teamId) {
   return {
     id: summary.id,
     power: summary.power,
+    power_known: summary.power_known,
     units: summary.units,
     hp_total: summary.hp_total,
     faction: summary.faction,
@@ -560,6 +603,7 @@ function ensureSpecies() {
     list.push({
       codex_no: codex,
       name: speciesName(codex),
+      icon: mockIconUri(factionByCodex(codex), codex),
       faction: factionByCodex(codex),
       type: (codex % 3) + 1,
       team_count: normalCount + grayCount + orphanCount,
@@ -574,19 +618,14 @@ function ensureSpecies() {
   return list;
 }
 
-function speciesDetail(codexNo, offset = 0, limit = 60, query = "") {
+function speciesDetail(codexNo, offset = 0, limit = 60, query = "", queryObj = {}) {
   const list = ensureSpecies();
   const species = list.find((item) => item.codex_no === Number(codexNo)) || list[0];
   const allIds = [];
   for (let i = 0; i < species.team_count; i += 1) {
     allIds.push(6100000 + Number(codexNo) * 131 + i * 17);
   }
-  const q = String(query || "").trim().toLowerCase();
-  let filtered = allIds;
-  if (q) filtered = allIds.filter((teamId) => String(teamId).includes(q));
-  const total = filtered.length;
-  const slice = filtered.slice(offset, offset + limit);
-  const teams = slice.map((teamId, index) =>
+  const allTeams = allIds.map((teamId, index) =>
     makeTeamSummary(teamId, {
       faction: species.faction,
       codex_no: species.codex_no,
@@ -595,7 +634,59 @@ function speciesDetail(codexNo, offset = 0, limit = 60, query = "") {
       tags: index === 0 ? ["BOSS", ...tagsFor(seedOf(`st:${codexNo}:${index}`))] : undefined,
     }),
   );
-  return { species, total, teams_total: total, offset, limit, teams };
+  const result = applyMockTeamQuery(allTeams, { ...queryObj, q: query || "" });
+  return {
+    species,
+    total: result.total,
+    teams_total: result.total,
+    offset,
+    limit,
+    teams: result.items.slice(offset, offset + limit),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* 通用队伍筛选/排序（与服务端 _apply_team_query 同口径）              */
+/* ------------------------------------------------------------------ */
+function mockTeamMatches(team, q) {
+  if (!q) return true;
+  const haystack = [
+    String(team.id),
+    String(team.power),
+    String(team.faction),
+    String(team.hp_total),
+    String(team.units),
+    ...(team.species || []).map((item) => `${item.codex_no} ${item.name}`),
+    ...(team.members || []).map((item) => `${item.code} ${item.name}`),
+    ...(team.tags || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+function applyMockTeamQuery(items, query = {}) {
+  let list = items.slice();
+  const q = String(query.q || "").trim().toLowerCase();
+  if (q) list = list.filter((team) => mockTeamMatches(team, q));
+  const knownRaw = String(query.power_known ?? "").trim().toLowerCase();
+  const knownOnly = ["1", "true", "yes"].includes(knownRaw);
+  const min = query.power_min !== undefined && query.power_min !== "" ? Number(query.power_min) : null;
+  const max = query.power_max !== undefined && query.power_max !== "" ? Number(query.power_max) : null;
+  if (knownOnly) list = list.filter((team) => team.power_known);
+  if (min !== null && Number.isFinite(min)) {
+    list = list.filter((team) => team.power_known && Number(team.power) >= min);
+  }
+  if (max !== null && Number.isFinite(max)) {
+    list = list.filter((team) => team.power_known && Number(team.power) <= max);
+  }
+  const sort = String(query.sort || "default");
+  const powerOf = (team) => (team.power_known ? Number(team.power) || 0 : null);
+  if (sort === "power_desc") list.sort((a, b) => (powerOf(b) ?? -Infinity) - (powerOf(a) ?? -Infinity));
+  else if (sort === "power_asc") list.sort((a, b) => (powerOf(a) ?? Infinity) - (powerOf(b) ?? Infinity));
+  else if (sort === "hp_desc") list.sort((a, b) => (Number(b.hp_total) || 0) - (Number(a.hp_total) || 0));
+  else if (sort === "units_desc") list.sort((a, b) => (Number(b.units) || 0) - (Number(a.units) || 0));
+  return { total: list.length, items: list };
 }
 
 /* ------------------------------------------------------------------ */
@@ -610,19 +701,23 @@ function grayzoneTeams(areaId, offset, limit, query) {
   for (let i = 0; i < total; i += 1) {
     ids.push(7000000 + areaIndex * 100000 + i * 13);
   }
-  let filtered = ids;
-  const q = (query || "").trim().toLowerCase();
-  if (q) {
-    filtered = ids.filter((teamId) => String(teamId).includes(q));
+  const queryObj = typeof query === "string" ? { q: query } : query || {};
+  const q = String(queryObj.q || "").trim().toLowerCase();
+  const filterRequested = Boolean(q) || queryObj.power_known || queryObj.power_min || queryObj.power_max || queryObj.sort;
+  let teams;
+  if (filterRequested) {
+    teams = ids.map((teamId) => makeTeamSummary(teamId, { gray_zone: true, stagePool: [] }));
+    const result = applyMockTeamQuery(teams, queryObj);
+    return { total: result.total, offset, items: result.items.slice(offset, offset + limit) };
   }
-  const slice = filtered.slice(offset, offset + limit);
+  const slice = ids.slice(offset, offset + limit);
   const items = slice.map((teamId) =>
     makeTeamSummary(teamId, {
       gray_zone: true,
       stagePool: [],
     }),
   );
-  return { total: filtered.length, offset, items };
+  return { total: ids.length, offset, items };
 }
 
 /* ------------------------------------------------------------------ */
@@ -1103,7 +1198,7 @@ export async function mockRequest(method, path, body = {}) {
     if (chapter.category === "orphan") {
       const offset = Number(query.offset || 0);
       const limit = Number(query.limit || 60);
-      const page = orphanTeamsPage(offset, limit, query.q || "");
+      const page = orphanTeamsPage(offset, limit, query);
       return ok({
         chapter: stripChapter(chapter),
         stages: [],
@@ -1148,7 +1243,7 @@ export async function mockRequest(method, path, body = {}) {
     return ok({ areas: getAreas() });
   }
   if (route === "/api/grayzone/teams") {
-    return ok(grayzoneTeams(query.area || "", Number(query.offset || 0), Number(query.limit || 60), query.q || ""));
+    return ok(grayzoneTeams(query.area || "", Number(query.offset || 0), Number(query.limit || 60), query));
   }
   if (route === "/api/species") {
     const list = ensureSpecies();
@@ -1175,6 +1270,7 @@ export async function mockRequest(method, path, body = {}) {
         Number(query.offset || 0),
         Number(query.limit || 60),
         query.q || "",
+        query,
       ),
     );
   }

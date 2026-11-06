@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -17,7 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from targetforge import gflh
+from targetforge import datapaths, gflh
 
 
 # ---------------------------------------------------------------------------
@@ -1094,6 +1095,60 @@ class ModuleContractTests(unittest.TestCase):
         leaks = [thread.name for thread in threading.enumerate()
                  if thread.name.startswith("gflh")]
         self.assertEqual(leaks, [])
+
+
+# ---------------------------------------------------------------------------
+# 数据目录：creds 走 datapaths（TARGETFORGE_DATA_DIR 可覆盖），state 仍走仓库根
+# ---------------------------------------------------------------------------
+class DataPathsTests(unittest.TestCase):
+    def test_creds_and_data_dir_follow_datapaths(self):
+        """DEFAULT_CREDS / DATA_DIR 与 datapaths 单一来源一致；STATE_FILE 保持仓库根。"""
+        self.assertEqual(gflh.DATA_DIR, datapaths.DATA_DIR)
+        self.assertEqual(gflh.DEFAULT_CREDS, datapaths.CREDS_LATEST)
+        self.assertEqual(gflh.DEFAULT_CREDS, datapaths.DATA_DIR / "creds_latest.json")
+        self.assertEqual(gflh.STATE_FILE,
+                         gflh.ROOT / "dataMiner" / "derived" / "target_injection_state.json")
+
+    def test_data_dir_env_override_affects_creds_only(self):
+        """设置 TARGETFORGE_DATA_DIR 后：creds 读写/列表用新目录，state 仍按仓库根。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            custom = Path(tmp).resolve() / "custom_data"
+            env = dict(os.environ, TARGETFORGE_DATA_DIR=str(custom))
+            code = (
+                "import sys, json;"
+                "sys.path.insert(0, sys.argv[1]);"
+                "from targetforge import gflh;"
+                "gflh.DEFAULT_CREDS.parent.mkdir(parents=True, exist_ok=True);"
+                "gflh.DEFAULT_CREDS.write_text(json.dumps({'uid':'1','sign':'s',"
+                "'base_url':'http://gf.example/index.php/1000/','enemies':['11'],"
+                "'orders':['1'],'captured_at':'2026-11-06T00:00:00+08:00'}),"
+                "encoding='utf-8');"
+                "(gflh.DATA_DIR / 'creds_env.json').write_text('{}', encoding='utf-8');"
+                "print(gflh.DATA_DIR);"
+                "print(gflh.DEFAULT_CREDS);"
+                "print(gflh.STATE_FILE);"
+                "print([c['name'] for c in gflh.list_creds()]);"
+                "cur = gflh.current_targets('creds');"
+                "print(cur['source'], cur['targets'])"
+            )
+            proc = subprocess.run(
+                [sys.executable, "-c", code, str(gflh.ROOT)],
+                capture_output=True, text=True, timeout=60, env=env,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            lines = proc.stdout.strip().splitlines()
+            self.assertEqual(Path(lines[0]), custom)
+            self.assertEqual(Path(lines[1]), custom / "creds_latest.json")
+            # STATE_FILE 不跟 env override 走（兼容老脚本）
+            self.assertEqual(Path(lines[2]),
+                             gflh.ROOT / "dataMiner" / "derived"
+                             / "target_injection_state.json")
+            # list_creds 主目录扫描用的是新的 DATA_DIR
+            self.assertIn("creds_env.json", lines[3])
+            # current_targets("creds") 读到 env 目录下的 creds_latest.json
+            self.assertEqual(lines[4], "creds [{'order': 1, 'team': 11}]")
+            # 且没有在真实仓库数据目录写任何东西（新目录才有文件）
+            self.assertTrue((custom / "creds_latest.json").is_file())
 
 
 if __name__ == "__main__":

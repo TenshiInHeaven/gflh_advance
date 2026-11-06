@@ -6,33 +6,46 @@
 > **本仓库只包含应用代码与文档，不含任何游戏数据、账号凭证、日志或缓存。**
 > 运行需要配合 [GF Forge](#前置依赖) 主仓库（提供本机 STC 数据解析与 GFLH 协议脚本）以及本机安装的游戏客户端。
 
-![首次进入的新手引导](docs/screenshots/tutorial-overlay.jpg)
+![总览：深蓝星空 + 大蓝闪蝶](docs/screenshots/overview.jpg)
 
-| 关卡图鉴：8 组 110 章 2345 关 | 队伍详情：数值 / 参数 / 出处（不含技能） |
+| 关卡图鉴：7 组 112 章（含积分关卡） | 怪种图鉴：每只怪都有真实头像 |
 |---|---|
-| ![关卡图鉴](docs/screenshots/chapters.jpg) | ![队伍详情](docs/screenshots/team-detail.jpg) |
+| ![关卡图鉴](docs/screenshots/chapters.jpg) | ![怪种图鉴](docs/screenshots/species.jpg) |
+
+| 效能筛选：有标注 / 自定义区间 / 5 种排序 | 队伍详情：数值 / 参数 / 出处（不含技能） |
+|---|---|
+| ![效能筛选](docs/screenshots/power-filter.jpg) | ![队伍详情](docs/screenshots/team-detail.jpg) |
 
 | 执行预览：删除 / 新增 / 保留 / 最终列表 | 使用教程：概念 / 流程 / FAQ / 安全 |
 |---|---|
 | ![执行预览](docs/screenshots/execute-preview.jpg) | ![使用教程](docs/screenshots/tutorial.jpg) |
 
+![灰域探查：14 个区域](docs/screenshots/grayzone-areas.jpg)
+
 ## 功能
 
-- **关卡图鉴**：主线 / 活动 / 往期复刻 / 教学 / 特殊作战 / 模拟作战 / 灰域探查 / 无固定关卡，8 组 110 章 2345 关；
+- **关卡图鉴**：**7 组 112 章 2345 关**——主线 / 活动（含往期复刻、特殊作战）/ **积分关卡**
+  （终焉花海+、谜境守卫+、自画像、贝蒂数…）/ 教学 / 模拟作战 / 灰域探查 / 无固定关卡；
   章节卡 → 关卡列表 → 该关可收藏队伍，支持「整关全部加入序列」。
-- **怪种图鉴**：264 个图鉴怪种，按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选；怪种详情列出所有怪组并分页。
-- **灰域（打灰）**：不逐节点列举关卡，折叠为 12 个区域，区域内直接分页浏览队伍（单个区域最多 1104 支）。
+- **怪种图鉴**：264 个图鉴怪种，每只怪都有从**本机游戏资源提取的真实头像**（透明底 160px）；
+  按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（筛「灰域」得到所有在灰域出现过的怪种，含灰域 BOSS）；
+  怪种详情列出所有怪组并分页。
+- **灰域（打灰）**：不逐节点列举关卡，折叠为 **14 个区域**，区域内直接分页浏览队伍（单个区域最多 1104 支）。
+- **效能筛选/排序**：灰域队伍、关卡队伍、怪种详情、无固定关卡、当前靶机都支持按怪组效能筛选与排序
+  （全部 / 有标注 / 自定义区间；效能↓↑ / 总血↓ / 单位数↓）。客户端只有积分关卡/部分特殊队伍带效能，
+  其余显示「未标注」（不伪造数值）。
 - **队伍详情**：效能、单位数、总血、关卡出处、参数；单位聚合表（等级 / 编制 / 数量 / 防御修正 / 坐标 /
   HP / 火力 / 命中 / 回避 / 护甲 / 穿甲 / 射程 / 移速 / 护盾 / 力场）。**不展示任何技能信息。**
 - **序列编排**：加入 / 移除 / 拖拽排序 / 从当前靶机导入；上限 35，实时显示总单位 / 总血量。
 - **执行注入**：先预览（删除 / 新增 / 保留 / 最终 1..N 列表 + 警告），支持
   `追加（append）` / `按序号替换（replace）` / `清空重排（rebuild）` 三种模式 + 清空全部 + 演练模式（dry-run，不联网）；
   执行过程有 job 日志，完成后引导大退重登，并提供「重启游戏」按钮（二次确认）。
-- **登录抓取**：内置向导启动本地抓包代理（18080）→ 设置系统代理并重启游戏 → 抓取 uid / sign / 当前靶机 →
-  关闭代理；也可加载历史凭证列表。
-- **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、9 条 FAQ、安全须知。
+- **登录抓取**：内置向导启动本地抓包代理（端口可配置，默认 18080）→ 设置系统代理并重启游戏 →
+  抓取 uid / sign / 当前靶机 → 关闭代理；也可加载历史凭证列表。
+- **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、10 条 FAQ、安全须知。
 
-数据规模（以当前国服客户端为例）：110 章 / 2345 关 / 13,700 支可收藏队伍 / 264 个可收藏怪种 / 灰域 12 区域 3352 队。
+数据规模（以当前国服客户端为例）：7 组 112 章 / 2345 关 / 13,700 支可收藏队伍 / 264 个可收藏怪种 /
+灰域 14 区域 3352 队 / 无固定关卡 4381 队。
 
 ## 前置依赖
 
@@ -43,7 +56,7 @@
 | GF Forge 主仓库 | 提供 `unit_model/`（STC 二进制表解析、等级缩放口径）、`scripts/gflh_target_train.py`（编号规划 / payload / 本地状态）、`dataMiner/derived/client_text.json` 与 `enemy_full_model.csv` 等派生数据 |
 | 本机游戏客户端 | 《少女前线》PC 版（Steam appid **3347970**）；路径写入 GF Forge 的 `local_paths.json` 或环境变量 `GF1_GAME_ROOT` |
 | 端口 | 应用 **8765**；抓包代理默认 **18080**，可在「登录抓取 → 抓包端口」配置（8080 常被其它程序占用，不建议用） |
-| 可选 | Playwright + Edge（页面自检 `tools/ui_selfcheck.py`），Pillow（截图工具） |
+| 可选 | UnityPy + Pillow（导出小怪头像 `tools/build_icons.py`）、Playwright + Edge（页面自检） |
 
 ## 安装
 
@@ -76,8 +89,19 @@ python -m targetforge --port 8771     # 换端口
 python -m targetforge --rebuild-catalog   # 强制重建数据缓存
 ```
 
-首次启动会解析本机 STC 生成 `dataMiner/derived/targetforge/catalog.json`（约 4 秒，约 6.7 MB），之后直接读缓存（<1 秒）。
+首次启动会解析本机 STC 生成数据缓存（约 4 秒，约 7 MB），之后直接读缓存（<1 秒）。
 游戏更新后点顶栏「刷新数据」或加 `--rebuild-catalog`。
+
+**导出小怪头像（可选）**：界面对每个怪种/单位都有头像；头像由本机游戏资源提取，未随仓库分发：
+
+```powershell
+# 需要 UnityPy（GF Forge 的 .sim 环境自带）
+.\.sim\Scripts\python.exe targetforge\tools\build_icons.py
+# 导出后再重建一次 catalog，让 icon 字段进缓存
+python -c "from targetforge import catalog; catalog.build(force=True)"
+```
+
+没有导出/缺失的头像会自动退化为按阵营着色的虫/机甲/首领/人形剪影。
 
 ## 使用流程（简版）
 
@@ -101,8 +125,10 @@ python -m targetforge --rebuild-catalog   # 强制重建数据缓存
 ## 数据与安全
 
 - 所有关卡 / 怪种 / 怪组数据都来自**本机客户端 STC 静态表**，应用离线运行；本仓库不含这些数据。
+- 数据目录默认是 **GF Forge 仓库下的 `dataMiner/derived/targetforge/`**（由 `datapaths.py` 按模块位置计算，
+  不是写死的绝对路径）；可用环境变量 `TARGETFORGE_DATA_DIR` 指定到别处，缓存 / 凭证 / 状态 / 头像都会跟着走。
 - 应用只监听 `127.0.0.1`，不上传任何数据。
-- 抓到的 `uid/sign` 只保存在本机 `dataMiner/derived/targetforge/creds_latest.json`（不入 git），**请勿提交或外传**。
+- 抓到的 `uid/sign` 只保存在数据目录下的 `creds_latest.json`（不入 git），**请勿提交或外传**。
 - 抓包端口可配置（登录抓取页，默认 `18080`）；请确保使用完毕后系统代理已关闭。
 - 游戏进程 PID 由 Windows `tasklist` 按进程名 `GrilsFrontLine.exe` **搜索**得到，顶栏 PID 仅本机展示，不是写死的。
 - 本工具仅用于本地研究与学习；请遵守游戏服务条款，避免在主账号 / 线上环境滥用。产生的风险由使用者承担。
@@ -110,26 +136,29 @@ python -m targetforge --rebuild-catalog   # 强制重建数据缓存
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 105 个单测（app / catalog / gflh）
-python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（28 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 15 张截图
+python -m unittest discover -s targetforge/tests -t .      # 123 个单测（app / catalog / gflh）
+python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（29 项）
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 16 张截图
 ```
 
-前端自检结果：69 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：107 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
 ```text
 gflh_advance/
   README.md                    本文件
+  LICENSE                      MIT
   docs/screenshots/            README 用截图
   targetforge/                 复制到 GF Forge 仓库根目录后的模块
-    app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job
-    catalog.py                 STC → 章节 / 关卡 / 怪种 / 怪组数据层（缓存 + 查询）
+    app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job / 头像接口
+    catalog.py                 STC → 章节 / 关卡 / 怪种 / 怪组数据层（缓存 + 查询 + 效能/图标）
     gflh.py                    登录抓取（GFLProxy）/ 序列规划 / 注入（addCollect·delCollect）/ 游戏控制
+    datapaths.py               数据目录唯一来源（支持 TARGETFORGE_DATA_DIR）
     static/                    前端（原生 HTML/CSS/JS，无构建步骤，离线）
-    tests/                     unittest
-    tools/                     api_smoke.py / ui_selfcheck.py / screenshot.py
+    tests/                     unittest（app / catalog / gflh）
+    tools/                     build_icons.py（游戏资源导出小怪头像）/ api_smoke.py /
+                               ui_selfcheck.py / screenshot.py
     contract.md                模块 / API 契约
     README.md                  应用层说明
 ```
@@ -143,8 +172,20 @@ gflh_advance/
 - **注入后游戏里没变化**：大退重登游戏同步。
 - **游戏进不去 / 网络异常**：检查系统代理是否已关闭（Windows 设置 → 网络和 Internet → 代理）。
 - **sign 过期**：重新走一遍登录抓取。
+- **为什么很多队伍效能是「未标注」**：客户端只在积分关卡/部分特殊队伍里写入 `effect_ext`（目标作战效能），
+  常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.2.0（2026-11-06）
+
+- **小怪真实头像**：从本机游戏资源提取 `pic_<Code>_SS` 纹理（256/282 个 code，怪种覆盖 264/264），缺失回退阵营剪影
+- **大蓝闪蝶（Blue Morpho）** 重新绘制：亮蓝渐变翅膀 / 黑翅缘翅脉 / 对称展翅，替换上一版扁平蝴蝶
+- **积分关卡** 独立分组（17 章：终焉花海+ / 谜境守卫+ / 自画像 / 贝蒂数 …），活动组合并往期复刻与特殊作战
+- **灰域** 修正为 14 个区域（新增 庇护所旧址 / 坍缩狭缝）；物种「灰域」筛选改为「出现过」，灰域 BOSS 不再只剩 4 个
+- **效能筛选/排序**：灰域 / 关卡 / 怪种详情 / 无固定关卡 / 当前靶机，有标注/自定义区间 + 5 种排序
+- 数据目录动态化：`TARGETFORGE_DATA_DIR` 可覆盖，教程/抓取页显示实际路径，不再硬编码 creds 路径
+- 章节总数 110 → 112（7 组），自画像等积分关卡可搜；版本号 v1.2.0
 
 ### v1.1.0（2026-11-06）
 

@@ -5,7 +5,9 @@
 * **capture**：``GFLProxy`` 监听可配置端口（默认 18080，勿用 8080）抓
   ``SYS_KEY_UPGRADE``（uid + sign）和
   ``Index/index`` 的 ``targettrain_collect_user_info``（当前收藏标靶 enemies/orders），
-  落 ``dataMiner/derived/targetforge/creds_latest.json``；抓齐后可自动停抓并恢复系统代理。
+  落 ``<datapaths.DATA_DIR>/creds_latest.json``（默认
+  ``dataMiner/derived/targetforge/``，可用环境变量 ``TARGETFORGE_DATA_DIR`` 覆盖）；
+  抓齐后可自动停抓并恢复系统代理。
 * **plan**：纯函数。按 ``append / replace / rebuild / clear`` 四种语义算出
   ``Targettrain/addCollect`` / ``delCollect`` 的 payload（含 order_id），不联网。
 * **execute**：先 DEL 再 ADD（间隔 0.5~0.6s），逐条 log、单条失败继续，
@@ -22,6 +24,9 @@
 3. 日志/状态里**不出现 sign**（``capture_status()`` 只给 ``sign_set``；写 creds 文件才落 sign）。
 4. 所有会碰游戏进程 / 系统代理 / 网络的动作都只在对应函数被调用时发生；
    unittest 全部 mock，禁止真启动代理、改系统代理、杀游戏。
+5. 需要落盘的数据目录统一走 ``targetforge.datapaths``（``TARGETFORGE_DATA_DIR``
+   可覆盖）：``DATA_DIR`` / ``DEFAULT_CREDS`` 来自 datapaths；``STATE_FILE``
+   （``dataMiner/derived/target_injection_state.json``）为兼容老脚本固定在仓库根。
 
 用法（app.py 里懒加载调用）::
 
@@ -44,15 +49,21 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from targetforge.datapaths import CREDS_LATEST as DEFAULT_CREDS
+from targetforge.datapaths import DATA_DIR
+
 # ---------------------------------------------------------------------------
 # 常量（contract §3）
 # ---------------------------------------------------------------------------
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 DERIVED = ROOT / "dataMiner" / "derived"
-DATA_DIR = DERIVED / "targetforge"
+# 兼容原 gf_forge 脚本的既有路径：本地注入状态固定写仓库根
+# dataMiner/derived/target_injection_state.json，**不跟** TARGETFORGE_DATA_DIR 走
+# （scripts/gflh_target_train.py 等老脚本也读这个位置）。
+# 只有 creds / catalog / app 的 state.json 走 datapaths 的 DATA_DIR
+# （默认 dataMiner/derived/targetforge，可用 TARGETFORGE_DATA_DIR 覆盖）。
 STATE_FILE = DERIVED / "target_injection_state.json"
-DEFAULT_CREDS = DATA_DIR / "creds_latest.json"
 
 CAPTURE_PORT = 18080          # 默认抓包端口（capture_start(port=...) 可配；别用 8080）
 PORT_MIN, PORT_MAX = 1, 65535
@@ -1264,7 +1275,7 @@ def _resolve_creds_path(creds_file) -> Path:
         for entry in list_creds():
             if entry["name"] == candidate.name or entry["path"] == raw:
                 return Path(entry["path"])
-    return candidate if candidate.is_absolute() else Path(DERIVED) / candidate.name
+    return candidate if candidate.is_absolute() else Path(DATA_DIR) / candidate.name
 
 
 def _exec_creds(creds_file):

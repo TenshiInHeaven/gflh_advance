@@ -26,7 +26,19 @@ export function fmtFloat(n, digits = 1, fallback = "—") {
   return num.toFixed(digits);
 }
 
-/** 效能展示：stc 里 effect_ext 为 0 表示「未标注效能」（12183 支队伍），显示 — 而不是 0 */
+/** 效能展示口径：0 = 未标注；负值来自积分关卡数据（可能为负） */
+export function powerDisplay(power, powerKnown) {
+  const num = Number(power);
+  const known = typeof powerKnown === "boolean" ? powerKnown : Number.isFinite(num) && num !== 0;
+  if (!known) return { known: false, text: "未标注", value: 0, negative: false };
+  const value = Number.isFinite(num) ? num : 0;
+  return { known: true, text: fmtNum(value), value, negative: value < 0 };
+}
+
+export function isPowerKnown(power, powerKnown) {
+  return powerDisplay(power, powerKnown).known;
+}
+
 export function fmtPower(power, fallback = "—") {
   const num = Number(power);
   if (!Number.isFinite(num) || num <= 0) return fallback;

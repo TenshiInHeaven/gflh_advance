@@ -73,7 +73,7 @@ export async function render(root) {
             <li>序列最多 <b>35</b> 个，执行时按序列顺序对应编号。</li>
           </ul>
           <h3>sign 与登录凭证</h3>
-          <p><b>sign</b> 是登录会话凭证，<b>每次登录游戏都会变</b>，过期后注入会失败，需要重新登录抓取。凭证只保存在本机 <span class="tut-code">dataMiner/derived/targetforge/creds_latest.json</span>，不联网、不上传。</p>
+          <p><b>sign</b> 是登录会话凭证，<b>每次登录游戏都会变</b>，过期后注入会失败，需要重新登录抓取。凭证只保存在本机<b>应用数据目录</b>（默认 <span class="tut-code">&lt;GF Forge&gt;/dataMiner/derived/targetforge</span>，可用环境变量 <span class="tut-code">TARGETFORGE_DATA_DIR</span> 覆盖）下的 <span class="tut-code">creds_latest.json</span>，不联网、不上传。</p>
           <h3>灰域怎么浏览？</h3>
           <p>灰域（campaign = -404）节点数量巨大，应用<b>不逐节点列举关卡</b>：只作为 1 个章节，内部按 <b>12 个区域</b>分组，点区域直接看队伍列表（支持搜索与分页）。没有固定关卡的队伍归入「无固定关卡」，保证 264 个可收藏怪种都能找到队伍。</p>
         </section>
@@ -112,7 +112,7 @@ export async function render(root) {
             <li><b>设置代理并重启游戏</b>：应用会把系统代理指向你设置的端口（默认 <span class="tut-code">127.0.0.1:18080</span>），然后强杀游戏进程并重新启动。此操作会二次确认——请先回到安全界面。</li>
             <li><b>在游戏里登录</b>：正常登录，进入主界面即可，游戏会经过抓包代理。</li>
             <li><b>等待抓取</b>：右侧实时日志会依次显示「拿到 uid → 拿到 sign → 读取收藏标靶」。抓取页顶部状态与进度会同步变化。</li>
-            <li><b>完成并关闭代理</b>：停止抓包代理、恢复系统代理，把凭证写入 <span class="tut-code">creds_latest.json</span>。这一步很重要，否则游戏可能因为代理残留而无法联网。</li>
+            <li><b>完成并关闭代理</b>：停止抓包代理、恢复系统代理，把凭证写入应用数据目录下的 <span class="tut-code">creds_latest.json</span>（默认 <span class="tut-code">&lt;GF Forge&gt;/dataMiner/derived/targetforge</span>，可用 <span class="tut-code">TARGETFORGE_DATA_DIR</span> 覆盖）。这一步很重要，否则游戏可能因为代理残留而无法联网。</li>
             <li><b>去编排 / 执行</b>：凭证就绪后即可挑队伍、执行注入。执行完成后同样要「大退重登」。</li>
           </ol>
           <div class="tut-card red">
@@ -172,7 +172,7 @@ export async function render(root) {
           <h2><span class="th-num">06</span>安全须知</h2>
           <div class="tut-card red">
             <div class="tut-card-title">${icon("shield", 14)} 凭证安全</div>
-            <p>uid / sign 只保存在本机 <span class="tut-code">dataMiner/derived/targetforge/creds_latest.json</span>，<b>不要提交到 git、不要外传</b>。该目录整体不纳入版本管理，可随时删除重建。</p>
+            <p>uid / sign 只保存在本机<b>应用数据目录</b>（默认 <span class="tut-code">&lt;GF Forge&gt;/dataMiner/derived/targetforge</span>，可用环境变量 <span class="tut-code">TARGETFORGE_DATA_DIR</span> 覆盖）下的 <span class="tut-code">creds_latest.json</span>，<b>不要提交到 git、不要外传</b>。该目录整体不纳入版本管理，可随时删除重建。</p>
           </div>
           <div class="tut-card amber">
             <div class="tut-card-title">${icon("lock", 14)} 本地运行</div>

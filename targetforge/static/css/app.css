@@ -30,6 +30,9 @@
   /* 点缀：薰衣草紫 / 淡粉 */
   --violet: #b98cff;
   --violet-soft: rgba(185, 140, 255, 0.12);
+  --gold: #f2c14e;
+  --gold-2: #ffe08a;
+  --gold-soft: rgba(242, 193, 78, 0.12);
   --pink: #ff9ecf;
   --pink-soft: rgba(255, 158, 207, 0.1);
   /* 状态色：危险保留红，警示用暖橙（小面积） */
@@ -3640,26 +3643,50 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .view > * { animation: viewIn 0.26s var(--ease); }
 @keyframes viewIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 
-/* ---------- 28.5 蓝蝴蝶主题装饰 ---------- */
-.butterfly { display: block; overflow: visible; opacity: var(--bf-op, 1); color: var(--primary); }
-.butterfly .bf-upper { fill: currentColor; opacity: 0.92; }
-.butterfly .bf-lower { fill: var(--violet); opacity: 0.62; }
-.butterfly .bf-vein { stroke: rgba(233, 248, 255, 0.65); stroke-width: 1; fill: none; opacity: 0.5; stroke-linecap: round; }
-.butterfly .bf-spot { fill: var(--pink); opacity: 0.6; }
-.butterfly .bf-body { fill: #eaf8ff; opacity: 0.95; }
-.butterfly .bf-antenna { stroke: #dff4ff; stroke-width: 1.25; fill: none; opacity: 0.85; stroke-linecap: round; }
-.butterfly .bf-tip { fill: currentColor; opacity: 0.9; }
-.butterfly.glow { filter: drop-shadow(0 0 16px rgba(94, 225, 255, 0.55)) drop-shadow(0 0 4px rgba(185, 140, 255, 0.35)); }
+/* ---------- 28.5 大蓝闪蝶（Blue Morpho）主题装饰 ---------- */
+.butterfly { display: block; overflow: visible; opacity: var(--bf-op, 1); }
+.butterfly .bf-fore,
+.butterfly .bf-hind { stroke: #050b1a; stroke-width: 2.4; stroke-linejoin: round; }
+.butterfly .bf-rim { fill: none; stroke: #050b1a; stroke-width: 9.5; stroke-linejoin: round; }
+.butterfly .bf-glow-rim {
+  fill: none;
+  stroke: rgba(94, 225, 255, 0.22);
+  stroke-width: 15;
+  stroke-linejoin: round;
+}
+.butterfly .bf-tip-dark { fill: #050b1a; opacity: 0.94; }
+.butterfly .bf-vein { fill: none; stroke: #07142e; stroke-width: 1.7; stroke-linecap: round; opacity: 0.55; }
+.butterfly .bf-sheen { fill: #bff4ff; opacity: 0.15; }
+.butterfly .bf-iridescence {
+  fill: none;
+  stroke: rgba(180, 245, 255, 0.55);
+  stroke-width: 5;
+  stroke-linecap: round;
+  opacity: 0.28;
+}
+.butterfly .bf-spot { fill: #eaf8ff; opacity: 0.92; }
+.butterfly .bf-antenna { fill: none; stroke: #101a33; stroke-width: 2.4; stroke-linecap: round; }
+.butterfly .bf-antenna-tip { fill: #0a1326; }
+.butterfly .bf-thorax,
+.butterfly .bf-abdomen,
+.butterfly .bf-head { stroke: #050b1a; stroke-width: 1.4; }
+.butterfly .bf-body-line { fill: none; stroke: #6f8dbd; stroke-width: 1; opacity: 0.45; stroke-linecap: round; }
+.butterfly.is-simple .bf-detail { display: none; }
+.butterfly.glow { filter: drop-shadow(0 0 18px rgba(41, 182, 246, 0.55)) drop-shadow(0 0 5px rgba(94, 225, 255, 0.4)); }
 .butterfly.float { animation: bfFloat 9s ease-in-out infinite; }
 .butterfly.float-slow { animation: bfFloat 15s ease-in-out infinite; }
 .butterfly.float-alt { animation: bfFloatAlt 12s ease-in-out infinite; }
 @keyframes bfFloat {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(-4deg); }
-  50% { transform: translate3d(7px, -16px, 0) rotate(5deg); }
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-3deg); }
+  50% { transform: translate3d(6px, -14px, 0) rotate(3.5deg); }
 }
 @keyframes bfFloatAlt {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(6deg); }
-  50% { transform: translate3d(-10px, -10px, 0) rotate(-6deg); }
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(5deg); }
+  50% { transform: translate3d(-9px, -9px, 0) rotate(-5deg); }
+}
+@keyframes bfBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
 }
 
 /* 空态背景蝴蝶 */
@@ -3675,12 +3702,26 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 }
 .em-butterfly-sm { right: auto; left: 40px; bottom: 26px; color: var(--violet); transform: rotate(14deg); }
 
-/* 总览 hero 蝴蝶 */
+/* 总览 hero 大蓝闪蝶 */
 .hero-right { position: relative; }
-.hero-butterfly { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; }
-.hero-butterfly .butterfly { filter: drop-shadow(0 0 26px rgba(94, 225, 255, 0.5)) drop-shadow(0 0 8px rgba(185, 140, 255, 0.4)); }
-.hero-bf-a { position: absolute; left: 10%; top: 8%; color: var(--violet); pointer-events: none; }
-.hero-bf-b { position: absolute; right: 8%; bottom: 16%; color: var(--primary); pointer-events: none; }
+.hero-butterfly {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 176px;
+  height: 176px;
+  margin: -88px 0 0 -88px;
+  z-index: 2;
+  pointer-events: none;
+  animation: bfFloat 13s ease-in-out infinite;
+}
+.hero-butterfly .butterfly {
+  animation: bfBreathe 7s ease-in-out infinite;
+  filter: drop-shadow(0 0 30px rgba(41, 182, 246, 0.55)) drop-shadow(0 0 10px rgba(94, 225, 255, 0.45));
+}
+.hero-bf-a { position: absolute; left: 6%; top: 4%; color: var(--violet); pointer-events: none; }
+.hero-bf-b { position: absolute; right: 5%; bottom: 13%; color: var(--primary); pointer-events: none; }
+.hero-bf-c { position: absolute; right: 13%; top: 8%; pointer-events: none; }
 
 /* 快捷入口 hover 蝴蝶 */
 .quick-card .qc-bf {
@@ -3704,6 +3745,151 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 /* 教程引导卡蝴蝶水印 */
 .tut-overlay-head { position: relative; }
 .toh-bf { position: absolute; right: 60px; top: 12px; opacity: 0.55; pointer-events: none; }
+
+
+/* ---------- 28.54 小怪图标（真实头像 + 剪影兜底） ---------- */
+.sp-icon {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--fc, #8aa0c4) 30%, transparent), rgba(8, 14, 30, 0.6) 74%),
+    rgba(12, 22, 44, 0.7);
+  border: 1px solid color-mix(in srgb, var(--fc, #8aa0c4) 40%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--fc, #8aa0c4) 16%, transparent);
+}
+.sp-icon .species-icon {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 6px rgba(2, 6, 16, 0.55));
+}
+.sp-icon .sp-silhouette { width: 74%; height: 74%; opacity: 0.95; }
+.sp-icon-card { border-radius: 13px; }
+.sp-icon-hero { border-radius: 18px; box-shadow: 0 0 24px color-mix(in srgb, var(--fc, #8aa0c4) 24%, transparent); }
+.sp-icon-mini {
+  border-radius: 4px;
+  background: rgba(140, 185, 255, 0.06);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.sp-icon-mini .species-icon { width: 88%; height: 88%; filter: none; }
+.sp-icon-mini .sp-silhouette { width: 84%; height: 84%; }
+.sp-icon-fallback { background: rgba(140, 185, 255, 0.05); }
+.sp-silhouette { display: block; overflow: visible; }
+.sp-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-chip .sp-icon { margin-right: 1px; }
+.mem-chip .sp-icon { margin-right: 3px; vertical-align: -3px; }
+.unit-icon { display: inline-flex; margin-right: 7px; vertical-align: -6px; }
+.unit-cell { display: flex; align-items: center; gap: 2px; }
+.unit-cell .unit-name { color: var(--text); }
+.unit-cell .unit-code { color: var(--text-mute); font-size: 10px; margin-left: 6px; }
+.species-hero-id { display: flex; align-items: center; gap: 18px; }
+
+/* ---------- 28.55 效能筛选 / 排序 + 积分关卡 ---------- */
+.power-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(94, 225, 255, 0.035), rgba(140, 185, 255, 0.02));
+}
+.pf-group { display: flex; align-items: center; gap: 6px; }
+.pf-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.pf-select { height: 28px; min-width: 100px; font-size: 11.5px; }
+.pf-range { display: inline-flex; align-items: center; gap: 4px; }
+.pf-input {
+  width: 84px;
+  height: 28px;
+  padding: 0 8px;
+  background: rgba(6, 12, 26, 0.8);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.pf-input:focus { outline: 0; border-color: rgba(94, 225, 255, 0.55); }
+.pf-dash { color: var(--text-mute); }
+.pf-meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.pf-hint { font-size: 10px; color: var(--text-mute); }
+
+/* 效能数字口径：负值暖橙 */
+.tc-power b.neg,
+.sbi-power.neg,
+.seq-power.neg { color: #ffb26b; }
+.tc-power b.dim { color: var(--text-mute); font-size: 12px; font-weight: 500; }
+.power-unknown { color: var(--text-mute); font-size: 10.5px; }
+
+/* 积分关卡分组 / 章节卡 */
+.badge.gold { color: var(--gold-2); border-color: rgba(242, 193, 78, 0.4); background: var(--gold-soft); }
+.tag.gold { color: var(--gold-2); border-color: rgba(242, 193, 78, 0.35); background: var(--gold-soft); }
+.group-tab.score { color: var(--gold-2); border-color: rgba(242, 193, 78, 0.28); }
+.group-tab.score .gt-count { color: var(--gold-2); background: rgba(242, 193, 78, 0.12); }
+.group-tab.score.active {
+  color: var(--gold-2);
+  border-color: rgba(242, 193, 78, 0.5);
+  background: linear-gradient(180deg, rgba(242, 193, 78, 0.16), rgba(242, 193, 78, 0.04));
+  box-shadow: inset 0 -2px 0 var(--gold);
+}
+.chapter-card.score::before { background: linear-gradient(90deg, var(--gold), rgba(242, 193, 78, 0.12) 45%, transparent); }
+.chapter-card.score .cc-cat { color: var(--gold-2); border-color: rgba(242, 193, 78, 0.34); background: var(--gold-soft); }
+.chapter-card.score:hover { border-color: rgba(242, 193, 78, 0.45); }
+.chapter-card.score:hover .cc-index { color: rgba(242, 193, 78, 0.24); }
+.cc-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  color: var(--gold-2);
+  background: var(--gold-soft);
+  border: 1px solid rgba(242, 193, 78, 0.35);
+}
+
+/* ---------- 28.6 减少动态效果（尊重 prefers-reduced-motion） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  body::after,
+  .butterfly,
+  .hero-butterfly,
+  .hero-butterfly .butterfly,
+  .radar-sweep,
+  .radar-blip,
+  .dot.pulse,
+  .cursor-blink,
+  .build-card::before,
+  .build-ring::before,
+  .build-ring::after,
+  .job-progress i {
+    animation: none !important;
+  }
+  .view > * { animation: none !important; }
+}
 
 /* ---------- 29. 响应式 ---------- */
 @media (max-width: 1500px) {

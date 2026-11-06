@@ -26,16 +26,26 @@ python -m targetforge --rebuild-catalog   # 强制重建数据缓存
 | 页面 | 内容 |
 |---|---|
 | 总览 | 游戏进程 / 系统代理 / 当前靶机数 / 数据时间 + 四步使用流程 |
-| 关卡图鉴 | 8 组 110 章 2345 关：主线 / 活动 / 往期复刻 / 教学 / 特殊作战 / 模拟作战 / 灰域探查 / 无固定关卡。章节卡片 → 关卡列表 → 该关可收藏队伍（可整关加入序列） |
-| 怪种图鉴 | 264 个图鉴怪种，按阵营/固定关卡/灰域/无固定关卡筛选；怪种详情列出所有怪组 |
+| 关卡图鉴 | **7 组 112 章 2345 关**：主线 / 活动（含往期复刻、特殊作战）/ **积分关卡**（终焉花海+、谜境守卫+、自画像…）/ 教学 / 模拟作战 / 灰域探查 / 无固定关卡。章节卡片 → 关卡列表 → 该关可收藏队伍（可整关加入序列） |
+| 怪种图鉴 | 264 个图鉴怪种，每只怪都有**本机游戏资源提取的真实头像**；按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（灰域过滤是「在灰域出现过」，含全部灰域 BOSS）；怪种详情列出所有怪组 |
+| 效能筛选 | 支持按怪组效能筛选/排序（有标注 / 自定义区间；按效能、总血、单位数排序）。客户端只有积分关卡/部分特殊队伍带效能，其余显示「未标注」 |
 | 队伍详情 | 队伍参数（效能/单位数/总血/关卡出处）+ 单位聚合表（等级/编制/数量/防御修正/坐标/HP/火力/命中/回避/护甲/穿甲/射程/移速/护盾/力场）——**不含技能信息** |
 | 序列编排 | 加入/移除/拖拽排序/从当前靶机导入，上限 35，实时显示总单位/总血量 |
 | 执行注入 | 预览（删除/新增/保留/最终 1..N 列表 + 警告）→ 三种模式：追加（append）/ 按序号替换（replace）/ 清空重排（rebuild），另有清空全部；支持演练模式（dry-run，不联网） |
 | 登录抓取 | 内置向导：启动本地抓包代理（端口可配置，默认 18080）→ 设置系统代理并重启游戏 → 等抓到 uid/sign/当前靶机 → 完成并恢复代理；也可加载历史凭证 |
 | 使用教程 | 概念 / 完整流程 / 登录抓取分步 / 三种执行模式 / FAQ / 安全须知；首次进入自动弹新手引导 |
 
-数据规模（当前客户端）：8 组 110 章 · 2345 关（灰域 1288 节点折叠为 12 区域）· 13700 支可收藏队伍 ·
-264 个可收藏怪种 · 灰域 3352 队 / 无固定关卡 4381 队。
+数据规模（当前客户端）：7 组 112 章 · 2345 关（灰域 1288 节点折叠为 14 个区域，其中庇护所旧址/坍缩狭缝暂无可收藏队伍）·
+13700 支可收藏队伍 · 264 个可收藏怪种（怪种头像 264/264，代码级真实头像 256/282）· 灰域 3352 队 / 无固定关卡 4381 队。
+
+小怪头像是从本机游戏资源导出的（`pic_<Code>_SS` 纹理，透明底 160px），生成命令：
+
+```powershell
+# 需要 UnityPy（.sim 环境自带）
+.\.sim\Scripts\python.exe targetforge\tools\build_icons.py
+```
+
+头像缓存到 `dataMiner/derived/targetforge/icons/`（不入 git，可重建）；没导出时界面会用阵营剪影兜底。
 
 ## 执行模式语义
 
@@ -53,6 +63,7 @@ targetforge/
   app.py            HTTP 服务 / 路由 / 序列状态 / 后台 job
   catalog.py        STC → 章节/关卡/怪种/怪组 数据层（缓存 + 查询）
   gflh.py           登录抓取（GFLProxy）/ 序列规划 / 注入（addCollect·delCollect）/ 游戏控制
+  datapaths.py      数据目录唯一来源（默认 <GF Forge>/dataMiner/derived/targetforge，可用 TARGETFORGE_DATA_DIR 覆盖）
   static/           前端（原生 HTML/CSS/JS，无构建步骤，离线可用）
     index.html        单页壳：顶栏状态条 + 左侧导航 + 主区域 + 右侧可收起序列面板
     css/app.css       设计系统（暗色军事科技风：网格背景/斜切卡片/表格/弹窗/抽屉/toast/骨架/教程 overlay）
@@ -67,7 +78,8 @@ targetforge/
     js/views/         overview / chapters / chapter-detail / stage / grayzone / species /
                       species-detail / team-page / sequence-page / capture / tutorial-page
   tests/            unittest（app / catalog / gflh）
-  tools/            api_smoke.py（API 冒烟）、ui_selfcheck.py（Playwright 页面自检）、screenshot.py
+  tools/            build_icons.py（从本机游戏资源导出小怪头像）、api_smoke.py（API 冒烟）、
+                    ui_selfcheck.py（Playwright 页面自检）、screenshot.py
   contract.md       模块 / API 契约
   LICENSE           MIT 许可证
 ```
@@ -87,7 +99,8 @@ python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765   # Playwri
 
 ## 安全 / 注意
 
-- `dataMiner/derived/targetforge/`（数据缓存、凭证、前端状态）整个目录**不入 git**。
+- 数据目录默认是 **GF Forge 仓库下的 `dataMiner/derived/targetforge/`**（路径由 `datapaths.py` 按模块位置计算，不是写死的绝对路径）；需要换位置时设置环境变量
+  `TARGETFORGE_DATA_DIR` 即可，缓存 / 凭证 / 状态 / 头像都会跟着走。整个目录**不入 git**。
 - `creds_latest.json` 含 uid/sign，**每次登录都会变**，不要提交/外传；sign 过期后重新走「登录抓取」。
 - 抓包端口可配置（登录抓取页「抓包端口」，默认 `18080`）；`8080` 常被本机其它程序占用，建议不要用。
 - 游戏进程通过 Windows `tasklist` 按进程名 `GrilsFrontLine.exe` **搜索**得到；顶栏 PID 仅本机展示（用来确认进程存在），不是写死的。

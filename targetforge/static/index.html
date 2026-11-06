@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>靶机工坊 TargetForge</title>
 <link rel="stylesheet" href="/static/css/app.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='%235ee1ff'%3E%3Cpath d='M31.4 28.6C27.2 16.8 16.4 7.2 8.8 11.2C3 14.3 7.3 25.8 21.4 30.4C25.4 31.7 28.8 31 31.4 28.6Z'/%3E%3Cpath d='M32.6 28.6C36.8 16.8 47.6 7.2 55.2 11.2C61 14.3 56.7 25.8 42.6 30.4C38.6 31.7 35.2 31 32.6 28.6Z'/%3E%3C/g%3E%3Cg fill='%23b98cff' opacity='.7'%3E%3Cpath d='M31.2 33.4C24.9 34.4 14.2 42.6 17.6 50.2C20.7 57.1 29.4 49.4 31.9 39.4Z'/%3E%3Cpath d='M32.8 33.4C39.1 34.4 49.8 42.6 46.4 50.2C43.3 57.1 34.6 49.4 32.1 39.4Z'/%3E%3C/g%3E%3Cellipse cx='32' cy='36.5' rx='2.5' ry='12.6' fill='%23eaf8ff'/%3E%3Ccircle cx='32' cy='21.6' r='2.6' fill='%23eaf8ff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 190'%3E%3Cg stroke='%23050b1a' stroke-width='6' stroke-linejoin='round'%3E%3Cpath fill='%2329b6f6' d='M95 86C86 62 68 40 46 27 36 21 26 22 24 30 21 42 28 60 42 73 56 86 76 97 90 100 94 101 96 94 95 86Z'/%3E%3Cpath fill='%2329b6f6' d='M105 86C114 62 132 40 154 27 164 21 174 22 176 30 179 42 172 60 158 73 144 86 124 97 110 100 106 101 104 94 105 86Z'/%3E%3Cpath fill='%231e88e5' d='M95 104C82 108 60 120 44 136 32 148 32 160 44 164 58 169 78 156 90 138 96 128 98 112 95 104Z'/%3E%3Cpath fill='%231e88e5' d='M105 104C118 108 140 120 156 136 168 148 168 160 156 164 142 169 122 156 110 138 104 128 102 112 105 104Z'/%3E%3C/g%3E%3Cellipse cx='100' cy='94' rx='7.2' ry='15' fill='%2314203c'/%3E%3Cpath d='M100 104C106 113 106 136 100 153 94 136 94 113 100 104Z' fill='%2314203c'/%3E%3Ccircle cx='100' cy='78' r='5.2' fill='%2314203c'/%3E%3Cpath d='M97 74C92 58 84 48 76 42M103 74C108 58 116 48 124 42' stroke='%23101a33' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
 <div id="app">
@@ -14,17 +14,29 @@
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 64 64" fill="none">
-          <path d="M31.4 28.6C27.2 16.8 16.4 7.2 8.8 11.2C3 14.3 7.3 25.8 21.4 30.4C25.4 31.7 28.8 31 31.4 28.6Z" fill="currentColor" opacity=".95"/>
-          <path d="M32.6 28.6C36.8 16.8 47.6 7.2 55.2 11.2C61 14.3 56.7 25.8 42.6 30.4C38.6 31.7 35.2 31 32.6 28.6Z" fill="currentColor" opacity=".95"/>
-          <path d="M31.2 33.4C24.9 34.4 14.2 42.6 17.6 50.2C20.7 57.1 29.4 49.4 31.9 39.4Z" fill="#b98cff" opacity=".7"/>
-          <path d="M32.8 33.4C39.1 34.4 49.8 42.6 46.4 50.2C43.3 57.1 34.6 49.4 32.1 39.4Z" fill="#b98cff" opacity=".7"/>
-          <circle cx="15.5" cy="20" r="2.1" fill="#ff9ecf" opacity=".7"/>
-          <circle cx="48.5" cy="20" r="2.1" fill="#ff9ecf" opacity=".7"/>
-          <ellipse cx="32" cy="36.5" rx="2.5" ry="12.6" fill="#eaf8ff"/>
-          <circle cx="32" cy="21.6" r="2.6" fill="#eaf8ff"/>
-          <path d="M30.6 19.6C28.3 15.9 25.4 13.6 22.2 12.7" stroke="#dff4ff" stroke-width="1.3" stroke-linecap="round" opacity=".85"/>
-          <path d="M33.4 19.6C35.7 15.9 38.6 13.6 41.8 12.7" stroke="#dff4ff" stroke-width="1.3" stroke-linecap="round" opacity=".85"/>
+        <svg viewBox="0 0 200 190" fill="none">
+          <defs>
+            <linearGradient id="brandMorphoWing" x1="0.5" y1="0" x2="0.5" y2="1">
+              <stop offset="0" stop-color="#7df3ff"/>
+              <stop offset="0.35" stop-color="#29b6f6"/>
+              <stop offset="1" stop-color="#0d47a1"/>
+            </linearGradient>
+          </defs>
+          <g stroke="#050b1a" stroke-width="6" stroke-linejoin="round">
+            <path fill="url(#brandMorphoWing)" d="M95 86C86 62 68 40 46 27 36 21 26 22 24 30 21 42 28 60 42 73 56 86 76 97 90 100 94 101 96 94 95 86Z"/>
+            <path fill="url(#brandMorphoWing)" d="M105 86C114 62 132 40 154 27 164 21 174 22 176 30 179 42 172 60 158 73 144 86 124 97 110 100 106 101 104 94 105 86Z"/>
+            <path fill="#1e88e5" d="M95 104C82 108 60 120 44 136 32 148 32 160 44 164 58 169 78 156 90 138 96 128 98 112 95 104Z"/>
+            <path fill="#1e88e5" d="M105 104C118 108 140 120 156 136 168 148 168 160 156 164 142 169 122 156 110 138 104 128 102 112 105 104Z"/>
+          </g>
+          <path d="M33 36C38 40 43 46 48 52" stroke="#07142e" stroke-width="2" opacity=".55"/>
+          <path d="M167 36C162 40 157 46 152 52" stroke="#07142e" stroke-width="2" opacity=".55"/>
+          <ellipse cx="100" cy="94" rx="7.2" ry="15" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
+          <path d="M100 104C106 113 106 136 100 153 94 136 94 113 100 104Z" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
+          <circle cx="100" cy="78" r="5.2" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
+          <path d="M97 74C92 58 84 48 76 42" stroke="#101a33" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          <path d="M103 74C108 58 116 48 124 42" stroke="#101a33" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          <circle cx="76" cy="42" r="2.6" fill="#0a1326"/>
+          <circle cx="124" cy="42" r="2.6" fill="#0a1326"/>
         </svg>
       </span>
       <span class="brand-text">
