@@ -63,7 +63,7 @@ async function request(method, path, body) {
   const options = {
     method,
     cache: "no-store",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "X-TargetForge-Client": "1" },
   };
   if (method !== "GET" && body !== undefined) {
     options.headers["Content-Type"] = "application/json";

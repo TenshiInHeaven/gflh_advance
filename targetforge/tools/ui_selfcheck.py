@@ -290,7 +290,8 @@ def http_json(url: str, timeout: float = 5.0):
 def http_post(url: str, payload: dict, timeout: float = 10.0):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST"
+        url, data=body, headers={"Content-Type": "application/json", "Accept": "application/json",
+                                  "X-TargetForge-Client": "1"}, method="POST"
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -1365,7 +1366,8 @@ def run_checks(base_url: str, mock: bool) -> int:
                 bad_req = urllib.request.Request(
                     base_url.rstrip("/") + "/api/game/confirm",
                     data=json.dumps({"path": "Z:\\TargetForge_Invalid_Game_Dir_Not_Exists"}).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    headers={"Content-Type": "application/json", "Accept": "application/json",
+                             "X-TargetForge-Client": "1"},
                     method="POST",
                 )
                 try:

@@ -284,7 +284,8 @@ class HttpRoutesTest(AppTestBase):
     def request(self, method, path, payload=None, timeout=20):
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json",
+                                              "X-TargetForge-Client": "1"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode())
 
@@ -350,6 +351,23 @@ class HttpRoutesTest(AppTestBase):
         self.assertEqual(ctx.exception.code, 404)
         payload = json.loads(ctx.exception.read().decode())
         self.assertIn("error", payload)
+
+    def test_security_headers_and_csrf_guard(self):
+        # 正常 GET 带安全响应头
+        with urllib.request.urlopen(self.base + "/api/health", timeout=10) as resp:
+            self.assertEqual(resp.headers.get("X-Frame-Options"), "DENY")
+            self.assertIn("default-src 'self'", resp.headers.get("Content-Security-Policy") or "")
+        # POST 缺少自定义安全头 → 403
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(urllib.request.Request(
+                self.base + "/api/sequence", data=b"{}", method="POST",
+                headers={"Content-Type": "application/json"}), timeout=10)
+        self.assertEqual(ctx.exception.code, 403)
+        # Host 非 loopback → 403
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(urllib.request.Request(
+                self.base + "/api/health", headers={"Host": "evil.example"}), timeout=10)
+        self.assertEqual(ctx.exception.code, 403)
 
     def test_static_index(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as resp:
@@ -593,7 +611,8 @@ class GameRoutesTest(AppTestBase):
     def request(self, method, path, payload=None, timeout=20):
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method,
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json",
+                                              "X-TargetForge-Client": "1"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.status, json.loads(resp.read().decode())

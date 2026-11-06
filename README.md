@@ -55,6 +55,12 @@
 
 > 每项细节（结算判定、机场推断规则、怪组与筛选等）见 [详细功能说明](docs/FEATURES.md)。
 
+## 安全
+
+本地服务只监听 `127.0.0.1`，并对 Host / Origin / POST 自定义请求头 / JSON Content-Type 做校验
+（防 CSRF、DNS rebinding 与误绑局域网），拒绝 UNC 网络路径，统一附带 CSP 等安全响应头。
+威胁模型、已实现加固与剩余风险见 **[SECURITY/](SECURITY/README.md)**。
+
 ## 前置依赖
 
 | 依赖 | 说明 |
@@ -143,7 +149,7 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 146 个单测（app / catalog / gflh / game setup）
+python -m unittest discover -s targetforge/tests -t .      # 147 个单测（app / catalog / gflh / game setup）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（33 项）
 python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 26 张截图
 python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
@@ -201,6 +207,17 @@ gflh_advance/
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.9.1（2026-11-07）
+
+- **安全加固**：新增 `targetforge/security.py` 与 `SECURITY/` 文档目录。
+  - Host 白名单（只允许 loopback/当前端口）与 Origin 校验，防 DNS rebinding；
+  - POST 强制 `X-TargetForge-Client: 1` + `application/json`，防 CSRF；
+  - `--host` 拒绝非 loopback 地址；
+  - 响应增加 CSP / X-Frame-Options / Referrer-Policy；
+  - 游戏目录接口拒绝 UNC/网络路径（防 SMB 认证泄露）。
+- 新增单元测试覆盖安全头、缺自定义头/非法 Host 的 403。
+- 详细威胁模型与剩余风险见 [SECURITY/](SECURITY/README.md)。
 
 ### v1.9.0（2026-11-07）
 

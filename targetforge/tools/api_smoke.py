@@ -53,7 +53,8 @@ def get_bytes(base: str, path: str) -> tuple[int, str, bytes]:
 def post(base: str, path: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(base + path, data=data, method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json",
+                                          "X-TargetForge-Client": "1"})
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.status, json.loads(resp.read().decode())

@@ -25,12 +25,13 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from targetforge.datapaths import DATA_DIR, ICON_DIR, STATE_FILE, ensure_dirs  # noqa: E402
+from targetforge import security  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -244,6 +245,12 @@ def api_game_confirm(body: dict) -> dict:
                         hint="请先选择（或手动输入）游戏客户端目录。",
                         extra={"missing": ["缺少游戏目录路径"],
                                "missing_codes": ["missing_path"], "path": ""})
+    local_path, path_error = security.validate_local_game_path(path)
+    if path_error:
+        raise HttpError(400, path_error,
+                        hint="请选择本机磁盘上的游戏根目录（不要使用网络路径）。",
+                        extra={"missing": [path_error], "missing_codes": ["invalid_path"], "path": path})
+    path = str(local_path)
     valid, missing = gamepath.validate(path)
     if not valid:
         error, messages = _confirm_game_error(missing)
@@ -933,6 +940,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store" if not cache else "public, max-age=60")
         self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in security.security_headers().items():
+            self.send_header(key, value)
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -1003,6 +1012,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         started = time.time()
+        denied = security.request_allowed(method, self.headers, getattr(self.server, "server_port", None))
+        if denied:
+            self._error(403, "请求被安全策略拒绝", detail=denied,
+                        hint="请从本机 http://127.0.0.1:%s/ 页面访问。" % getattr(self.server, "server_port", 8765))
+            self._log(method, path, 403, started)
+            return
         try:
             if path.startswith("/api/icons/"):
                 self._icon(path[len("/api/icons/"):])
@@ -1082,6 +1097,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open", action="store_true", help="启动后在浏览器打开")
     parser.add_argument("--rebuild-catalog", action="store_true", help="启动时强制重建数据缓存")
     args = parser.parse_args(argv)
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"拒绝绑定非本机地址 {args.host!r}：本应用接口没有远程认证，只允许 loopback。",
+              file=sys.stderr)
+        return 2
 
     ensure_dirs()
     # v1.9：启动时先解析游戏客户端目录（settings → env → local_paths → 自动检测），
