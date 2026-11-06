@@ -145,7 +145,7 @@ gflh_advance/
 
 ## 相关项目
 
-- [GFLH / ZIRC](https://github.com/MaaGF1) —— 社区 GFL 协议库（`gflzirc`），本项目的注入与抓包基于它。
+- [GFLH](https://github.com/MaaGF1/GFLH) / [ZIRC](https://github.com/MaaGF1/ZIRC) —— 社区 GFL 协议库（`gflzirc`），本项目的注入与抓包基于它。
 - **GF Forge** —— 本项目的配套主仓库，提供本机 STC 数据层与 `gflh_target_train.py` 编号规划脚本（未包含在本仓库中）。
 
 ---

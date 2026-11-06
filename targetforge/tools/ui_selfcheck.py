@@ -1,4 +1,4 @@
-"""ui_selfcheck.py —— 靶机工坊前端 Playwright 自检 / 截图脚本。
+﻿"""ui_selfcheck.py —— 靶机工坊前端 Playwright 自检 / 截图脚本。
 
 用法（仓库根目录执行）：
 
@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]  # E:\python\gf_forge
+ROOT = Path(__file__).resolve().parents[2]  # 仓库根（GF Forge）
 OUT_DIR = ROOT / "tmp" / "frontend_shots"
 DEFAULT_PORT = 8771
 VIEWPORT = {"width": 1600, "height": 1000}
