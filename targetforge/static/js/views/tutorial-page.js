@@ -108,8 +108,8 @@ export async function render(root) {
           <h2><span class="th-num">03</span>登录抓取分步</h2>
           <p>抓取的目标是拿到当前账号的 <b>uid + sign</b> 和游戏内现有收藏标靶列表。进入「登录抓取」页，按 1→6 步操作：</p>
           <ol>
-            <li><b>开始抓取</b>：启动本地抓包代理，固定监听 <span class="tut-code">127.0.0.1:18080</span>。日志里会显示代理已启动。</li>
-            <li><b>设置代理并重启游戏</b>：应用会把系统代理指向 <span class="tut-code">127.0.0.1:18080</span>，然后强杀游戏进程并重新启动。此操作会二次确认——请先回到安全界面。</li>
+            <li><b>开始抓取</b>：启动本地抓包代理，默认监听 <span class="tut-code">127.0.0.1:18080</span>（可在页面「抓包端口」里修改，范围 1024-65535）。日志里会显示代理已启动。</li>
+            <li><b>设置代理并重启游戏</b>：应用会把系统代理指向你设置的端口（默认 <span class="tut-code">127.0.0.1:18080</span>），然后强杀游戏进程并重新启动。此操作会二次确认——请先回到安全界面。</li>
             <li><b>在游戏里登录</b>：正常登录，进入主界面即可，游戏会经过抓包代理。</li>
             <li><b>等待抓取</b>：右侧实时日志会依次显示「拿到 uid → 拿到 sign → 读取收藏标靶」。抓取页顶部状态与进度会同步变化。</li>
             <li><b>完成并关闭代理</b>：停止抓包代理、恢复系统代理，把凭证写入 <span class="tut-code">creds_latest.json</span>。这一步很重要，否则游戏可能因为代理残留而无法联网。</li>
@@ -118,10 +118,11 @@ export async function render(root) {
           <div class="tut-card red">
             <div class="tut-card-title">${icon("alert", 14)} 注意事项</div>
             <ul style="margin:0;padding-left:18px;list-style:disc">
-              <li>抓包端口<b>固定 18080</b>，不要用 8080（本机另一个 bot 占用）。</li>
+              <li>抓包端口<b>默认 18080，可配置</b>；8080 常被其它程序占用，建议避开。</li>
               <li>抓取期间游戏提示网络异常属正常现象；抓完点「完成并关闭代理」恢复。</li>
               <li>游戏进不去 / 网络异常时，先检查 Windows 系统代理是否已关闭。</li>
               <li><b>sign 每次登录都变</b>：重启游戏后要重新抓取，抓完尽快执行。</li>
+              <li>顶栏的游戏进程 PID 由 <b>tasklist 按进程名 GrilsFrontLine.exe 搜索</b>得到，仅在本机展示，不会写死或上传。</li>
             </ul>
           </div>
         </section>
@@ -178,6 +179,7 @@ export async function render(root) {
             <ul style="margin:0;padding-left:18px;list-style:disc">
               <li>应用只监听 <span class="tut-code">127.0.0.1</span>，不对外网开放，不上传任何数据。</li>
               <li>不会自动联网、不会自动操作游戏进程；只有你点击对应按钮（开始抓取 / 执行注入 / 重启游戏）时才会动作。</li>
+              <li>顶栏显示的游戏进程 PID 由本机 <span class="tut-code">tasklist</span> 按进程名 <span class="tut-code">GrilsFrontLine.exe</span> 搜索得到，仅在本机展示，不会上传、也不写死。</li>
               <li>「重启游戏」按钮会<b>强杀 GrilsFrontLine.exe</b> 并通过 Steam 重启，必须二次确认；请先回到安全界面再点。</li>
             </ul>
           </div>

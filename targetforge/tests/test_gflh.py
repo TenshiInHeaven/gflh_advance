@@ -638,6 +638,11 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
         patcher = mock.patch.object(gflh, "_CAPTURE", self.capture)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # 端口可用性检查 mock 掉（真实 bind 会碰系统端口，单测禁止）
+        self.port_available = mock.patch.object(gflh, "_port_available",
+                                                return_value=(True, ""))
+        self.port_available.start()
+        self.addCleanup(self.port_available.stop)
 
     def test_status_initial_idle(self):
         status = gflh.capture_status()
@@ -732,12 +737,96 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
         result = gflh.current_targets("creds")
         self.assertEqual(pairs(result["targets"]), [(1, 111), (2, 222)])
 
+    def test_custom_port_full_chain_uses_configured_port(self):
+        """capture_start(port=18093) 后：监听/系统代理/status/restart_game/stop 全用 18093。"""
+        fake = FakeGflzirc()
+        completed = mock.Mock(returncode=0, stdout="")
+        with mock.patch.object(gflh, "_require_gflzirc", return_value=fake), \
+                mock.patch.object(gflh, "_game_pids", side_effect=[[111], []]), \
+                mock.patch.object(gflh.subprocess, "run", return_value=completed) as run:
+            start = gflh.capture_start(port=18093, set_proxy=True,
+                                       auto_restore_proxy=False)
+            self.assertEqual(start["state"], "running")
+            self.assertEqual(start["port"], 18093)
+            self.assertTrue(start["proxy_active"])
+            self.assertTrue(start["system_proxy_on"])
+            self.assertEqual(len(fake.proxies), 1)
+            self.assertEqual(fake.proxies[0].port, 18093)
+            self.assertEqual(fake.proxies[0].static_key, gflh.STATIC_KEY)
+            self.assertEqual(fake.set_proxy_calls[0], (True, "127.0.0.1:18093"))
+            self.assertEqual(gflh.capture_status()["port"], 18093)
+
+            # restart_game 用当前会话端口，不是默认 18080
+            restart = gflh.capture_restart_game()
+            self.assertTrue(restart["ok"])
+            self.assertEqual(restart["system_proxy"], "127.0.0.1:18093")
+            self.assertIn("127.0.0.1:18093", restart["steps"][0])
+            self.assertEqual(fake.set_proxy_calls[-1], (True, "127.0.0.1:18093"))
+
+            # stop：停代理 + 恢复系统代理，status.port 仍是 18093
+            stop = gflh.capture_stop()
+        self.assertEqual(stop["state"], "stopped")
+        self.assertEqual(stop["port"], 18093)
+        self.assertTrue(fake.proxies[0].stopped)
+        self.assertEqual(fake.set_proxy_calls[-1][0], False)
+        logs_text = " ".join(entry["text"] for entry in stop["logs"])
+        self.assertIn("18093", logs_text)
+        self.assertNotIn("18080", logs_text)  # 全链路不能回落到默认端口
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertIn(["taskkill", "/IM", gflh.GAME_PROCESS, "/F"], commands)
+        self.assertIn(["cmd", "/c", "start", "", gflh.STEAM_URL], commands)
+        # 停掉后系统代理地址仍可从最近会话端口推导
+        self.assertEqual(gflh._recent_capture_port(), 18093)
+
+    def test_capture_start_rejects_out_of_range_port(self):
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_require_gflzirc", return_value=fake):
+            status = gflh.capture_start(port=70000, set_proxy=True,
+                                        auto_restore_proxy=False)
+        self.assertEqual(status["state"], "error")
+        self.assertIn("越界", status["error"])
+        # 越界端口不会成为 status.port / 最近会话端口
+        self.assertEqual(status["port"], gflh.CAPTURE_PORT)
+        self.assertEqual(gflh._recent_capture_port(), gflh.CAPTURE_PORT)
+        self.assertEqual(fake.proxies, [])
+        self.assertEqual(fake.set_proxy_calls, [])
+
+    def test_capture_start_rejects_reserved_8080(self):
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_require_gflzirc", return_value=fake):
+            status = gflh.capture_start(port=8080, set_proxy=True,
+                                        auto_restore_proxy=False)
+        self.assertEqual(status["state"], "error")
+        self.assertIn("8080", status["error"])
+        self.assertIn("占用", status["error"])
+        # 8080 即使被尝试过，也不会成为「最近会话端口」被自动拿去做系统代理
+        self.assertEqual(gflh._recent_capture_port(), gflh.CAPTURE_PORT)
+        self.assertEqual(gflh._proxy_addr(), f"127.0.0.1:{gflh.CAPTURE_PORT}")
+        self.assertEqual(fake.proxies, [])
+        self.assertEqual(fake.set_proxy_calls, [])
+
+    def test_capture_start_occupied_port_error_is_readable(self):
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_port_available",
+                               return_value=(False, "端口 18093 无法监听："
+                                                     "可能被其它程序占用")), \
+                mock.patch.object(gflh, "_require_gflzirc", return_value=fake):
+            status = gflh.capture_start(port=18093, set_proxy=True,
+                                        auto_restore_proxy=False)
+        self.assertEqual(status["state"], "error")
+        self.assertIn("无法监听", status["error"])
+        self.assertIn("18093", status["error"])
+        # 端口不可用时不改系统代理、不创建代理
+        self.assertEqual(fake.proxies, [])
+        self.assertEqual(fake.set_proxy_calls, [])
+
     def test_repeated_start_is_ignored(self):
         fake = FakeGflzirc()
         with mock.patch.object(gflh, "_require_gflzirc", return_value=fake):
             gflh.capture_start(auto_restore_proxy=False)
             second = gflh.capture_start(auto_restore_proxy=False)
         self.assertEqual(second["state"], "running")
+        self.assertEqual(second["port"], gflh.CAPTURE_PORT)  # 不传 port 用默认 18080
         self.assertEqual(len(fake.proxies), 1)
 
     def test_auto_restore_watchdog_stops_when_ready(self):
@@ -775,10 +864,15 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
         stop.assert_not_called()
 
     def test_capture_restart_game_requires_running(self):
-        with mock.patch.object(gflh.subprocess, "run") as run:
+        with mock.patch.object(gflh, "_call_set_windows_proxy") as set_proxy, \
+                mock.patch.object(gflh.subprocess, "run") as run:
             result = gflh.capture_restart_game()
         self.assertFalse(result["ok"])
-        self.assertIn("抓包未启动", result["error"])
+        self.assertEqual(result["state"], "idle")
+        self.assertIn("没有活跃", result["error"])
+        self.assertIn(str(gflh.CAPTURE_PORT), result["hint"])
+        self.assertEqual(result["steps"], [])
+        set_proxy.assert_not_called()
         run.assert_not_called()
 
     def test_capture_restart_game_sets_proxy_and_launches(self):
@@ -799,21 +893,114 @@ class CaptureTests(TempPathsMixin, unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# 端口可配置：校验 / set_system_proxy 的 addr 优先级
+# ---------------------------------------------------------------------------
+class PortConfigTests(unittest.TestCase):
+    def test_validate_capture_port(self):
+        self.assertEqual(gflh._validate_capture_port(18093), (18093, None))
+        self.assertEqual(gflh._validate_capture_port("18093"), (18093, None))
+        # 未指定 → 默认 18080
+        self.assertEqual(gflh._validate_capture_port(None), (gflh.CAPTURE_PORT, None))
+        self.assertEqual(gflh._validate_capture_port(""), (gflh.CAPTURE_PORT, None))
+        self.assertEqual(gflh._validate_capture_port(0), (gflh.CAPTURE_PORT, None))
+        # 越界
+        for bad in (-1, 70000, 65536):
+            port, error = gflh._validate_capture_port(bad)
+            self.assertEqual(port, bad)
+            self.assertIsNotNone(error)
+            self.assertIn("越界", error)
+        # 非整数
+        port, error = gflh._validate_capture_port("abc")
+        self.assertEqual(port, gflh.CAPTURE_PORT)
+        self.assertIsNotNone(error)
+        self.assertIn("不是整数", error)
+        # 8080 保留（另一个 bot）
+        port, error = gflh._validate_capture_port(8080)
+        self.assertEqual(port, 8080)
+        self.assertIsNotNone(error)
+        self.assertIn("占用", error)
+        self.assertEqual(gflh._validate_capture_port(1024), (1024, None))
+        self.assertEqual(gflh._validate_capture_port(65535), (65535, None))
+
+    def test_proxy_addr_uses_explicit_then_recent_port(self):
+        self.assertEqual(gflh._proxy_addr(18093), "127.0.0.1:18093")
+        self.assertEqual(gflh._proxy_addr(gflh.CAPTURE_PORT),
+                         f"127.0.0.1:{gflh.CAPTURE_PORT}")
+        capture = gflh._new_capture_state()
+        capture.update({"state": "stopped", "port": 18093})
+        with mock.patch.object(gflh, "_CAPTURE", capture):
+            self.assertEqual(gflh._proxy_addr(), "127.0.0.1:18093")
+            self.assertTrue(gflh._has_capture_session())
+            self.assertEqual(gflh._recent_capture_port(), 18093)
+        with mock.patch.object(gflh, "_CAPTURE", gflh._new_capture_state()):
+            self.assertEqual(gflh._proxy_addr(), f"127.0.0.1:{gflh.CAPTURE_PORT}")
+            self.assertFalse(gflh._has_capture_session())
+
+    def test_set_system_proxy_default_is_18080_without_session(self):
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_CAPTURE", gflh._new_capture_state()), \
+                mock.patch.object(gflh, "_require_gflzirc", return_value=fake), \
+                mock.patch.object(gflh, "_read_system_proxy", return_value=None):
+            result = gflh.set_system_proxy(True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["addr"], "127.0.0.1:18080")
+        self.assertEqual(result["port"], 18080)
+        self.assertEqual(result["source"], "default")
+        self.assertEqual(fake.set_proxy_calls[0], (True, "127.0.0.1:18080"))
+
+    def test_set_system_proxy_uses_recent_session_port(self):
+        capture = gflh._new_capture_state()
+        capture.update({"state": "stopped", "port": 18093})
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_CAPTURE", capture), \
+                mock.patch.object(gflh, "_require_gflzirc", return_value=fake), \
+                mock.patch.object(gflh, "_read_system_proxy",
+                                  return_value="127.0.0.1:18093"):
+            result = gflh.set_system_proxy(True)
+        self.assertEqual(result["addr"], "127.0.0.1:18093")
+        self.assertEqual(result["port"], 18093)
+        self.assertEqual(result["source"], "session")
+        self.assertEqual(fake.set_proxy_calls[0], (True, "127.0.0.1:18093"))
+        # 空白 addr 视同未给 → 仍用会话端口
+        with mock.patch.object(gflh, "_CAPTURE", capture), \
+                mock.patch.object(gflh, "_require_gflzirc", return_value=fake), \
+                mock.patch.object(gflh, "_read_system_proxy", return_value=None):
+            blank = gflh.set_system_proxy(True, "  ")
+        self.assertEqual(blank["addr"], "127.0.0.1:18093")
+        self.assertEqual(blank["source"], "session")
+
+    def test_set_system_proxy_explicit_addr_wins(self):
+        capture = gflh._new_capture_state()
+        capture.update({"state": "running", "port": 18093})
+        fake = FakeGflzirc()
+        with mock.patch.object(gflh, "_CAPTURE", capture), \
+                mock.patch.object(gflh, "_require_gflzirc", return_value=fake), \
+                mock.patch.object(gflh, "_read_system_proxy",
+                                  return_value="127.0.0.1:19001"):
+            result = gflh.set_system_proxy(True, "127.0.0.1:19001")
+        self.assertEqual(result["addr"], "127.0.0.1:19001")
+        self.assertEqual(result["port"], 19001)
+        self.assertEqual(result["source"], "explicit")
+        self.assertEqual(fake.set_proxy_calls[0], (True, "127.0.0.1:19001"))
+
+
+# ---------------------------------------------------------------------------
 # player_status / restart_game / set_system_proxy（tasklist / steam / winreg 全部 mock）
 # ---------------------------------------------------------------------------
 class GameControlTests(unittest.TestCase):
     def test_player_status_running(self):
+        # 系统代理读真实注册表值，不能受 CAPTURE_PORT/会话端口默认值影响
         with mock.patch.object(gflh, "_game_pids", return_value=[12345]), \
                 mock.patch.object(gflh, "_window_title", return_value="少女前线"), \
                 mock.patch.object(gflh, "_read_system_proxy",
-                                  return_value="127.0.0.1:18080"), \
+                                  return_value="127.0.0.1:19999"), \
                 mock.patch.object(gflh, "_gflzirc_ok", return_value=True):
             status = gflh.player_status()
         self.assertEqual(status, {
             "game_running": True,
             "pid": 12345,
             "game_window_title": "少女前线",
-            "system_proxy": "127.0.0.1:18080",
+            "system_proxy": "127.0.0.1:19999",
             "gflzirc_ok": True,
         })
 

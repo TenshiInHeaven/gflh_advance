@@ -1,6 +1,6 @@
 /* sequence-panel.js —— 右侧常驻「序列」面板（可收起 / 拖拽排序 / n/35 进度） */
 import { store, refreshSequence, sequenceStats, removeTeam, moveTeam, clearSequence, importCurrentSequence } from "../store.js";
-import { icon, toast, toastErr, toastOk, confirmDialog } from "../ui.js";
+import { icon, toast, toastErr, toastOk, confirmDialog, butterflySvg } from "../ui.js";
 import { esc, fmtNum, fmtPower, factionColor, navigate } from "../util.js";
 import { bindDragSort } from "./drag-sort.js";
 import { openExecuteModal } from "./execute-modal.js";
@@ -16,10 +16,12 @@ export function initSequencePanel(root) {
   store.on("seq-open", (open) => root.classList.toggle("collapsed", !open));
 
   render();
-  refreshSequence().catch((err) => {
-    if (err.status === 503 || err.status === 0) return; // catalog 构建中，静默
-    toastErr("序列加载失败", err.message);
-  });
+  if (!store.sequence) {
+    refreshSequence().catch((err) => {
+      if (err.status === 503 || err.status === 0) return; // catalog 构建中，静默
+      toastErr("序列加载失败", err.message);
+    });
+  }
 }
 
 function progressBlocks(count, max) {
@@ -59,7 +61,7 @@ function render() {
           ? `<div class="seq-empty"><span class="spinner" style="margin:0 auto 10px"></span><span>正在读取序列…</span></div>`
           : draft.length === 0
             ? `<div class="seq-empty">
-                 <div class="se-ico">${icon("layers", 24)}</div>
+                 <div class="se-ico">${butterflySvg({ size: 46, opacity: 0.5, className: "float-slow" })}</div>
                  <b>序列还是空的</b>
                  <span>去关卡或怪种图鉴挑队伍，<br>点「加入序列」后在这里拖动排序。</span>
                  <button class="btn btn-sm btn-cyan" type="button" data-act="go-chapters">${icon("map", 12)} 去选队伍</button>

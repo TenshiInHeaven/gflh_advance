@@ -33,6 +33,225 @@ DEFAULT_PORT = 8771
 VIEWPORT = {"width": 1600, "height": 1000}
 
 SHOTS: list[str] = []
+EVIDENCE: dict = {}
+
+
+def _attach_error_hooks(page, console_errors: list, page_errors: list):
+    page.on(
+        "console",
+        lambda message: console_errors.append({"type": message.type, "text": message.text})
+        if message.type == "error"
+        else None,
+    )
+    page.on("pageerror", lambda error: page_errors.append({"error": str(error)}))
+
+
+def run_stability_check(context, base_url: str, mock: bool, checker, console_errors: list, page_errors: list):
+    """A. 验证 overview 不再无限自渲染 / 不再劫持路由（30s 采样 + 请求计数 + 导航切换）。"""
+    print("[selfcheck] A. overview 稳定性检查：30s 采样（每 2s）…")
+    page = context.new_page()
+    _attach_error_hooks(page, console_errors, page_errors)
+    api_requests: list[str] = []
+    page.on("request", lambda req: api_requests.append(req.url) if "/api/" in req.url else None)
+    evidence = {"samples": [], "navigations": [], "api_calls": {}, "overview_renders": None}
+    try:
+        page.goto(url_for(base_url, mock, "/overview", 9001), wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector("#view [data-overview-root]", timeout=30000)
+        page.wait_for_timeout(1500)
+        samples = []
+        for _ in range(15):  # 30 秒，每 2 秒采样一次
+            page.wait_for_timeout(2000)
+            samples.append(
+                page.evaluate(
+                    """() => {
+                        const view = document.querySelector('#view');
+                        return {
+                            view: view ? view.dataset.view : null,
+                            hash: location.hash,
+                            render: view ? Number(view.dataset.overviewRender || 0) : 0,
+                            overviewRoot: view ? view.querySelectorAll('[data-overview-root]').length : 0,
+                        };
+                    }"""
+                )
+            )
+        evidence["samples"] = samples
+        views = {item["view"] for item in samples}
+        hashes = {item["hash"] for item in samples}
+        renders = {item["render"] for item in samples}
+        roots = {item["overviewRoot"] for item in samples}
+        if views == {"overview"} and hashes == {"#/overview"} and roots == {1}:
+            checker.passed.append(f"overview 30s 采样 15 次：view/hash 稳定（{sorted(views)}）")
+        else:
+            checker.failures.append(f"overview 30s 内 view/hash 不稳定：views={views} hashes={hashes} roots={roots}")
+        if renders == {1}:
+            checker.passed.append("overview 30s 内只渲染 1 次（无自渲染死循环）")
+        else:
+            checker.failures.append(f"overview 30s 内渲染次数异常：{sorted(renders)}（应为 1）")
+        evidence["overview_renders"] = sorted(renders)
+
+        counts = {
+            "health": sum(1 for url in api_requests if "/api/health" in url),
+            "sequence": sum(1 for url in api_requests if "/api/sequence" in url),
+            "current": sum(1 for url in api_requests if "/api/current" in url),
+        }
+        evidence["api_calls"] = counts
+        if counts["sequence"] <= 1 and counts["current"] <= 1 and counts["health"] <= 4:
+            checker.passed.append(f"overview 30s 内 API 请求无重复风暴：{counts}")
+        else:
+            checker.failures.append(f"overview 30s 内 API 请求异常重复：{counts}")
+
+        # 导航切换稳定性：切到关卡图鉴后 8s 内不得被 overview 旧回调覆盖回来
+        page.locator('.nav-item[data-nav="/chapters"]').click()
+        page.wait_for_selector(".chapter-card", timeout=25000)
+        nav_samples = []
+        for _ in range(4):
+            page.wait_for_timeout(2000)
+            nav_samples.append(
+                page.evaluate(
+                    """() => {
+                        const view = document.querySelector('#view');
+                        return {
+                            view: view ? view.dataset.view : null,
+                            hash: location.hash,
+                            overviewRoot: view ? view.querySelectorAll('[data-overview-root]').length : 0,
+                        };
+                    }"""
+                )
+            )
+        evidence["navigations"] = nav_samples
+        if all(item["view"] == "chapters" and item["hash"] == "#/chapters" and item["overviewRoot"] == 0 for item in nav_samples):
+            checker.passed.append("点击导航后 8s 内稳定在关卡图鉴（无 overview 回写）")
+        else:
+            checker.failures.append(f"导航后被旧页面覆盖/闪回：{nav_samples}")
+        # 再切一次到怪种图鉴，确认连续切换正常
+        page.locator('.nav-item[data-nav="/species"]').click()
+        page.wait_for_selector(".species-card", timeout=25000)
+        page.wait_for_timeout(1500)
+        final = page.evaluate("() => ({view: document.querySelector('#view').dataset.view, hash: location.hash})")
+        if final["view"] == "species" and final["hash"] == "#/species":
+            checker.passed.append("连续导航切换正常（chapters → species）")
+        else:
+            checker.failures.append(f"连续导航切换失败：{final}")
+    finally:
+        EVIDENCE["stability"] = evidence
+        page.close()
+
+
+def run_port_pid_checks(context, base_url: str, mock: bool, checker, console_errors: list, page_errors: list):
+    """B/C. 抓包端口可配置 + PID tooltip/说明文案验证。"""
+    print("[selfcheck] B/C. 抓包端口配置 + PID 说明检查…")
+    page = context.new_page()
+    _attach_error_hooks(page, console_errors, page_errors)
+    evidence = {}
+    try:
+        # --- PID tooltip（顶栏） ---
+        page.goto(url_for(base_url, mock, "/overview", 9101), wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector("#view [data-overview-root]", timeout=30000)
+        page.wait_for_timeout(900)
+        pid_chip = page.locator('.pid-chip').first
+        pid_title = (pid_chip.get_attribute("title") or "") if pid_chip.count() else ""
+        info_title = page.locator(".pid-info").first.get_attribute("title") if page.locator(".pid-info").count() else ""
+        pid_text = pid_chip.inner_text() if pid_chip.count() else ""
+        evidence["pid_title"] = pid_title
+        if "tasklist" in pid_title and "GrilsFrontLine.exe" in pid_title:
+            checker.passed.append(f"顶栏 PID tooltip 正确（{pid_text}）")
+        else:
+            checker.failures.append(f"PID tooltip 缺少 tasklist/GrilsFrontLine.exe 说明：{pid_title!r}")
+        if "tasklist" in (info_title or ""):
+            checker.passed.append("PID 旁 ⓘ 提示可 hover 查看来源")
+        else:
+            checker.failures.append("PID 旁缺少 ? 提示 tooltip")
+
+        # --- 抓包端口输入（默认 18080 + 可保存 + 文案不写死） ---
+        page.goto(url_for(base_url, mock, "/capture", 9102), wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector("[data-port-input]", timeout=30000)
+        page.wait_for_timeout(1200)
+        port_value = page.locator("[data-port-input]").input_value()
+        evidence["default_port"] = port_value
+        capture_text = page.locator(".capture-cols").inner_text()
+        evidence["has_fixed_wording"] = "固定 18080" in capture_text
+        if "固定 18080" not in capture_text and "18080" in capture_text:
+            checker.passed.append(f"抓取页端口可配置（默认 {port_value}），无「固定 18080」文案")
+        else:
+            checker.failures.append("抓取页仍出现「固定 18080」旧文案")
+        if "tasklist" in capture_text and "GrilsFrontLine.exe" in capture_text:
+            checker.passed.append("抓取页包含 PID 来源说明（tasklist / GrilsFrontLine.exe）")
+        else:
+            checker.failures.append("抓取页缺少 PID 来源说明")
+
+        # --- 修改端口 → 验证 /api/settings 持久化 → 还原 ---
+        original_port = 18080
+        if not mock:
+            try:
+                original_port = int((http_json(base_url.rstrip("/") + "/api/settings") or {}).get("capture_port") or 18080)
+            except Exception:  # noqa: BLE001
+                original_port = 18080
+        try:
+            page.fill("[data-port-input]", "18081")
+            page.click('[data-act="save-port"]')
+            page.wait_for_timeout(1200)
+            badge = page.locator("[data-port-badge]").first.inner_text()
+            evidence["saved_badge"] = badge
+            if badge.strip() == "18081":
+                checker.passed.append("端口修改后 UI 徽标立即变为 18081")
+            else:
+                checker.failures.append(f"端口徽标未更新：{badge!r}")
+            if not mock:
+                saved = int((http_json(base_url.rstrip("/") + "/api/settings") or {}).get("capture_port") or 0)
+                evidence["api_capture_port"] = saved
+                if saved == 18081:
+                    checker.passed.append("POST /api/settings 已把 capture_port 持久化为 18081")
+                else:
+                    checker.failures.append(f"capture_port 持久化失败：{saved}")
+                # 代理地址文案跟随端口
+                proxy_texts = page.locator("[data-proxy-addr]").all_inner_texts()
+                evidence["proxy_texts"] = proxy_texts
+                if all("127.0.0.1:18081" in text for text in proxy_texts if text.strip()):
+                    checker.passed.append("终端横幅/代理说明跟随端口（127.0.0.1:18081）")
+                else:
+                    checker.failures.append(f"代理地址未跟随端口：{proxy_texts}")
+        finally:
+            # 还原为默认 18080（避免污染用户 settings / 状态）
+            try:
+                page.fill("[data-port-input]", "18080")
+                page.click('[data-act="save-port"]')
+                page.wait_for_timeout(900)
+            except Exception:  # noqa: BLE001
+                pass
+            if not mock:
+                try:
+                    http_post(base_url.rstrip("/") + "/api/settings", {"capture_port": 18080})
+                except Exception:  # noqa: BLE001
+                    pass
+        restored = "18080"
+        if not mock:
+            try:
+                restored = str(int((http_json(base_url.rstrip("/") + "/api/settings") or {}).get("capture_port") or 0))
+            except Exception:  # noqa: BLE001
+                restored = "?"
+        evidence["restored_port"] = restored
+        if restored == "18080":
+            checker.passed.append("端口设置已还原为默认 18080")
+        else:
+            checker.failures.append(f"端口设置还原失败：{restored}")
+
+        # --- 教程页：端口口径 + PID 说明 ---
+        page.goto(url_for(base_url, mock, "/tutorial", 9103), wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector(".faq-item", timeout=30000)
+        page.wait_for_timeout(700)
+        tutorial_text = page.locator(".tut-content").inner_text()
+        evidence["tutorial_has_fixed"] = "固定 18080" in tutorial_text
+        if "固定 18080" in tutorial_text:
+            checker.failures.append("教程页仍写「固定 18080」")
+        else:
+            checker.passed.append("教程页端口口径已改为「默认 18080，可配置」")
+        if "tasklist" in tutorial_text and "GrilsFrontLine.exe" in tutorial_text:
+            checker.passed.append("教程页包含 PID 由 tasklist 搜索的说明")
+        else:
+            checker.failures.append("教程页缺少 PID 来源说明")
+    finally:
+        EVIDENCE["port_pid"] = evidence
+        page.close()
 
 # 每个路由都用「全新整页加载」验证首屏渲染
 ROUTE_SMOKE = [
@@ -431,6 +650,12 @@ def run_checks(base_url: str, mock: bool) -> int:
             load("/chapters/orphan", ".team-card")
             checker.shot("14_orphan_chapter.png", ".team-grid")
 
+            # ---------------- A. overview 无限闪烁 / 路由劫持回归检查 ----------------
+            run_stability_check(context, base_url, mock, checker, console_errors, page_errors)
+
+            # ---------------- B/C. 抓包端口可配置 + PID 说明 ----------------
+            run_port_pid_checks(context, base_url, mock, checker, console_errors, page_errors)
+
             # ---------------- 路由首屏回归：逐个整页加载（覆盖全部 13 个路由） ----------------
             print("[selfcheck] 逐路由整页加载回归（每次都是全新 URL 全量加载）…")
             for route in ROUTE_SMOKE:
@@ -457,6 +682,7 @@ def run_checks(base_url: str, mock: bool) -> int:
                 "passed": checker.passed,
                 "screenshots": SHOTS,
                 "url": url,
+                "evidence": EVIDENCE,
             }
             (out_dir / "selfcheck_result.json").write_text(
                 json.dumps(error_payload, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -518,6 +744,10 @@ def run_checks(base_url: str, mock: bool) -> int:
     print(f"page error：{len(page_errors)} 条")
     for item in page_errors[:20]:
         print(f"  ! {item['error'][:800]}")
+
+    if EVIDENCE:
+        print("\n关键证据 Evidence：")
+        print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
     ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 12
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))

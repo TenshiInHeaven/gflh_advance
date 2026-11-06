@@ -1,6 +1,6 @@
 /* tutorial-overlay.js —— 首次访问的新手引导 overlay */
 import { store, saveTutorial } from "../store.js";
-import { icon } from "../ui.js";
+import { icon, butterflySvg } from "../ui.js";
 import { esc } from "../util.js";
 import { OVERLAY_STEPS } from "../tutorial-data.js";
 
@@ -25,6 +25,7 @@ export function showTutorialOverlay(options = {}) {
     <div class="tut-overlay-card" role="dialog" aria-modal="true">
       <div class="tut-overlay-head">
         <span class="toh-badge">// NEW PLAYER GUIDE</span>
+        <span class="toh-bf">${butterflySvg({ size: 30, opacity: 0.7, className: "float" })}</span>
         <span class="toh-progress" data-progress></span>
       </div>
       <div class="tut-overlay-body" data-body></div>

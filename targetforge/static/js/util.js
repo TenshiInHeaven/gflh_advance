@@ -172,13 +172,13 @@ export function factionClass(faction) {
 
 export function factionColor(faction) {
   const map = {
-    铁血: "#e05a4e",
-    军方: "#8a9a5b",
-    帕拉蒂斯: "#b07cd6",
-    其它: "#7f8ea3",
-    其他: "#7f8ea3",
+    铁血: "#ff7a6e",
+    军方: "#a3b86b",
+    帕拉蒂斯: "#b98cff",
+    其它: "#8aa0c4",
+    其他: "#8aa0c4",
   };
-  return map[faction] || "#7f8ea3";
+  return map[faction] || "#8aa0c4";
 }
 
 /** 造一个 DOM 节点；children 支持字符串/节点/数组 */

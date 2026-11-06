@@ -198,7 +198,7 @@ class Catalog:
 ```python
 MAX_TARGETS = 35
 DEFAULT_CREDS = ROOT/"dataMiner/derived/targetforge/creds_latest.json"
-CAPTURE_PORT = 18080   # 固定，别用 8080（另一个 bot 占用）
+CAPTURE_PORT = 18080   # 默认端口；可配置（别用 8080，另一个 bot 占用）
 STATIC_KEY = "yundoudou"
 API_ADD = "Targettrain/addCollect"; API_DEL = "Targettrain/delCollect"
 
@@ -214,11 +214,11 @@ def capture_status() -> dict
 #  "started_at":iso|null,"elapsed_s":12.3,"creds_path":null,
 #  "logs":[{"t":iso,"level":"info|warn|error","text":"..."}...最多200]}
 def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
-                  auto_restore_proxy: bool = True) -> dict  # 立即返回 status
+                  auto_restore_proxy: bool = True) -> dict  # 端口可配置，默认 18080
 def capture_stop() -> dict    # 停代理 + 恢复系统代理 + 写 creds_latest.json
 def capture_restart_game() -> dict
 # 要求 capture 正在运行：设置系统代理 → taskkill GrilsFrontLine.exe → steam://rungameid/3347970
-# 返回 {"ok":true,"steps":["设置系统代理 127.0.0.1:18080","强杀游戏","重新启动游戏"],"hint":"..."}
+# 返回 {"ok":true,"steps":["设置系统代理 127.0.0.1:<当前抓包端口>","强杀游戏","重新启动游戏"],"hint":"..."}
 
 def list_creds() -> list[dict]  # [{name,path,updated_at,uid,base_url,targets_count}]（不返回 sign）
 def current_targets(source: str = "auto") -> dict

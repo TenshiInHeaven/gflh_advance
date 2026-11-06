@@ -684,20 +684,26 @@ function credsList() {
 /* capture / player                                                   */
 /* ------------------------------------------------------------------ */
 function playerStatus() {
+  const port = state.capture?.port || state.settings.capture_port || 18080;
   return {
     game_running: true,
     pid: 12345,
     game_window_title: "少女前线",
-    system_proxy: state.capture?.proxy_active ? "127.0.0.1:18080" : null,
+    system_proxy: state.capture?.proxy_active ? `127.0.0.1:${port}` : null,
     gflzirc_ok: true,
   };
 }
 
+function capturePort() {
+  return state.capture?.port || state.settings.capture_port || 18080;
+}
+
 function captureStatus() {
+  const port = capturePort();
   if (!state.capture) {
     return {
       state: "idle",
-      port: 18080,
+      port,
       proxy_active: false,
       system_proxy_on: false,
       auto_restore_proxy: true,
@@ -711,16 +717,17 @@ function captureStatus() {
       elapsed_s: 0,
       creds_path: null,
       logs: [
-        { t: NOW, level: "info", text: "等待开始抓取 · 代理端口 18080" },
+        { t: NOW, level: "info", text: `等待开始抓取 · 代理端口 ${port}` },
       ],
     };
   }
   const cap = state.capture;
   const elapsed = cap.started_at ? (Date.now() - cap.startedAt) / 1000 : 0;
   const logs = cap.logs.slice();
+  const addr = `127.0.0.1:${port}`;
   const milestones = [
-    [0.2, "info", "启动本地抓包代理 127.0.0.1:18080"],
-    [0.8, "info", "设置系统代理 -> 127.0.0.1:18080"],
+    [0.2, "info", `启动本地抓包代理 ${addr}`],
+    [0.8, "info", `设置系统代理 -> ${addr}`],
     [1.4, "info", "等待游戏重新登录…"],
     [2.6, "warn", "检测到游戏进程已启动，等待 index/index 请求"],
     [4.0, "info", "捕获 index/index · 正在读取登录信息"],
@@ -738,7 +745,7 @@ function captureStatus() {
   const done = elapsed >= 9.6;
   return {
     state: cap.state,
-    port: cap.port,
+    port,
     proxy_active: cap.state === "running",
     system_proxy_on: cap.state === "running",
     auto_restore_proxy: true,
@@ -1235,10 +1242,13 @@ export async function mockRequest(method, path, body = {}) {
     return ok(captureStatus());
   }
   if (route === "/api/capture/start") {
-    if (!state.capture) {
+    const port = Number(body.port) >= 1024 && Number(body.port) <= 65535
+      ? Number(body.port)
+      : state.settings.capture_port || 18080;
+    if (!state.capture || state.capture.state !== "running") {
       state.capture = {
         state: "running",
-        port: 18080,
+        port,
         startedAt: Date.now(),
         startedAtIso: new Date().toISOString(),
         logs: [],
@@ -1252,9 +1262,10 @@ export async function mockRequest(method, path, body = {}) {
     return ok({ ...status, ok: true, hint: "代理已关闭，系统代理已恢复；凭证已写入 creds_latest.json" });
   }
   if (route === "/api/capture/restart_game") {
+    const port = capturePort();
     return ok({
       ok: true,
-      steps: ["设置系统代理 127.0.0.1:18080", "强杀游戏进程", "重新启动游戏"],
+      steps: [`设置系统代理 127.0.0.1:${port}`, "强杀游戏进程", "重新启动游戏"],
       hint: "游戏已重启，请在游戏内重新登录到主界面，等待抓取到 uid/sign。",
     });
   }
@@ -1262,7 +1273,19 @@ export async function mockRequest(method, path, body = {}) {
     return ok({ ok: true, restarted: true, game_running: true, hint: "游戏已重启，请重新登录并进入主界面。" });
   }
   if (route === "/api/system/proxy") {
-    return ok({ ok: true, system_proxy: body.enable ? "127.0.0.1:18080" : null });
+    const port = capturePort();
+    return ok({ ok: true, system_proxy: body.enable ? `127.0.0.1:${port}` : null });
+  }
+  if (route === "/api/settings") {
+    if (method === "POST") {
+      Object.assign(state.settings, body);
+      const port = Number(state.settings.capture_port);
+      if (!(Number.isInteger(port) && port >= 1024 && port <= 65535)) {
+        state.settings.capture_port = 18080;
+      }
+      return ok({ ...state.settings });
+    }
+    return ok({ ...state.settings });
   }
   if (route === "/api/tutorial") {
     if (method === "POST") {

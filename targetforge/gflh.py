@@ -2,7 +2,8 @@
 
 对应 GUI 工具 GFLH-TargetTrain 的能力，接口见 ``targetforge/contract.md`` §3：
 
-* **capture**：``GFLProxy`` 监听 18080 抓 ``SYS_KEY_UPGRADE``（uid + sign）和
+* **capture**：``GFLProxy`` 监听可配置端口（默认 18080，勿用 8080）抓
+  ``SYS_KEY_UPGRADE``（uid + sign）和
   ``Index/index`` 的 ``targettrain_collect_user_info``（当前收藏标靶 enemies/orders），
   落 ``dataMiner/derived/targetforge/creds_latest.json``；抓齐后可自动停抓并恢复系统代理。
 * **plan**：纯函数。按 ``append / replace / rebuild / clear`` 四种语义算出
@@ -36,6 +37,7 @@ import importlib.util
 import io
 import json
 import random
+import socket
 import subprocess
 import threading
 import time
@@ -52,7 +54,9 @@ DATA_DIR = DERIVED / "targetforge"
 STATE_FILE = DERIVED / "target_injection_state.json"
 DEFAULT_CREDS = DATA_DIR / "creds_latest.json"
 
-CAPTURE_PORT = 18080          # 固定，别用 8080（另一个 bot 占用）
+CAPTURE_PORT = 18080          # 默认抓包端口（capture_start(port=...) 可配；别用 8080）
+PORT_MIN, PORT_MAX = 1, 65535
+RESERVED_CAPTURE_PORTS = {8080}   # 本机另一个 bot 占用，禁止用于抓包
 STATIC_KEY = "yundoudou"
 API_ADD = "Targettrain/addCollect"
 API_DEL = "Targettrain/delCollect"
@@ -741,6 +745,75 @@ _CAPTURE_LOCK = threading.RLock()
 _CAPTURE_GENERATION = 0          # 每次 start 自增；旧 watchdog 看到代数变化自行退出
 
 
+# ---------------------------------------------------------------------------
+# 端口工具：抓包端口可配置，系统代理地址一律由「当前会话端口」推导
+# ---------------------------------------------------------------------------
+def _validate_capture_port(port) -> tuple[int, str | None]:
+    """校验抓包端口：None / "" / 0 视为未指定 → 默认 18080。返回 (port, error)。"""
+    if port is None or (isinstance(port, str) and not port.strip()):
+        return CAPTURE_PORT, None
+    try:
+        value = int(str(port).strip())
+    except (TypeError, ValueError):
+        return CAPTURE_PORT, (f"端口不是整数：{port!r}"
+                              f"（请用 {PORT_MIN}~{PORT_MAX} 之间的数字，默认 {CAPTURE_PORT}）")
+    if value == 0:
+        return CAPTURE_PORT, None
+    if value in RESERVED_CAPTURE_PORTS:
+        return value, (f"端口 {value} 被本机另一个 bot 占用，不能用于抓包；"
+                       f"请用默认 {CAPTURE_PORT} 或其它未占用端口")
+    if not (PORT_MIN <= value <= PORT_MAX):
+        return value, (f"端口 {value} 越界（必须在 {PORT_MIN}~{PORT_MAX} 之间，"
+                       f"常用 {CAPTURE_PORT}）")
+    return value, None
+
+
+def _as_valid_port(port) -> int:
+    """把任意输入转成合法端口（不合法 → 默认 18080）。"""
+    value = _as_int(port, 0)
+    return value if PORT_MIN <= value <= PORT_MAX else CAPTURE_PORT
+
+
+def _recent_capture_port() -> int:
+    """最近一次抓包会话端口；没有会话时用默认 18080。保留端口 8080 不参与。"""
+    with _CAPTURE_LOCK:
+        port = _as_int(_CAPTURE.get("port"), 0)
+    if PORT_MIN <= port <= PORT_MAX and port not in RESERVED_CAPTURE_PORTS:
+        return port
+    return CAPTURE_PORT
+
+
+def _has_capture_session() -> bool:
+    """是否已经有过抓包会话（running / stopped / error 都算）。"""
+    with _CAPTURE_LOCK:
+        return _CAPTURE.get("state") in ("starting", "running", "stopped", "error")
+
+
+def _proxy_addr(port: int | None = None) -> str:
+    """系统代理地址：显式端口优先，否则最近会话端口 / 默认 18080。"""
+    return f"127.0.0.1:{_as_valid_port(port) if port is not None else _recent_capture_port()}"
+
+
+def _port_available(port: int) -> tuple[bool, str]:
+    """检查 127.0.0.1:port 能否 bind（bind 后立刻释放；单测会 mock）。"""
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    except OSError as exc:  # pragma: no cover - 极端环境
+        return False, f"无法创建 socket 检查端口 {port}：{exc}"
+    try:
+        probe.settimeout(1.0)
+        probe.bind(("127.0.0.1", int(port)))
+        return True, ""
+    except OSError as exc:
+        return False, (f"端口 {port} 无法监听：{exc}；可能被其它程序占用，"
+                       f"请换一个端口（默认 {CAPTURE_PORT}）")
+    finally:
+        try:
+            probe.close()
+        except OSError:  # pragma: no cover
+            pass
+
+
 def _cap_log(level: str, text: str) -> None:
     """写抓包日志（环形缓存 ≤200；自动把 sign 打码，避免泄漏）。"""
     level = str(level or "info").strip().lower()
@@ -785,6 +858,16 @@ def capture_status() -> dict:
             "error": _CAPTURE.get("error"),
             "logs": [dict(item) for item in (_CAPTURE.get("logs") or [])[-CAPTURE_LOG_LIMIT:]],
         }
+
+
+def _capture_fail(message: str) -> dict:
+    """把抓包状态置为 error 并返回 status（错误同时写 logs，方便前端展示）。"""
+    with _CAPTURE_LOCK:
+        _CAPTURE["state"] = "error"
+        _CAPTURE["error"] = str(message)
+        _CAPTURE["proxy_active"] = False
+    _cap_log("error", message)
+    return capture_status()
 
 
 def _derive_base_url(url: str) -> str | None:
@@ -868,15 +951,18 @@ def _on_capture_traffic(event_type, url, payload) -> None:
 
 
 def _call_set_windows_proxy(enable: bool, addr: str | None = None) -> bool:
-    """包装 gflzirc.set_windows_proxy；任何异常都吞掉返回 False。"""
+    """包装 gflzirc.set_windows_proxy；任何异常都吞掉返回 False。
+
+    ``enable=True`` 且没给 ``addr`` 时用最近会话端口（没有会话用默认 18080），
+    绝不把端口写死成 18080。
+    """
     try:
         gflzirc = _require_gflzirc()
     except RuntimeError:
         return False
     try:
         if enable:
-            return bool(gflzirc.set_windows_proxy(
-                True, addr or f"127.0.0.1:{CAPTURE_PORT}"))
+            return bool(gflzirc.set_windows_proxy(True, addr or _proxy_addr()))
         return bool(gflzirc.set_windows_proxy(False))
     except Exception:  # noqa: BLE001
         return False
@@ -945,57 +1031,63 @@ def _capture_watchdog(generation: int | None = None) -> None:
 
 def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
                   auto_restore_proxy: bool = True) -> dict:
-    """启动 18080 抓包代理（立即返回 status，不阻塞）。
+    """启动抓包代理（端口可配置，默认 18080；立即返回 status，不阻塞）。
 
+    * ``port``：监听端口。监听、系统代理地址、``status.port``、
+      ``capture_restart_game()`` 设置的系统代理、``capture_stop()`` 恢复代理，
+      全部用这一个端口（不会退回写死的 18080）。
     * ``set_proxy``：把系统代理指到 ``127.0.0.1:<port>``
     * ``auto_restore_proxy``：uid/sign + 靶机列表都抓到后，延迟几秒自动停并恢复系统代理
+
+    端口非法（越界 / 8080 保留）或被占用时返回 ``state="error"`` 且 ``error``
+    里有可操作提示，不会去改系统代理。
     """
     global _CAPTURE_GENERATION
-    port = _as_int(port, CAPTURE_PORT) or CAPTURE_PORT
+    port, port_error = _validate_capture_port(port)
     generation = _CAPTURE_GENERATION
     with _CAPTURE_LOCK:
         if _CAPTURE.get("state") in ("starting", "running"):
             _cap_log("warn", "抓包已经在运行，忽略重复启动")
             return capture_status()
         fresh = _new_capture_state()
-        fresh["port"] = port
+        fresh["port"] = port if PORT_MIN <= port <= PORT_MAX else CAPTURE_PORT
         fresh["auto_restore_proxy"] = bool(auto_restore_proxy)
         fresh["state"] = "starting"
         _CAPTURE.clear()
         _CAPTURE.update(fresh)
         _CAPTURE_GENERATION += 1
         generation = _CAPTURE_GENERATION
+    if port_error:
+        return _capture_fail(port_error)
+
     _cap_log("info", f"启动抓包代理，监听 127.0.0.1:{port}")
+    available, reason = _port_available(port)
+    if not available:
+        return _capture_fail(reason)
 
     try:
         gflzirc = _require_gflzirc()
     except RuntimeError as exc:
-        with _CAPTURE_LOCK:
-            _CAPTURE["state"] = "error"
-            _CAPTURE["error"] = str(exc)
-        _cap_log("error", str(exc))
-        return capture_status()
+        return _capture_fail(str(exc))
 
+    proxy_addr = _proxy_addr(port)
     if set_proxy:
-        proxy_ok = _call_set_windows_proxy(True, f"127.0.0.1:{port}")
+        proxy_ok = _call_set_windows_proxy(True, proxy_addr)
         with _CAPTURE_LOCK:
             _CAPTURE["system_proxy_on"] = bool(proxy_ok)
         if proxy_ok:
-            _cap_log("info", f"系统代理已指向 127.0.0.1:{port}")
+            _cap_log("info", f"系统代理已指向 {proxy_addr}")
         else:
-            _cap_log("warn", f"设置系统代理失败，请手动把系统代理指到 127.0.0.1:{port}")
+            _cap_log("warn", f"设置系统代理失败，请手动把系统代理指到 {proxy_addr}")
 
     proxy = gflzirc.GFLProxy(port, STATIC_KEY, _on_capture_traffic)
     try:
         proxy.start()
     except Exception as exc:  # noqa: BLE001
-        with _CAPTURE_LOCK:
-            _CAPTURE["state"] = "error"
-            _CAPTURE["error"] = f"{type(exc).__name__}: {exc}"
-        _cap_log("error", f"抓包代理启动失败：{exc}（端口 {port} 可能被占用）")
         if set_proxy:
             _restore_system_proxy()
-        return capture_status()
+        return _capture_fail(f"抓包代理启动失败：{type(exc).__name__}: {exc}"
+                             f"（端口 {port} 可能被占用）")
 
     with _CAPTURE_LOCK:
         _CAPTURE["proxy"] = proxy
@@ -1003,7 +1095,7 @@ def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
         _CAPTURE["state"] = "running"
         _CAPTURE["started_at"] = _now_iso()
         _CAPTURE["started_mono"] = time.monotonic()
-    _cap_log("info", "抓包已启动：请强制重启游戏并登录"
+    _cap_log("info", f"抓包已启动（端口 {port}）：请强制重启游戏并登录"
                      "（在登录/主界面会抓到 uid、sign 和当前收藏标靶）")
 
     if auto_restore_proxy:
@@ -1016,9 +1108,13 @@ def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
 
 
 def capture_stop() -> dict:
-    """停止抓包：停代理 → 恢复系统代理 → 写 creds_latest.json。未启动时安全返回。"""
+    """停止抓包：停代理 → 恢复系统代理 → 写 creds_latest.json。未启动时安全返回。
+
+    恢复系统代理是「关闭系统代理」（与本次会话用的端口无关，不需要端口）。
+    """
     with _CAPTURE_LOCK:
         state = _CAPTURE.get("state") or "idle"
+        port = _as_int(_CAPTURE.get("port"), CAPTURE_PORT)
         if state in ("idle", "stopped"):
             _cap_log("warn", "抓包未在运行，无需停止")
             return capture_status()
@@ -1048,21 +1144,31 @@ def capture_stop() -> dict:
             _CAPTURE["creds_path"] = creds_path
         _CAPTURE["stopping"] = False
     if creds_path:
-        _cap_log("info", f"抓包已停止，凭证写入 {creds_path}")
+        _cap_log("info", f"抓包已停止（端口 {port}），凭证写入 {creds_path}")
     else:
-        _cap_log("warn", "抓包已停止，但没抓到完整凭证（uid/sign），未写 creds_latest.json")
+        _cap_log("warn", f"抓包已停止（端口 {port}），但没抓到完整凭证"
+                         "（uid/sign），未写 creds_latest.json")
     return capture_status()
 
 
 def capture_restart_game() -> dict:
-    """抓包运行时：设系统代理 → 强杀游戏 → steam 重启游戏（让流量走代理登录）。"""
+    """抓包运行时：设系统代理 → 强杀游戏 → steam 重启游戏（让流量走代理登录）。
+
+    必须已有活跃抓包会话（``state == "running"``），否则返回清晰错误；
+    系统代理地址用当前会话端口（``capture_start(port=X)`` 的 X）。
+    """
     with _CAPTURE_LOCK:
-        running = _CAPTURE.get("state") == "running"
-        port = int(_CAPTURE.get("port") or CAPTURE_PORT)
-    addr = f"127.0.0.1:{port}"
-    if not running:
-        return {"ok": False, "error": "抓包未启动", "steps": [],
-                "hint": "先在登录抓取页点「开始抓取」，再重启游戏"}
+        state = _CAPTURE.get("state") or "idle"
+        port = _as_int(_CAPTURE.get("port"), CAPTURE_PORT)
+    if state != "running":
+        return {
+            "ok": False,
+            "state": state,
+            "error": "没有活跃的抓包会话（未启动或已停止）",
+            "steps": [],
+            "hint": f"先用端口 {port} 点「开始抓取」，再点「设置代理并重启游戏」",
+        }
+    addr = _proxy_addr(port)
     steps: list[str] = []
     proxy_ok = _call_set_windows_proxy(True, addr)
     with _CAPTURE_LOCK:
@@ -1595,15 +1701,28 @@ def restart_game(*, wait_ready: bool = True) -> dict:
     }
 
 
-def set_system_proxy(enable: bool, addr: str = f"127.0.0.1:{CAPTURE_PORT}") -> dict:
-    """开关 Windows 系统代理（包装 gflzirc.set_windows_proxy）。"""
+def set_system_proxy(enable: bool, addr: str | None = None) -> dict:
+    """开关 Windows 系统代理（包装 gflzirc.set_windows_proxy）。
+
+    ``addr`` **显式优先**（例如 ``capture_start(port=18093)`` 后传
+    ``127.0.0.1:18093``）；没给 addr 时用最近一次抓包会话端口，没有会话时用
+    默认 ``CAPTURE_PORT``（18080）——不会无条件写死 18080。
+    """
     if enable:
-        address = str(addr or f"127.0.0.1:{CAPTURE_PORT}")
+        explicit = str(addr).strip() if addr is not None else ""
+        if explicit:
+            address, source = explicit, "explicit"
+        else:
+            address = _proxy_addr()
+            source = "session" if _has_capture_session() else "default"
         ok = _call_set_windows_proxy(True, address)
+        port = _as_int(address.rsplit(":", 1)[-1], 0)
         return {
             "ok": bool(ok),
             "enabled": bool(ok),
             "addr": address,
+            "port": port if PORT_MIN <= port <= PORT_MAX else None,
+            "source": source,
             "system_proxy": _read_system_proxy(),
             "hint": "" if ok else "设置失败：确认 gflzirc 可用；也可以手动改系统代理",
         }
@@ -1612,6 +1731,8 @@ def set_system_proxy(enable: bool, addr: str = f"127.0.0.1:{CAPTURE_PORT}") -> d
         "ok": bool(ok),
         "enabled": False,
         "addr": None,
+        "port": None,
+        "source": "disable",
         "system_proxy": _read_system_proxy(),
         "hint": "" if ok else "关闭失败：请手动关闭系统代理",
     }

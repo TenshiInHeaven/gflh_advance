@@ -1,6 +1,6 @@
 /* views/overview.js —— 总览：当前任务状态 / 快捷入口 / 使用流程 4 步图 */
-import { store, refreshHealth, refreshSequence, tryRefreshCurrent, loadChapters, sequenceStats } from "../store.js";
-import { icon, pageHeadHtml, sectionHeadHtml, toastErr, handleViewError, statusPill } from "../ui.js";
+import { store, refreshHealth, refreshSequence, tryRefreshCurrent, loadChapters, sequenceStats, hasBaseData } from "../store.js";
+import { icon, pageHeadHtml, sectionHeadHtml, toastErr, handleViewError, statusPill, butterflySvg } from "../ui.js";
 import { esc, fmtNum, fmtTime, fmtDate, timeAgo, navigate, fmtDuration } from "../util.js";
 import { openExecuteModal } from "../components/execute-modal.js";
 import { FLOW_STEPS } from "../tutorial-data.js";
@@ -30,7 +30,7 @@ function gameOf(health) {
 function radarSvg() {
   const rings = [108, 86, 64, 42].map(
     (r) =>
-      `<circle cx="125" cy="125" r="${r}" fill="none" stroke="rgba(76,201,240,${(0.28 - r * 0.0018).toFixed(3)})" stroke-width="1"/>`,
+      `<circle cx="125" cy="125" r="${r}" fill="none" stroke="rgba(94,225,255,${(0.28 - r * 0.0018).toFixed(3)})" stroke-width="1"/>`,
   );
   const ticks = [];
   for (let i = 0; i < 24; i += 1) {
@@ -47,35 +47,41 @@ function radarSvg() {
     <svg viewBox="0 0 250 250" aria-hidden="true">
       <defs>
         <linearGradient id="radarSweepGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="rgba(76,201,240,0)"/>
-          <stop offset="72%" stop-color="rgba(76,201,240,.16)"/>
-          <stop offset="100%" stop-color="rgba(76,201,240,.5)"/>
+          <stop offset="0%" stop-color="rgba(94,225,255,0)"/>
+          <stop offset="72%" stop-color="rgba(94,225,255,.16)"/>
+          <stop offset="100%" stop-color="rgba(94,225,255,.5)"/>
         </linearGradient>
         <radialGradient id="radarCenter" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="rgba(245,165,36,.28)"/>
-          <stop offset="100%" stop-color="rgba(245,165,36,0)"/>
+          <stop offset="0%" stop-color="rgba(94,225,255,.28)"/>
+          <stop offset="100%" stop-color="rgba(94,225,255,0)"/>
         </radialGradient>
       </defs>
       ${rings}
       ${ticks}
       ${cross}
-      <circle cx="125" cy="125" r="116" fill="none" stroke="rgba(245,165,36,.25)" stroke-width="1" stroke-dasharray="2 7"/>
+      <circle cx="125" cy="125" r="116" fill="none" stroke="rgba(94,225,255,.25)" stroke-width="1" stroke-dasharray="2 7"/>
       <g class="radar-sweep">
         <path d="M125 125 L241 125 A116 116 0 0 0 205 43 Z" fill="url(#radarSweepGrad)"/>
-        <line x1="125" y1="125" x2="241" y2="125" stroke="rgba(76,201,240,.55)" stroke-width="1.2"/>
+        <line x1="125" y1="125" x2="241" y2="125" stroke="rgba(94,225,255,.55)" stroke-width="1.2"/>
       </g>
       <circle cx="125" cy="125" r="16" fill="url(#radarCenter)"/>
-      <circle cx="125" cy="125" r="3" fill="#f5a524"/>
-      <circle class="radar-blip" cx="172" cy="92" r="2.2" fill="#4cc9f0"/>
-      <circle class="radar-blip" cx="88" cy="158" r="2.2" fill="#f5a524"/>
-      <circle class="radar-blip" cx="158" cy="168" r="2.2" fill="#4caf7d"/>
-      <circle class="radar-blip" cx="196" cy="143" r="2.2" fill="#4cc9f0"/>
+      <circle cx="125" cy="125" r="3" fill="#5ee1ff"/>
+      <circle class="radar-blip" cx="172" cy="92" r="2.2" fill="#4f8cff"/>
+      <circle class="radar-blip" cx="88" cy="158" r="2.2" fill="#5ee1ff"/>
+      <circle class="radar-blip" cx="158" cy="168" r="2.2" fill="#62d8a5"/>
+      <circle class="radar-blip" cx="196" cy="143" r="2.2" fill="#4f8cff"/>
       <text x="125" y="270" text-anchor="middle" fill="rgba(255,255,255,.28)" font-size="8" font-family="Consolas,monospace" letter-spacing="3">TARGET SCAN · STC</text>
     </svg>
   `;
 }
 
-export async function render(root) {
+export async function render(root, options = {}) {
+  const { skipRefresh = false } = options;
+  // 视图标记：路由切走后旧回调据此放弃回写（防 overview 覆盖其它页面）
+  root.dataset.view = "overview";
+  root.classList.add("view-overview");
+  // 自检用：每次真正渲染计数，供 Playwright 断言「30s 内不重复渲染」
+  root.dataset.overviewRender = String((Number(root.dataset.overviewRender) || 0) + 1);
   const health = store.health;
   const seq = store.sequence;
   const current = store.current;
@@ -161,6 +167,7 @@ export async function render(root) {
   ];
 
   root.innerHTML = `
+    <div data-overview-root class="overview-page">
     ${pageHeadHtml({
       crumbs: [{ label: "总览" }],
       title: "靶机工坊 · 总览",
@@ -195,7 +202,12 @@ export async function render(root) {
         </div>
       </div>
       <div class="hero-right">
-        <div class="radar">${radarSvg()}</div>
+        <div class="radar">
+          ${radarSvg()}
+          <div class="hero-butterfly">${butterflySvg({ size: 152, className: "float-slow" })}</div>
+        </div>
+        <div class="hero-bf-a">${butterflySvg({ size: 34, opacity: 0.55, className: "float" })}</div>
+        <div class="hero-bf-b">${butterflySvg({ size: 26, opacity: 0.45, className: "float-alt" })}</div>
       </div>
     </section>
 
@@ -295,40 +307,52 @@ export async function render(root) {
         <button class="quick-card" type="button" data-nav="/chapters">
           <span class="qc-ico">${icon("map", 19)}</span>
           <span class="qc-body"><span class="qc-title">关卡图鉴</span><span class="qc-desc">7 个分组 · 按章节浏览关卡队伍</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
         <button class="quick-card cyan" type="button" data-nav="/species">
           <span class="qc-ico">${icon("crosshair", 19)}</span>
           <span class="qc-body"><span class="qc-title">怪种图鉴</span><span class="qc-desc">264 个怪种 · 按阵营 / 分类筛选</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
         <button class="quick-card violet" type="button" data-nav="/sequence">
           <span class="qc-ico">${icon("layers", 19)}</span>
           <span class="qc-body"><span class="qc-title">序列编排</span><span class="qc-desc">拖拽排序 · n/35 进度 · 三种执行模式</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
         <button class="quick-card green" type="button" data-nav="/capture">
           <span class="qc-ico">${icon("key", 19)}</span>
           <span class="qc-body"><span class="qc-title">登录抓取</span><span class="qc-desc">抓 uid / sign · 读取当前靶机</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
         <button class="quick-card" type="button" data-act="execute">
           <span class="qc-ico">${icon("play", 19)}</span>
           <span class="qc-body"><span class="qc-title">执行注入</span><span class="qc-desc">预览计划 → 执行 → 大退重登</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
         <button class="quick-card cyan" type="button" data-nav="/tutorial">
           <span class="qc-ico">${icon("book", 19)}</span>
           <span class="qc-body"><span class="qc-title">使用教程</span><span class="qc-desc">概念 / 流程 / 常见问题 / 安全须知</span></span>
+          <span class="qc-bf">${butterflySvg({ size: 26 })}</span>
           <span class="qc-arrow">${icon("chevronRight", 16)}</span>
         </button>
       </div>
     </section>
+    </div>
   `;
 
   bindOverviewEvents(root);
 
-  // 异步刷新数据后重绘（若用户已切走则跳过）
+  // 关键：这里只允许「最多一次」异步刷新 + 一次重渲染，绝不递归自渲染。
+  // 1) boot 阶段已加载过基础数据（hasBaseData）时直接跳过，避免首屏重复请求；
+  // 2) 重渲染前校验 #view 当前仍是 overview（路由切走后旧回调不得覆盖别的页面）。
+  if (skipRefresh) return;
+  if (hasBaseData()) return;
+
   const token = {};
   root._tfToken = token;
   Promise.allSettled([
@@ -340,12 +364,13 @@ export async function render(root) {
     }),
   ]).then((results) => {
     if (!root.isConnected || root._tfToken !== token) return;
+    if (root.dataset.view !== "overview") return; // 已切到别的路由，放弃回写
     const fatal = results.find((item) => item.status === "rejected" && item.reason?.status === 503);
     if (fatal) {
-      handleViewError(root, fatal.reason, () => render(root));
+      handleViewError(root, fatal.reason, () => render(root, { skipRefresh: true }));
       return;
     }
-    render(root);
+    render(root, { skipRefresh: true });
   });
 }
 
@@ -355,7 +380,7 @@ function bindOverviewEvents(root) {
     button.disabled = true;
     try {
       await Promise.allSettled([refreshHealth(), refreshSequence(), tryRefreshCurrent()]);
-      await render(root);
+      await render(root, { skipRefresh: true });
     } finally {
       button.disabled = false;
     }

@@ -204,7 +204,7 @@ export function openTeamDrawer(teamId, options = {}) {
   footEl.querySelector('[data-act="close"]')?.addEventListener("click", closeBtn);
 
   (async () => {
-    headEl.style.setProperty("--fc", "#f5a524");
+    headEl.style.setProperty("--fc", "#5ee1ff");
     try {
       const detail = await api.team(teamId);
       headEl.innerHTML = teamDetailHeadHtml(detail);

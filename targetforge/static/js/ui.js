@@ -64,6 +64,33 @@ export function icon(name, size = 16, cls = "") {
   return `<svg class="ico ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
 
+/* ------------------------------------------------------------------
+ * 蓝蝴蝶（手写 inline SVG，主题装饰：logo / hero / 空态 / 加载 / hover）
+ * ------------------------------------------------------------------ */
+export function butterflySvg({ size = 64, className = "", opacity = 1, style = "" } = {}) {
+  const px = typeof size === "number" ? `${size}px` : size;
+  return `<svg class="butterfly ${className}" width="${px}" height="${px}" viewBox="0 0 64 64" fill="none" aria-hidden="true" style="--bf-op:${opacity};${style}">
+    <path class="bf-upper" d="M31.4 28.6C27.2 16.8 16.4 7.2 8.8 11.2C3 14.3 7.3 25.8 21.4 30.4C25.4 31.7 28.8 31 31.4 28.6Z"/>
+    <path class="bf-upper" d="M32.6 28.6C36.8 16.8 47.6 7.2 55.2 11.2C61 14.3 56.7 25.8 42.6 30.4C38.6 31.7 35.2 31 32.6 28.6Z"/>
+    <path class="bf-lower" d="M31.2 33.4C24.9 34.4 14.2 42.6 17.6 50.2C20.7 57.1 29.4 49.4 31.9 39.4Z"/>
+    <path class="bf-lower" d="M32.8 33.4C39.1 34.4 49.8 42.6 46.4 50.2C43.3 57.1 34.6 49.4 32.1 39.4Z"/>
+    <path class="bf-vein" d="M31 29.5C26 24 18.5 17.6 11.5 14.6"/>
+    <path class="bf-vein" d="M33 29.5C38 24 45.5 17.6 52.5 14.6"/>
+    <path class="bf-vein" d="M31.4 35.6C27.6 38.4 22 44.4 20.4 48"/>
+    <path class="bf-vein" d="M32.6 35.6C36.4 38.4 42 44.4 43.6 48"/>
+    <circle class="bf-spot" cx="15.5" cy="20" r="2.1"/>
+    <circle class="bf-spot" cx="48.5" cy="20" r="2.1"/>
+    <circle class="bf-spot" cx="22.8" cy="43.6" r="1.4"/>
+    <circle class="bf-spot" cx="41.2" cy="43.6" r="1.4"/>
+    <ellipse class="bf-body" cx="32" cy="36.5" rx="2.5" ry="12.6"/>
+    <circle class="bf-body" cx="32" cy="21.6" r="2.6"/>
+    <path class="bf-antenna" d="M30.6 19.6C28.3 15.9 25.4 13.6 22.2 12.7"/>
+    <path class="bf-antenna" d="M33.4 19.6C35.7 15.9 38.6 13.6 41.8 12.7"/>
+    <circle class="bf-tip" cx="21.6" cy="12.4" r="1.1"/>
+    <circle class="bf-tip" cx="42.4" cy="12.4" r="1.1"/>
+  </svg>`;
+}
+
 /* ================================================================== */
 /* Toast                                                              */
 /* ================================================================== */
@@ -319,7 +346,7 @@ export function showBuildOverlay(detail = "", onReady = null) {
     buildOverlay.className = "build-overlay";
     buildOverlay.innerHTML = `
       <div class="build-card">
-        <div class="build-ring">${icon("database", 26)}</div>
+        <div class="build-ring">${butterflySvg({ size: 36, className: "glow float" })}</div>
         <h3>正在解析本机数据…</h3>
         <p>首次启动需要读取 STC / client_text / enemy_full_model，<br>通常 20~60 秒；页面会自动重试，无需刷新。</p>
         <div class="build-log"></div>
@@ -398,6 +425,8 @@ export function skeletonRows(count = 6) {
 export function emptyState({ iconName = "box", title = "暂无数据", desc = "", actionText = "", actionId = "", extra = "" } = {}) {
   return `
     <div class="empty">
+      <div class="em-butterfly">${butterflySvg({ size: 138, opacity: 0.16 })}</div>
+      <div class="em-butterfly em-butterfly-sm">${butterflySvg({ size: 54, opacity: 0.1 })}</div>
       <div class="em-ico">${icon(iconName, 25)}</div>
       <h4>${esc(title)}</h4>
       ${desc ? `<p>${esc(desc)}</p>` : ""}

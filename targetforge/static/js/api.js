@@ -16,6 +16,30 @@ export class ApiError extends Error {
   }
 }
 
+/* 抓包端口是运行时设置（默认 18080，可在登录抓取页修改，持久化到 /api/settings） */
+const runtime = { capturePort: 18080, capturePortLoaded: false };
+
+export function setCapturePort(port) {
+  const value = Number(port);
+  if (Number.isInteger(value) && value >= 1024 && value <= 65535) {
+    runtime.capturePort = value;
+    return value;
+  }
+  return runtime.capturePort;
+}
+
+export function getCapturePort() {
+  return runtime.capturePort;
+}
+
+export function markCapturePortLoaded() {
+  runtime.capturePortLoaded = true;
+}
+
+export function isCapturePortLoaded() {
+  return runtime.capturePortLoaded;
+}
+
 function buildQuery(params) {
   const search = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -108,7 +132,13 @@ export const api = {
   cancelJob: (jobId) => post(`/api/jobs/${encodeURIComponent(jobId)}/cancel`),
 
   captureStatus: () => get("/api/capture/status"),
-  captureStart: (body = {}) => post("/api/capture/start", body),
+  captureStart: (body = {}) =>
+    post("/api/capture/start", {
+      port: runtime.capturePort,
+      set_proxy: true,
+      auto_restore_proxy: true,
+      ...body,
+    }),
   captureStop: () => post("/api/capture/stop", {}),
   captureRestartGame: () => post("/api/capture/restart_game", {}),
   restartGame: (body = { wait_ready: true }) => post("/api/game/restart", body),
@@ -120,7 +150,7 @@ export const api = {
 
   catalogRefresh: () => post("/api/catalog/refresh", {}),
 
-  setSystemProxy: (enable, addr = "127.0.0.1:18080") =>
+  setSystemProxy: (enable, addr = `127.0.0.1:${runtime.capturePort}`) =>
     post("/api/system/proxy", { enable, addr }),
 };
 

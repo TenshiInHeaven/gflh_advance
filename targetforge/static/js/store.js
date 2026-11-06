@@ -14,6 +14,7 @@ const state = {
   settings: null,
   seqOpen: true,
   healthTimer: 0,
+  currentFetched: false,
   cleanupFns: [],
 };
 
@@ -26,6 +27,7 @@ export const store = {
   get tutorial() { return state.tutorial; },
   get settings() { return state.settings; },
   get seqOpen() { return state.seqOpen; },
+  get currentFetched() { return state.currentFetched; },
 
   on(event, fn) {
     return emitter.on(event, fn);
@@ -108,9 +110,18 @@ export async function loadChapters(force = false) {
   return state.chapters;
 }
 
+let sequenceInflight = null;
+
+/** 取序列（并发去重：boot 与右侧序列面板同时初始化时只发一次请求） */
 export async function refreshSequence() {
-  const sequence = await api.sequence();
-  return store.setSequence(sequence);
+  if (sequenceInflight) return sequenceInflight;
+  sequenceInflight = api
+    .sequence()
+    .then((sequence) => store.setSequence(sequence))
+    .finally(() => {
+      sequenceInflight = null;
+    });
+  return sequenceInflight;
 }
 
 export async function refreshCurrent(source = "auto") {
@@ -206,7 +217,14 @@ export async function tryRefreshCurrent() {
     if (err.status === 503) return null;
     if (err.status >= 400 && err.status < 500) return null;
     return null;
+  } finally {
+    state.currentFetched = true;
   }
+}
+
+/** 基础数据是否都已有过一次加载（用于避免页面自己重复请求） */
+export function hasBaseData() {
+  return Boolean(state.health && state.sequence && state.chapters && state.currentFetched);
 }
 
 export function handleError(err) {

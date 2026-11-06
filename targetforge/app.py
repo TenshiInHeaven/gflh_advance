@@ -27,7 +27,7 @@ STATIC_DIR = APP_DIR / "static"
 DATA_DIR = ROOT / "dataMiner" / "derived" / "targetforge"
 STATE_FILE = DATA_DIR / "state.json"
 MAX_TARGETS = 35
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -488,13 +488,21 @@ def api_current(qs: dict) -> dict:
 def api_capture_start(body: dict) -> dict:
     gflh = _gflh_module()
     settings = state_load().get("settings") or {}
-    port = int(body.get("port") or settings.get("capture_port") or 18080)
+    port = int(body.get("port") or settings.get("capture_port") or gflh.CAPTURE_PORT)
     return gflh.capture_start(
         port=port,
         set_proxy=bool(body.get("set_proxy", True)),
         auto_restore_proxy=bool(body.get("auto_restore_proxy",
                                        settings.get("auto_restore_proxy", True))),
     )
+
+
+def _system_proxy_body(body: dict) -> dict:
+    """系统代理开关：addr 为空时交给 gflh 用「最近一次抓包端口」，避免写死 18080。"""
+    gflh = _gflh_module()
+    raw_addr = body.get("addr")
+    addr = str(raw_addr).strip() if raw_addr else None
+    return gflh.set_system_proxy(bool(body.get("enable")), addr)
 
 
 def api_catalog_refresh() -> dict:
@@ -611,8 +619,7 @@ POST_ROUTES = [
     (re.compile(r"^/api/creds/load$"), lambda ctx: api_creds_load(ctx["json"])),
     (re.compile(r"^/api/game/restart$"), lambda ctx: _gflh_module().restart_game(
         wait_ready=bool(ctx["json"].get("wait_ready", True)))),
-    (re.compile(r"^/api/system/proxy$"), lambda ctx: _gflh_module().set_system_proxy(
-        bool(ctx["json"].get("enable")), str(ctx["json"].get("addr") or "127.0.0.1:18080"))),
+    (re.compile(r"^/api/system/proxy$"), lambda ctx: _system_proxy_body(ctx["json"])),
     (re.compile(r"^/api/catalog/refresh$"), lambda ctx: api_catalog_refresh()),
     (re.compile(r"^/api/tutorial$"), lambda ctx: api_tutorial_post(ctx["json"])),
     (re.compile(r"^/api/settings$"), lambda ctx: api_settings_post(ctx["json"])),

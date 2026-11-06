@@ -1,5 +1,7 @@
-/* views/capture.js —— 登录抓取：开始抓取 / 设置代理并重启游戏 / 实时日志 / 凭证 / 当前靶机 */
-import { api } from "../api.js";
+/* views/capture.js —— 登录抓取：开始抓取 / 设置代理并重启游戏 / 实时日志 / 凭证 / 当前靶机
+ * 抓包端口可配置（默认 18080，范围 1024-65535，持久化到 /api/settings）。
+ */
+import { api, setCapturePort, getCapturePort, markCapturePortLoaded } from "../api.js";
 import { store, refreshHealth, refreshCurrent, tryRefreshCurrent } from "../store.js";
 import {
   icon,
@@ -13,6 +15,7 @@ import {
   setBusy,
   emptyState,
   logLineHtml,
+  butterflySvg,
 } from "../ui.js";
 import { esc, fmtNum, fmtPower, fmtTime, fmtDuration, timeAgo, navigate } from "../util.js";
 
@@ -24,6 +27,10 @@ const STATE_LABEL = {
   error: "错误",
 };
 
+const PORT_MIN = 1024;
+const PORT_MAX = 65535;
+const DEFAULT_PORT = 18080;
+
 const teamCache = new Map();
 let rootEl = null;
 let pollTimer = 0;
@@ -31,12 +38,23 @@ let captureStatus = null;
 let currentData = null;
 let credsData = null;
 let targetFillToken = 0;
+let currentPort = getCapturePort();
+let portSaveBusy = false;
 
 function cleanup() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = 0;
   }
+}
+
+function validPort(value) {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= PORT_MIN && port <= PORT_MAX ? port : null;
+}
+
+function proxyAddr(port = currentPort) {
+  return `127.0.0.1:${port}`;
 }
 
 export async function render(root) {
@@ -46,13 +64,14 @@ export async function render(root) {
   currentData = null;
   credsData = null;
   targetFillToken += 1;
+  currentPort = getCapturePort();
 
   root.innerHTML = `
     ${pageHeadHtml({
       crumbs: [{ label: "登录抓取" }],
       title: "登录抓取",
       badge: "CAPTURE",
-      sub: "通过本地抓包代理获取当前登录的 uid / sign 与游戏内收藏标靶列表。抓包端口固定 18080，不要使用 8080。抓到后可以开始编排并执行注入。",
+      sub: `通过本地抓包代理获取当前登录的 uid / sign 与游戏内收藏标靶列表。抓包端口默认 <b class="mono-inline" data-port>${currentPort}</b>（可配置，范围 ${PORT_MIN}-${PORT_MAX}）；8080 常被其它程序占用，建议避开。`,
       actions: `
         <button class="btn btn-ghost" type="button" data-act="refresh">${icon("refresh", 14)} 刷新状态</button>
         <button class="btn btn-cyan" type="button" data-act="start">${icon("key", 14)} 开始抓取</button>
@@ -62,12 +81,27 @@ export async function render(root) {
     <div class="capture-cols">
       <div>
         <div class="capture-panel" data-capture-panel>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
             <span class="cap-state" data-cap-state><span class="dot"></span><span data-cap-state-text>读取中…</span></span>
-            <span class="mono-inline text-mute" style="font-size:10.5px">PORT <b data-cap-port>18080</b> · 代理固定 18080</span>
+            <span class="mono-inline text-mute" style="font-size:10.5px">PORT <b data-cap-port>${currentPort}</b> · 本地代理</span>
             <span style="flex:1"></span>
             <span class="badge mono" data-cap-elapsed>—</span>
           </div>
+
+          <div class="port-config">
+            <div class="pc-head">
+              ${icon("wifi", 13)}
+              <span class="pc-title">抓包端口</span>
+              <span class="badge mono" data-port-badge>${currentPort}</span>
+              <span class="pc-tip">默认 ${DEFAULT_PORT}，可配置（${PORT_MIN}-${PORT_MAX}）；8080 常被其它程序占用，建议保持默认 / 按需修改</span>
+            </div>
+            <div class="pc-row">
+              <input type="number" class="port-input" data-port-input min="${PORT_MIN}" max="${PORT_MAX}" step="1" value="${currentPort}" aria-label="抓包端口" />
+              <button class="btn btn-sm btn-cyan" type="button" data-act="save-port">${icon("check", 12)} 保存端口</button>
+              <span class="pc-hint" data-port-hint>修改后点保存，下一次「开始抓取」生效</span>
+            </div>
+          </div>
+
           <div class="capture-status-grid">
             <div class="cap-stat"><div class="cs-label">${icon("users", 10)} UID</div><div class="cs-value" data-cap-uid>—</div></div>
             <div class="cap-stat"><div class="cs-label">${icon("lock", 10)} SIGN</div><div class="cs-value" data-cap-sign>—</div></div>
@@ -79,7 +113,7 @@ export async function render(root) {
               <span class="ws-num">1</span>
               <div class="ws-body">
                 <div class="ws-title">开始抓取 <span class="badge mono">POST /api/capture/start</span></div>
-                <div class="ws-desc">启动本地抓包代理并监听 18080 端口。</div>
+                <div class="ws-desc">启动本地抓包代理并监听 <b class="mono-inline" data-port>${currentPort}</b> 端口。</div>
                 <div class="ws-action"><button class="btn btn-primary btn-sm" type="button" data-act="start">${icon("play", 12)} 开始抓取</button></div>
               </div>
             </div>
@@ -87,7 +121,7 @@ export async function render(root) {
               <span class="ws-num">2</span>
               <div class="ws-body">
                 <div class="ws-title">设置代理并重启游戏</div>
-                <div class="ws-desc">让系统代理指向 127.0.0.1:18080，然后强杀并重启游戏。</div>
+                <div class="ws-desc">让系统代理指向 <b class="mono-inline" data-proxy-addr>${proxyAddr()}</b>，然后强杀并重启游戏。</div>
                 <div class="ws-action"><button class="btn btn-cyan btn-sm" type="button" data-act="restart-game">${icon("refresh", 12)} 设置代理并重启游戏</button></div>
                 <div class="ws-note">${icon("info", 11)} 会强杀游戏进程，请先回到安全界面；本操作需要二次确认。</div>
               </div>
@@ -127,6 +161,7 @@ export async function render(root) {
             <button class="btn" type="button" data-act="refresh">${icon("refresh", 13)} 刷新状态</button>
           </div>
           <div class="cap-hint" data-cap-hint>${icon("info", 12)} 提示：抓取期间游戏可能提示网络异常，属正常现象；抓完「完成并关闭代理」即可恢复。</div>
+          <div class="param-note" style="margin-top:10px">${icon("info", 12)} 顶栏显示的游戏进程 PID 由 <b class="mono-inline">tasklist</b> 按进程名 <b class="mono-inline">GrilsFrontLine.exe</b> 搜索得到，仅在本机展示，不会上传。</div>
         </div>
 
         <div class="capture-panel mt16">
@@ -143,15 +178,15 @@ export async function render(root) {
         <div class="terminal">
           <div class="terminal-head">
             <span class="dots"><i></i><i></i><i></i></span>
-            <span>CAPTURE STREAM · 127.0.0.1:18080</span>
+            <span>CAPTURE STREAM · <b class="mono-inline" data-proxy-addr>${proxyAddr()}</b></span>
             <span class="th-right"><span class="dot" data-term-dot></span><span data-term-state>等待开始</span></span>
           </div>
           <div class="terminal-body" data-cap-logs>
             <div class="log-idle">
-              <div class="li-prompt">$</div>
+              <div class="li-prompt">${icon("terminal", 15)}</div>
               <div class="li-body">
                 <div class="li-title">等待开始抓取<span class="cursor-blink" style="margin-left:6px"></span></div>
-                <div class="li-line"># 本地抓包代理 · 127.0.0.1:18080（固定端口，勿用 8080）</div>
+                <div class="li-line"># 本地抓包代理 · <b data-proxy-addr>${proxyAddr()}</b>（端口可配置，默认 ${DEFAULT_PORT}）</div>
                 <div class="li-line"># 步骤：开始抓取 → 设置代理并重启游戏 → 在游戏里登录到主界面</div>
                 <div class="li-line"># 抓到 uid / sign / 当前靶机后，点「完成并关闭代理」写盘</div>
               </div>
@@ -174,7 +209,9 @@ export async function render(root) {
   `;
 
   bindShellEvents(root);
-  await Promise.allSettled([refreshStatus(), loadCreds(), loadCurrent()]);
+  bindPortEvents(root);
+  await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadCurrent()]);
+  applyPortUi();
 
   pollTimer = setInterval(() => {
     if (!rootEl || !rootEl.isConnected) {
@@ -186,13 +223,109 @@ export async function render(root) {
   store.registerCleanup(cleanup);
 }
 
+/* ------------------------------------------------------------------ */
+/* 端口配置                                                           */
+/* ------------------------------------------------------------------ */
+async function loadSettings() {
+  try {
+    const settings = await api.settings();
+    const port = validPort(settings?.capture_port);
+    if (port) {
+      currentPort = setCapturePort(port);
+    }
+    markCapturePortLoaded();
+  } catch {
+    /* 设置读取失败时保持默认端口 */
+  }
+  applyPortUi();
+}
+
+function applyPortUi() {
+  if (!rootEl || !rootEl.isConnected) return;
+  rootEl.querySelectorAll("[data-port]").forEach((node) => {
+    node.textContent = String(currentPort);
+  });
+  rootEl.querySelectorAll("[data-port-badge]").forEach((node) => {
+    node.textContent = String(currentPort);
+  });
+  rootEl.querySelectorAll("[data-proxy-addr]").forEach((node) => {
+    node.textContent = proxyAddr();
+  });
+  const input = rootEl.querySelector("[data-port-input]");
+  if (input && document.activeElement !== input && !isCaptureActive()) {
+    input.value = String(currentPort);
+  }
+  const hint = rootEl.querySelector("[data-port-hint]");
+  if (hint) {
+    hint.innerHTML = `当前端口 <b class="mono-inline">${currentPort}</b> · 修改后点保存，下一次「开始抓取」生效`;
+  }
+}
+
+function isCaptureActive() {
+  const state = captureStatus?.state;
+  return state === "running" || state === "starting";
+}
+
+function bindPortEvents(root) {
+  const input = root.querySelector("[data-port-input]");
+  if (!input) return;
+  const validate = () => {
+    const port = validPort(input.value);
+    if (port === null) {
+      input.classList.add("invalid");
+      const hint = root.querySelector("[data-port-hint]");
+      if (hint) hint.innerHTML = `<span class="text-red">端口需为 ${PORT_MIN}-${PORT_MAX} 的整数</span>`;
+      return null;
+    }
+    input.classList.remove("invalid");
+    return port;
+  };
+  input.addEventListener("input", validate);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      root.querySelector('[data-act="save-port"]')?.click();
+    }
+  });
+  root.querySelector('[data-act="save-port"]')?.addEventListener("click", async (event) => {
+    if (portSaveBusy) return;
+    const port = validate();
+    if (port === null) {
+      toastErr("端口不合法", `请输入 ${PORT_MIN}-${PORT_MAX} 之间的整数。`);
+      return;
+    }
+    const button = event.currentTarget;
+    portSaveBusy = true;
+    setBusy(button, true, "保存中…");
+    try {
+      await api.saveSettings({ capture_port: port });
+      currentPort = setCapturePort(port);
+      applyPortUi();
+      if (isCaptureActive() && captureStatus?.port !== port) {
+        toast({ title: `端口已保存为 ${port}`, text: "当前抓取仍运行在旧端口，下次开始抓取时生效。", type: "warn" });
+      } else {
+        toastOk(`抓包端口已保存为 ${port}`, "下一次「开始抓取」将使用该端口。");
+      }
+    } catch (err) {
+      toastErr("保存失败", err.message);
+    } finally {
+      portSaveBusy = false;
+      setBusy(button, false);
+      applyPortUi();
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* 事件绑定                                                           */
+/* ------------------------------------------------------------------ */
 function bindShellEvents(root) {
   root.querySelectorAll('[data-act="refresh"]').forEach((button) =>
     button.addEventListener("click", async (event) => {
       const target = event.currentTarget;
       setBusy(target, true, "刷新中…");
       try {
-        await Promise.allSettled([refreshStatus(), loadCreds(), loadCurrent(), refreshHealth()]);
+        await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadCurrent(), refreshHealth()]);
       } finally {
         setBusy(target, false);
       }
@@ -201,11 +334,28 @@ function bindShellEvents(root) {
   root.querySelectorAll('[data-act="start"]').forEach((button) =>
     button.addEventListener("click", async (event) => {
       const target = event.currentTarget;
+      const inputPort = validPort(root.querySelector("[data-port-input]")?.value);
+      if (inputPort === null) {
+        toastErr("端口不合法", `请输入 ${PORT_MIN}-${PORT_MAX} 之间的整数。`);
+        return;
+      }
+      if (inputPort !== currentPort) {
+        // 输入框里改了但没点保存：直接用当前输入值启动，并顺手保存
+        try {
+          await api.saveSettings({ capture_port: inputPort });
+          currentPort = setCapturePort(inputPort);
+          applyPortUi();
+          toast({ title: `抓包端口已切换为 ${currentPort}`, type: "info" });
+        } catch (err) {
+          toastErr("保存端口失败", err.message);
+          return;
+        }
+      }
       setBusy(target, true, "启动中…");
       try {
-        const status = await api.captureStart({ port: 18080, set_proxy: true, auto_restore_proxy: true });
+        const status = await api.captureStart({ port: currentPort, set_proxy: true, auto_restore_proxy: true });
         applyStatus(status);
-        toastOk("抓包代理已启动", "下一步：设置代理并重启游戏，然后登录到主界面。");
+        toastOk("抓包代理已启动", `端口 ${currentPort}。下一步：设置代理并重启游戏，然后登录到主界面。`);
       } catch (err) {
         toastErr("启动失败", err.message + (err.hint ? `（${err.hint}）` : ""));
       } finally {
@@ -218,7 +368,7 @@ function bindShellEvents(root) {
       const target = event.currentTarget;
       const ok = await confirmDialog({
         title: "设置代理并重启游戏",
-        message: "将把系统代理指向 127.0.0.1:18080，强杀游戏进程并重新启动。",
+        message: `将把系统代理指向 ${proxyAddr()}，强杀游戏进程并重新启动。`,
         detail: "请先确认游戏已回到安全界面（不要停留在战斗 / 编队中）。抓取结束后记得「完成并关闭代理」恢复系统代理。",
         confirmText: "强杀并重启",
         danger: true,
@@ -300,6 +450,16 @@ function applyStatus(status) {
   if (!rootEl || !rootEl.isConnected || !status) return;
   captureStatus = status;
   const state = status.state || "idle";
+  const activeSession = state === "running" || state === "starting";
+  // 端口来源：抓取进行中用 status.port；空闲时以 /api/settings 的 capture_port 为准
+  // （gflh 的 capture_status 在 idle 时会回落到默认 18080，不能用它覆盖用户设置）
+  const statusPort = activeSession ? validPort(status.port) || currentPort : currentPort;
+  if (activeSession && validPort(status.port) && status.port !== currentPort) {
+    currentPort = setCapturePort(status.port);
+    applyPortUi();
+  }
+  const proxyText = status.proxy_active ? proxyAddr(statusPort) : "未开启";
+
   const chip = rootEl.querySelector("[data-cap-state]");
   if (chip) {
     chip.className = `cap-state ${state === "running" || state === "starting" ? state : state === "error" ? "error" : ""}`;
@@ -314,11 +474,24 @@ function applyStatus(status) {
   setText("[data-cap-uid]", status.uid || "未抓到", status.uid ? "ok" : "idle");
   setText("[data-cap-sign]", status.sign_set ? "已就绪" : "未就绪", status.sign_set ? "ok" : "idle");
   setText("[data-cap-targets]", status.targets_count ? `${status.targets_count} 个` : "0 个", status.targets_count ? "ok" : "idle");
-  setText("[data-cap-proxy]", status.proxy_active ? "127.0.0.1:18080" : "未开启", status.proxy_active ? "warn" : "idle");
+  setText("[data-cap-proxy]", proxyText, status.proxy_active ? "warn" : "idle");
   const elapsedEl = rootEl.querySelector("[data-cap-elapsed]");
   if (elapsedEl) elapsedEl.textContent = `ELAPSED ${fmtDuration(status.elapsed_s)}`;
   const portEl = rootEl.querySelector("[data-cap-port]");
-  if (portEl) portEl.textContent = String(status.port || 18080);
+  if (portEl) portEl.textContent = String(statusPort);
+
+  // 端口输入框：抓取进行中禁用并显示实际端口，空闲时显示用户设置值
+  const input = rootEl.querySelector("[data-port-input]");
+  if (input) {
+    input.disabled = activeSession;
+    if (!activeSession && document.activeElement !== input) {
+      input.value = String(currentPort);
+    } else if (activeSession) {
+      input.value = String(statusPort);
+    }
+  }
+  const savePortBtn = rootEl.querySelector('[data-act="save-port"]');
+  if (savePortBtn) savePortBtn.disabled = activeSession;
 
   // 向导步骤状态
   const captured = Boolean(status.uid && status.sign_set);
@@ -338,30 +511,27 @@ function applyStatus(status) {
   });
 
   // 按钮可用性
-  const startBtns = rootEl.querySelectorAll('[data-act="start"]');
-  startBtns.forEach((button) => {
+  rootEl.querySelectorAll('[data-act="start"]').forEach((button) => {
     button.disabled = state === "running" || state === "starting";
   });
-  const restartBtns = rootEl.querySelectorAll('[data-act="restart-game"]');
-  restartBtns.forEach((button) => {
+  rootEl.querySelectorAll('[data-act="restart-game"]').forEach((button) => {
     button.disabled = !(state === "running" || state === "starting");
   });
-  const stopBtns = rootEl.querySelectorAll('[data-act="stop"]');
-  stopBtns.forEach((button) => {
+  rootEl.querySelectorAll('[data-act="stop"]').forEach((button) => {
     button.disabled = !(state === "running" || state === "starting");
   });
   const hintEl = rootEl.querySelector("[data-cap-hint]");
   if (hintEl) {
     if (state === "running" && !status.uid) {
-      hintEl.innerHTML = `${icon("info", 12)} 抓包代理运行中。请点「设置代理并重启游戏」，然后在游戏里正常登录到主界面。`;
+      hintEl.innerHTML = `${icon("info", 12)} 抓包代理运行中（${esc(proxyAddr(statusPort))}）。请点「设置代理并重启游戏」，然后在游戏里正常登录到主界面。`;
     } else if (state === "running" && status.uid && !status.targets_captured) {
       hintEl.innerHTML = `${icon("info", 12)} 已抓到 uid=${esc(status.uid)}，正在读取收藏标靶列表…`;
     } else if (status.targets_captured && state !== "stopped") {
-      hintEl.innerHTML = `${icon("check", 12)} 抓取完成：uid=${esc(status.uid)} · 靶机 ${status.targets_count} 条。点「完成并关闭代理」已写入凭证。`;
+      hintEl.innerHTML = `${icon("check", 12)} 抓取完成：uid=${esc(status.uid)} · 靶机 ${status.targets_count} 条。点「完成并关闭代理」写入凭证。`;
     } else if (state === "stopped") {
       hintEl.innerHTML = `${icon("check", 12)} 抓取已完成、代理已关闭。可以去关卡图鉴挑队伍，或到序列页执行注入。`;
     } else {
-      hintEl.innerHTML = `${icon("info", 12)} 提示：抓取期间游戏可能提示网络异常，属正常现象；抓完「完成并关闭代理」即可恢复。`;
+      hintEl.innerHTML = `${icon("info", 12)} 提示：8080 常被其它程序占用，抓包端口默认 ${DEFAULT_PORT}，可在上方修改（${PORT_MIN}-${PORT_MAX}）。如果游戏进不去，先检查 Windows 系统代理是否已关闭（可能残留 ${esc(proxyAddr(statusPort))}）。`;
     }
   }
 
@@ -411,10 +581,11 @@ function renderCreds() {
     if (loadBtn) loadBtn.disabled = true;
     return;
   }
+  const latestName = [...creds].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0]?.name;
   listEl.innerHTML = creds
     .map(
       (cred) => `
-      <button class="cred-item" type="button" data-cred-name="${esc(cred.name)}">
+      <button class="cred-item ${cred.name === latestName ? "is-latest" : ""}" type="button" data-cred-name="${esc(cred.name)}">
         <span class="cred-radio"></span>
         <span class="cred-main">
           <span class="cred-name">${esc(cred.name)}</span>
@@ -424,7 +595,7 @@ function renderCreds() {
             <span>${esc(cred.updated_at ? timeAgo(cred.updated_at) : "—")}</span>
           </span>
         </span>
-        <span class="badge ${cred.name === "creds_latest.json" ? "green" : ""}">${cred.name === "creds_latest.json" ? "最新" : "历史"}</span>
+        <span class="badge ${cred.name === latestName ? "green" : ""}">${cred.name === latestName ? "最新" : "历史"}</span>
       </button>`,
     )
     .join("");
@@ -448,7 +619,6 @@ async function loadCurrent() {
     currentData = data;
     renderCurrent();
   } catch (err) {
-    // 未抓取时接口可能 503/400，展示引导
     currentData = null;
     areaEl.innerHTML = emptyState({
       iconName: "target",

@@ -120,7 +120,7 @@ function renderPage() {
         }
         ${
           draft.length
-            ? `<div class="seq-hint mt12">${icon("info", 12)} 拖拽条目可排序（拖动时会出现琥珀色指示线），也可用右侧 ↑ ↓ 按钮微调；第 1 条对应收藏標靶1。</div>`
+            ? `<div class="seq-hint mt12">${icon("info", 12)} 拖拽条目可排序（拖动时会出现冰蓝色指示线），也可用右侧 ↑ ↓ 按钮微调；第 1 条对应收藏標靶1。</div>`
             : ""
         }
       </section>

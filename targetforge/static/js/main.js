@@ -39,18 +39,18 @@ import * as capture from "./views/capture.js";
 import * as tutorialPage from "./views/tutorial-page.js";
 
 const ROUTES = [
-  { pattern: /^\/$/, view: overview, nav: "overview", title: "总览" },
-  { pattern: /^\/overview$/, view: overview, nav: "overview", title: "总览" },
-  { pattern: /^\/chapters$/, view: chapters, nav: "chapters", title: "关卡图鉴" },
-  { pattern: /^\/chapters\/([^/]+)$/, view: chapterDetail, nav: "chapters", param: "id", title: "章节详情" },
-  { pattern: /^\/stages\/([^/]+)$/, view: stage, nav: "chapters", param: "id", title: "关卡队伍" },
-  { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", param: "area", title: "灰域区域" },
-  { pattern: /^\/species$/, view: species, nav: "species", title: "怪种图鉴" },
-  { pattern: /^\/species\/([^/]+)$/, view: speciesDetail, nav: "species", param: "codex", title: "怪种详情" },
-  { pattern: /^\/teams\/([^/]+)$/, view: teamPage, nav: "chapters", param: "id", title: "队伍详情" },
-  { pattern: /^\/sequence$/, view: sequencePage, nav: "sequence", title: "序列编排" },
-  { pattern: /^\/capture$/, view: capture, nav: "capture", title: "登录抓取" },
-  { pattern: /^\/tutorial$/, view: tutorialPage, nav: "tutorial", title: "使用教程" },
+  { pattern: /^\/$/, view: overview, nav: "overview", viewId: "overview", title: "总览" },
+  { pattern: /^\/overview$/, view: overview, nav: "overview", viewId: "overview", title: "总览" },
+  { pattern: /^\/chapters$/, view: chapters, nav: "chapters", viewId: "chapters", title: "关卡图鉴" },
+  { pattern: /^\/chapters\/([^/]+)$/, view: chapterDetail, nav: "chapters", viewId: "chapter-detail", param: "id", title: "章节详情" },
+  { pattern: /^\/stages\/([^/]+)$/, view: stage, nav: "chapters", viewId: "stage", param: "id", title: "关卡队伍" },
+  { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", viewId: "grayzone", param: "area", title: "灰域区域" },
+  { pattern: /^\/species$/, view: species, nav: "species", viewId: "species", title: "怪种图鉴" },
+  { pattern: /^\/species\/([^/]+)$/, view: speciesDetail, nav: "species", viewId: "species-detail", param: "codex", title: "怪种详情" },
+  { pattern: /^\/teams\/([^/]+)$/, view: teamPage, nav: "chapters", viewId: "team", param: "id", title: "队伍详情" },
+  { pattern: /^\/sequence$/, view: sequencePage, nav: "sequence", viewId: "sequence", title: "序列编排" },
+  { pattern: /^\/capture$/, view: capture, nav: "capture", viewId: "capture", title: "登录抓取" },
+  { pattern: /^\/tutorial$/, view: tutorialPage, nav: "tutorial", viewId: "tutorial", title: "使用教程" },
 ];
 
 const viewEl = () => document.getElementById("view");
@@ -63,7 +63,6 @@ let firstBoot = true;
 /* ================================================================== */
 async function boot() {
   renderNavCounts();
-  initSequencePanel(document.getElementById("sequence-panel"));
   initTopbar();
   bindGlobalEvents();
 
@@ -96,6 +95,7 @@ async function boot() {
   }
 
   // 并行拉取基础数据（catalog 未就绪时部分接口 503，静默失败）
+  // 说明：序列面板在数据就绪后再初始化，避免 boot 与面板各发一次 /api/sequence
   await Promise.allSettled([
     refreshSequence(),
     tryRefreshCurrent(),
@@ -105,6 +105,7 @@ async function boot() {
   updateTopbar(store.health);
   updateNavCounts(store.health);
   renderNavCounts();
+  initSequencePanel(document.getElementById("sequence-panel"));
   firstBoot = false;
   renderRoute();
 
@@ -181,13 +182,18 @@ export function updateTopbar(health) {
     return;
   }
   const game = health.game || {};
-  setStatus(
-    "game",
-    game.game_running ? "ok" : "warn",
-    game.game_running ? `运行中 · PID ${game.pid ?? "—"}` : "未运行",
-    game.game_running ? "" : "gamepad",
-  );
-  setStatus("proxy", game.system_proxy ? "warn" : "ok", game.system_proxy || "未开启");
+  const pidTip = "PID 由 tasklist 按进程名 GrilsFrontLine.exe 搜索得到，仅本机展示，不会上传。";
+  if (game.game_running) {
+    setStatusHtml(
+      "game",
+      "ok",
+      `运行中 · <span class="pid-chip" title="${esc(pidTip)}">PID ${esc(game.pid ?? "—")}</span><span class="pid-info" tabindex="0" title="${esc(pidTip)}">?</span>`,
+      pidTip,
+    );
+  } else {
+    setStatusHtml("game", "warn", "未运行", "未找到 GrilsFrontLine.exe 进程（tasklist 按进程名搜索）");
+  }
+  setStatus("proxy", game.system_proxy ? "warn" : "ok", game.system_proxy || "未开启", game.system_proxy ? `系统代理：${game.system_proxy}` : "");
 
   const catalog = health.catalog || {};
   if (catalog.state === "ready" && catalog.built_at) {
@@ -201,6 +207,8 @@ export function updateTopbar(health) {
   }
   const navDataTime = document.getElementById("nav-data-time");
   if (navDataTime) navDataTime.textContent = catalog.built_at ? fmtDate(catalog.built_at) : "—";
+  const navVersion = document.getElementById("nav-version");
+  if (navVersion && health.version) navVersion.textContent = `v${health.version}`;
 
   const targets = store.current?.targets || [];
   setStatus("targets", targets.length ? "cyan" : "warn", targets.length ? `${targets.length} / 35` : "未抓取");
@@ -211,6 +219,14 @@ function setStatus(key, cls, value, title) {
   if (!node) return;
   node.className = `si-value ${cls || ""}`;
   node.textContent = value;
+  if (title) node.title = title;
+}
+
+function setStatusHtml(key, cls, html, title) {
+  const node = document.querySelector(`[data-status="${key}"]`);
+  if (!node) return;
+  node.className = `si-value ${cls || ""}`;
+  node.innerHTML = html;
   if (title) node.title = title;
 }
 
@@ -321,6 +337,8 @@ export async function renderRoute() {
   if (!matched) {
     setNavActive("");
     const el = viewEl();
+    el.dataset.view = "not-found";
+    el.className = "view";
     el.innerHTML = emptyState({
       iconName: "compass",
       title: "页面不存在",
@@ -348,6 +366,10 @@ export async function renderRoute() {
   const el = viewEl();
   if (!el) return;
   store.runCleanups();
+  // 先切 data-view / 重置类名，再清空内容：旧路由的异步回调据此判断「已经切走」，
+  // 防止 overview 之类的延迟回调把新页面覆盖回去（曾经的无限闪烁根因）。
+  el.dataset.view = route.viewId || route.nav || "page";
+  el.className = "view";
   el.innerHTML = "";
   document.title = `${route.title} · 靶机工坊 TargetForge`;
   const mainEl = document.querySelector(".main");
