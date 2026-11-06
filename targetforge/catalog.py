@@ -117,11 +117,16 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 #: 机场/后续刷新候选（reserve）的说明：STC 没有显式 mission→刷新池映射，只能按 id 族推断
 RESERVE_REASON = "同系列未入场怪组（机场/后期刷新候选，STC 无显式映射）"
 RESERVE_CAP = 80
+#: 前缀长度依次尝试（3~6 位，取最短且覆盖 ≥3 个引用队伍的）
+RESERVE_PREFIX_LENGTHS: tuple[int, ...] = (3, 4, 5, 6)
+#: 前缀法失败时的邻近窗口 fallback（±20，最多 20 支）
+RESERVE_NEIGHBOR_WINDOW = 20
+RESERVE_NEIGHBOR_CAP = 20
 
 #: 灰域真实区域层级：difficulty_group 1..4 有客户端名称（沙尘带/风暴带/硅状带/结晶带），
 #: 组 5/6 与未映射节点归「特殊区域」；「装甲突击」（标题前缀）是爬塔模式，单独成区。
@@ -836,32 +841,74 @@ def _build_payload() -> dict:
         return _int((missions.get(mission_id) or {}).get("campaign")) == -404
 
     # ---- 机场/后续刷新候选（reserve，推断） ----------------------------
-    # STC 没有显式的 mission→机场刷新池映射，只能按 team id 族推断：
-    # 取该 mission 已引用队伍（enemy ∪ ally ∪ boss，排除 id<=1000）里出现最多的
-    # str(id)[:4] 前缀（需 >=3 个引用），候选 = 同前缀、有槽位、可收藏、未被引用的队伍。
-    prefix_collectable: dict[str, list[int]] = defaultdict(list)
+    # STC 没有显式 mission→机场刷新池映射，只能按 team id 族推断：
+    # 1) 对已引用队伍（enemy ∪ ally ∪ boss，排除 id<=1000）从 3/4/5/6 位前缀依次尝试，
+    #    取**最短**且覆盖 >=3 个引用队伍的前缀（同长度取覆盖最多、再按前缀字典序）；
+    # 2) 候选 = 同前缀、有槽位、可收藏、未被引用的队伍（id 升序，<=80）；
+    # 3) 前缀法没有候选时 fallback：引用 id ±20 邻近窗口内未引用可收藏队伍（<=20）。
+    prefix_lists: dict[int, dict[str, list[int]]] = {
+        length: defaultdict(list) for length in RESERVE_PREFIX_LENGTHS
+    }
     for collectable_id in collectable:
-        prefix_collectable[str(collectable_id)[:4]].append(collectable_id)
-    for ids in prefix_collectable.values():
-        ids.sort()
+        if collectable_id <= 1000:      # 低 id 是教程/通用队伍，不作为候选
+            continue
+        id_text = str(collectable_id)
+        for length in RESERVE_PREFIX_LENGTHS:
+            if len(id_text) >= length:
+                prefix_lists[length][id_text[:length]].append(collectable_id)
+    for prefix_map in prefix_lists.values():
+        for ids in prefix_map.values():
+            ids.sort()
     stage_reserve_teams: dict[int, list[int]] = {}
+    stage_reserve_meta: dict[int, dict] = {}
     for mission_id in mission_teams:
         referenced = set(mission_teams.get(mission_id, set()))
         referenced |= set(support_mission_teams.get(mission_id, set()))
-        prefix_tally: Counter = Counter()
-        for team_id in referenced:
-            if team_id > 1000:
-                prefix_tally[str(team_id)[:4]] += 1
-        if not prefix_tally:
-            continue
-        prefix, count = sorted(prefix_tally.items(),
-                               key=lambda item: (-item[1], item[0]))[0]
-        if count < 3:
-            continue
-        candidates = [team_id for team_id in prefix_collectable.get(prefix, [])
-                      if team_id not in referenced][:RESERVE_CAP]
+        ref_ids = [team_id for team_id in referenced if team_id > 1000]
+        candidates: list[int] = []
+        chosen_prefix = ""
+        chosen_length = 0
+        chosen_count = 0
+        if ref_ids:
+            for length in RESERVE_PREFIX_LENGTHS:
+                tally: Counter = Counter(
+                    str(team_id)[:length] for team_id in ref_ids
+                    if len(str(team_id)) >= length
+                )
+                options = [(count, prefix) for prefix, count in tally.items()
+                           if count >= 3]
+                if not options:
+                    continue
+                count, prefix = sorted(options, key=lambda item: (-item[0], item[1]))[0]
+                chosen_prefix = prefix
+                chosen_length = length
+                chosen_count = count
+                candidates = [team_id for team_id in prefix_lists[length][prefix]
+                              if team_id not in referenced][:RESERVE_CAP]
+                break
+        method = "prefix"
+        if not candidates and ref_ids:
+            # fallback：引用 id 邻近窗口（±20）
+            nearest_distance: dict[int, int] = {}
+            for team_id in collectable:
+                if team_id <= 1000 or team_id in referenced:
+                    continue
+                distance = min(abs(team_id - ref_id) for ref_id in ref_ids)
+                if distance <= RESERVE_NEIGHBOR_WINDOW:
+                    nearest_distance[team_id] = distance
+            candidates = [team_id for team_id, _distance in
+                          sorted(nearest_distance.items(),
+                                 key=lambda item: (item[1], item[0]))][:RESERVE_NEIGHBOR_CAP]
+            method = "neighbor"
         if candidates:
             stage_reserve_teams[mission_id] = candidates
+            stage_reserve_meta[mission_id] = {
+                "prefix": chosen_prefix,
+                "prefix_length": chosen_length,
+                "refs": chosen_count,
+                "method": method,
+                "count": len(candidates),
+            }
     reserve_team_missions: dict[int, list[int]] = defaultdict(list)
     for mission_id, team_ids in stage_reserve_teams.items():
         for team_id in team_ids:
@@ -1616,6 +1663,10 @@ def _build_payload() -> dict:
             "stages_with_reserve": len(stage_reserve_teams),
             "links": sum(len(ids) for ids in stage_reserve_teams.values()),
             "teams": len(reserve_team_missions),
+            "prefix_stages": sum(1 for meta in stage_reserve_meta.values()
+                                 if meta.get("method") == "prefix"),
+            "neighbor_stages": sum(1 for meta in stage_reserve_meta.values()
+                                   if meta.get("method") == "neighbor"),
             "reason": RESERVE_REASON,
         },
         "client_text": _source_file_info(TEXT_FILE),
@@ -1643,6 +1694,8 @@ def _build_payload() -> dict:
         },
         "stage_reserve_teams": {str(mid): ids
                                 for mid, ids in stage_reserve_teams.items()},
+        "stage_reserve_meta": {str(mid): meta
+                               for mid, meta in stage_reserve_meta.items()},
         "grayzone": {
             "chapter_id": "grayzone",
             "regions": regions,
@@ -1786,6 +1839,11 @@ class Catalog:
         self._stage_reserve_teams: dict[int, list[int]] = {
             int(key): [int(team_id) for team_id in value]
             for key, value in (payload.get("stage_reserve_teams") or {}).items()
+        }
+        # v1.8.1 reserve 推断元信息：stage → {prefix, prefix_length, refs, method, count}
+        self._stage_reserve_meta: dict[int, dict] = {
+            int(key): dict(value)
+            for key, value in (payload.get("stage_reserve_meta") or {}).items()
         }
         self._teams: dict[int, dict] = {
             int(team["id"]): team for team in payload.get("teams") or []
@@ -2095,6 +2153,105 @@ class Catalog:
         if region_id:
             payload["region"] = region_id
         return payload
+
+    # -- reserve 审计（v1.8.1） ----------------------------------------
+    def _legacy_reserve_teams(self, mission_id: int) -> list[int]:
+        """旧版 reserve 规则（只尝试 4 位前缀），用于审计「改进前」对比。"""
+        referenced = set(self._stage_teams.get(mission_id, []))
+        referenced |= {team_id for team_id, _count in
+                       self._stage_support_teams.get(mission_id, [])}
+        tally: Counter = Counter(str(team_id)[:4]
+                                 for team_id in referenced if team_id > 1000)
+        if not tally:
+            return []
+        prefix, count = sorted(tally.items(), key=lambda item: (-item[1], item[0]))[0]
+        if count < 3:
+            return []
+        candidates = [team_id for team_id in self._team_ids
+                      if str(team_id).startswith(prefix) and team_id not in referenced]
+        return candidates[:RESERVE_CAP]
+
+    def reserve_audit(self, *, write: bool = True) -> dict:
+        """全量 score 章节 reserve 审计：逐关新旧数量/prefix/引用数 + 仍为 0 的原因。
+
+        完整报告写入 ``DATA_DIR/reserve_audit.json``（write=True 时），返回同一 dict。
+        """
+        score_chapters = [chapter for chapter in self._chapters.values()
+                          if chapter.get("category") == "score"]
+        rows: list[dict] = []
+        for chapter in sorted(score_chapters, key=lambda item: str(item.get("id"))):
+            chapter_id = str(chapter.get("id"))
+            chapter_title = str(chapter.get("title") or "")
+            for mission_id in self._chapter_stage_ids.get(chapter_id, []):
+                stage = self._stages.get(mission_id) or {}
+                new_ids = list(self._stage_reserve_teams.get(mission_id, []))
+                old_ids = self._legacy_reserve_teams(mission_id)
+                meta = self._stage_reserve_meta.get(mission_id) or {}
+                referenced = set(self._stage_teams.get(mission_id, []))
+                referenced |= {team_id for team_id, _count in
+                               self._stage_support_teams.get(mission_id, [])}
+                ref_ids = [team_id for team_id in referenced if team_id > 1000]
+                reason = ""
+                if not new_ids:
+                    if not referenced:
+                        reason = "no_referenced_teams"
+                    elif not ref_ids:
+                        reason = "referenced_ids_le_1000"
+                    else:
+                        reason = "no_candidates"
+                rows.append({
+                    "chapter_id": chapter_id,
+                    "chapter_title": chapter_title,
+                    "stage_id": mission_id,
+                    "title": stage.get("title") or "",
+                    "difficulty": _int(stage.get("difficulty")),
+                    "team_count": len(self._stage_teams.get(mission_id, [])),
+                    "referenced_count": len(referenced),
+                    "referenced_gt_1000": len(ref_ids),
+                    "prefix": str(meta.get("prefix") or ""),
+                    "prefix_length": _int(meta.get("prefix_length")),
+                    "prefix_ref_count": _int(meta.get("refs")),
+                    "method": str(meta.get("method") or ""),
+                    "reserve_count": len(new_ids),
+                    "reserve_legacy_count": len(old_ids),
+                    "reserve_team_ids": new_ids,
+                    "still_zero_reason": reason,
+                })
+        improved = [row for row in rows
+                    if row["reserve_legacy_count"] == 0 and row["reserve_count"] > 0]
+        still_zero = [row for row in rows if row["reserve_count"] == 0]
+        methods: Counter = Counter(row["method"] for row in rows if row["reserve_count"])
+        summary = {
+            "score_chapters": len(score_chapters),
+            "score_stages": len(rows),
+            "stages_with_reserve": len(rows) - len(still_zero),
+            "still_zero_stages": len(still_zero),
+            "improved_from_zero": len(improved),
+            "legacy_stages_with_reserve": sum(1 for row in rows
+                                              if row["reserve_legacy_count"] > 0),
+            "prefix_stages": methods.get("prefix", 0),
+            "neighbor_stages": methods.get("neighbor", 0),
+        }
+        report = {
+            "generated_at": self.built_at,
+            "kind": "reserve_audit_score",
+            "summary": summary,
+            "improved": improved,
+            "still_zero": still_zero,
+            "stages": rows,
+        }
+        if write:
+            path = CATALOG_FILE.parent / "reserve_audit.json"
+            tmp_path = path.with_suffix(path.suffix + ".tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path.write_text(json.dumps(report, ensure_ascii=False, indent=1),
+                                    encoding="utf-8")
+                os.replace(tmp_path, path)
+            finally:
+                with contextlib.suppress(OSError):
+                    tmp_path.unlink()
+        return report
 
     # -- 队伍 ---------------------------------------------------------
     def team(self, team_id: int) -> dict | None:

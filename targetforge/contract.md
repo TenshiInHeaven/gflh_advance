@@ -116,9 +116,11 @@ class Catalog:
 与敌方队伍分开展示（stage.support_teams）；支援链接也要计入队伍出处与 roles，不能当 orphan。
 
 **机场/后续刷新候选**：STC 没有显式的 mission→刷新池字段/表（`spot_buff_config.grow_enemy_pool`
-只是布尔、`mission_entrance_package` 是旧关卡串），AA-02/威廉/潘洛斯 Boss 等队伍没有任何 spot/mission
-引用，属于运行时刷新池。catalog 只能按 **team id 族**推断 `reserve_teams`（明确标 `inferred:true`）；
-推断链接不算真实出处（不改变 orphan/roles、不计入 team_count/support_team_count）。
+只是布尔、`mission_entrance_package` 是旧关卡串），AA-02/威廉/潘洛斯 Boss/坠入兔洞 Aegis 等队伍
+没有任何 spot/mission 引用，属于运行时刷新池。catalog 只能按 **team id 族**推断 `reserve_teams`
+（明确标 `inferred:true`）；推断链接不算真实出处（不改变 orphan/roles、不计入
+team_count/support_team_count）。审计工具：`Catalog.reserve_audit()` 会把全量 score 章节逐关
+reserve 统计（含改进前后对比、仍为 0 的原因）写到 `dataMiner/derived/targetforge/reserve_audit.json`。
 
 ### 2.2 归类规则
 
@@ -142,10 +144,14 @@ class Catalog:
 9. `spot` 里缺失 mission 表的 orphan mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
 10. 队伍↔关卡：敌方链接（enemy/boss）与支援链接（ally）都进 `appearances`（带 role）；stage 的
     `teams`/`team_count` 只表示敌方，支援队伍单独放 `support_teams`/`support_team_count`，互不混淆。
-11. `reserve_teams`（推断）：每个 stage 取已引用队伍（enemy∪ally∪boss，排除 id<=1000）中出现最多的
-    `str(id)[:4]` id 族前缀（需 ≥3 个引用），候选 = 同前缀、有槽位、可收藏、未被该 mission 引用的队伍
-    （id 升序，≤80）。stage 详情带 `reserve_teams`（team_summary + `role:"reserve"`、`inferred:true`、
-    `reserve_reason`）与 `reserve_team_count`；章节 stage 行只带 `reserve_team_count`。
+11. `reserve_teams`（推断，v1.8.1）：每个 stage 取已引用队伍（enemy∪ally∪boss，排除 id≤1000）的
+    id 字符串，从 **3/4/5/6 位前缀依次尝试**，选**最短**且覆盖 ≥3 个引用队伍的前缀（同长度取覆盖
+    最多、再按前缀字典序）；候选 = 同前缀、有槽位、collectable、未被引用的队伍（id>1000，id 升序，
+    ≤80）。若没有任何前缀覆盖 ≥3 引用，则 fallback：引用 id ±20 邻近窗口内未引用可收藏队伍
+    （≤20，按距离再 id 升序）。stage 详情带 `reserve_teams`（team_summary + `role:"reserve"`、
+    `inferred:true`、`reserve_reason`）与 `reserve_team_count`；章节 stage 行只带
+    `reserve_team_count`；`sources.reserve` 记录 prefix/neighbor 两种方法的 stage 数；每个
+    stage 的推断元信息（prefix/prefix_length/refs/method）在 `payload.stage_reserve_meta`。
 
 排序：组顺序 main → event → **score** → tutorial → simulation → grayzone → orphan；
 组内章节按 `min(mission.order/id)` 升序。**groups 共 7 个，章节约 121 个**
@@ -289,11 +295,16 @@ class Catalog:
   role/support_count/collectable），也可通过 team 详情反查出处（role=support），不计入敌方
   `teams`/`team_count`。不可收藏的支援队伍只在 stage.support_teams 里展示（`collectable=false`），
   不进 `team()` 查询与序列。
-- **机场/后续刷新候选（v1.5）**：STC 无显式刷新池映射，按 team id 族推断的 `reserve_teams`
-  明确标 `role="reserve"`、`inferred=true`、`reserve_reason`；全局 1637 个 stage 有候选。
-  推断条目只用于展示「可能刷新」，**不改变 orphan/roles 真实链接状态**，也不计入
-  `team_count`/`support_team_count`；team 详情 appearances 里同样以 `role="reserve"`、
-  `inferred=true` 呈现（不当作真实出处）。
+- **机场/后续刷新候选（v1.5 / v1.8.1）**：STC 无显式刷新池映射，按 team id 族推断的
+  `reserve_teams` 明确标 `role="reserve"`、`inferred=true`、`reserve_reason`；全局 2178 个 stage
+  有候选（前缀法 1990 / 邻近窗口 fallback 188）。推断条目只用于展示「可能刷新」，**不改变
+  orphan/roles 真实链接状态**，也不计入 `team_count`/`support_team_count`；team 详情 appearances
+  里同样以 `role="reserve"`、`inferred=true` 呈现（不当作真实出处）。
+- **reserve 审计**：`Catalog.reserve_audit()` 遍历全部 score 章节（25 章 / 53 关），逐关给出
+  引用队伍数、prefix/prefix_length/method、改进前（仅 4 位前缀）与当前 reserve 数；仍为 0 的
+  stage 标原因（`no_referenced_teams` / `referenced_ids_le_1000` / `no_candidates`）。
+  当前结果：53/53 关有 reserve，其中 12 关是「改进前 0 → 改进后 >0」；报告写入
+  `dataMiner/derived/targetforge/reserve_audit.json`。
 - 效能：`power` 来自 `enemy_team.effect_ext`；`power_known=false` 表示客户端未标注（常规关卡绝大多数如此），
   只有积分关卡/部分特殊队伍有值（含负值）。**不要伪造公式反推。**
 - **不要输出 enemy_full_model 的技能列**，也不要在详情里放 skill/group 字段。

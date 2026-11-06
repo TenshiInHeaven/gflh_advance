@@ -12,9 +12,11 @@
   rank {id,name,title,type,score_rewards}（rank type=10 优先 type=6）；
 * **支援队伍（v1.4）**：spot.ally_team_id → stage.support_teams/support_team_count、
   team.roles（enemy/support）、支援出处、orphan 4381→3802；
-* **机场/后续刷新候选（v1.5）**：按 team id 族推断 stage.reserve_teams（role=reserve,
-  inferred=true, reserve_reason），如 11435 AA-02 / 11946 威廉 / 11603 Hebe·Styx；
-  reserve 不影响 team_count/support_team_count/orphan 真实状态；
+* **机场/后续刷新候选（v1.5/v1.8.1）**：3~6 位最短前缀 + ±20 邻近窗口 fallback →
+  stage.reserve_teams（role=reserve, inferred=true, reserve_reason），如 10105
+  坠入兔洞+ 的 2141-2146、11435 AA-02 / 11946 威廉 / 11603 Hebe·Styx；
+  reserve 不影响 team_count/support_team_count/orphan 真实状态；`reserve_audit()` 审计全量
+  score 章节并写 reserve_audit.json；
 * **全怪组总表 team_list（v1.6）**：q/chapter/species(AND)/role/enemy·support·reserve/
   power/units 筛选、8 种排序（稳定、未知效能最后）、分页；13,700 队单查询 <100ms；
 * 灰域 **6 个区域**（沙尘带/风暴带/硅状带/结晶带/装甲突击爬塔/特殊区域）→
@@ -45,7 +47,7 @@ from targetforge.datapaths import ICON_DIR as DATA_ICON_DIR  # noqa: E402
 EXPECT_TEAMS = 13700
 EXPECT_SUPPORT_TEAMS = 864
 EXPECT_ORPHAN_TEAMS = 3802
-EXPECT_RESERVE_STAGES = 1637
+EXPECT_RESERVE_STAGES = 2178
 EXPECT_SPECIES = 264
 EXPECT_STAGES = 2345
 EXPECT_MISSIONS_IN_TABLE = 3986
@@ -157,6 +159,11 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(reserve_meta["stages_with_reserve"], EXPECT_RESERVE_STAGES)
         self.assertGreater(reserve_meta["links"], 0)
         self.assertIn("机场", reserve_meta["reason"])
+        # v1.8.1：3~6 位最短前缀 + 邻近窗口 fallback
+        self.assertEqual(reserve_meta["prefix_stages"] + reserve_meta["neighbor_stages"],
+                         reserve_meta["stages_with_reserve"])
+        self.assertGreater(reserve_meta["prefix_stages"], 0)
+        self.assertGreater(reserve_meta["neighbor_stages"], 0)
         # 图标覆盖率报告（sources.icons）；支援队伍类型也会进 types（v1.4 后 282→301 个 code）
         icons = self.meta["sources"]["icons"]
         for key in ("files", "codes_needed", "codes_covered",
@@ -167,7 +174,7 @@ class CatalogDataTest(unittest.TestCase):
 
     # -- 机场/后续刷新候选（reserve，推断） -----------------------------
     def test_reserve_teams(self):
-        """v1.5：按 team id 族推断的机场/后续刷新候选（明确标记 inferred）。"""
+        """v1.8.1：3~6 位最短前缀 + 邻近 fallback 的机场/后续刷新候选。"""
         detail = self.catalog.stage(11435)
         self.assertEqual(detail["stage"]["team_count"], 30)          # 敌方计数不变
         self.assertEqual(detail["stage"]["support_team_count"], 17)  # 支援计数不变
@@ -191,6 +198,33 @@ class CatalogDataTest(unittest.TestCase):
         panluo = {team["id"] for team in self.catalog.stage(11603)["reserve_teams"]}
         self.assertIn(660002, panluo)
         self.assertIn(660003, panluo)
+        # v1.8.1 修复坠入兔洞+（10105）：引用 2147-2150 四位数前缀各不相同，
+        # 3 位前缀「214」命中 2141-2146（Aegis/Nemeum/Tarantula/Dinergate）。
+        rabbit = {team["id"]: team for team in
+                  self.catalog.stage(10105)["reserve_teams"]}
+        self.assertGreaterEqual(len(rabbit), 6)
+        for team_id in (2141, 2142, 2143, 2144, 2145, 2146):
+            self.assertIn(team_id, rabbit, f"10105 缺 reserve {team_id}")
+            self.assertEqual(rabbit[team_id]["role"], "reserve")
+            self.assertTrue(rabbit[team_id]["inferred"])
+        for team_id in (2147, 2148, 2149, 2150):   # 已引用队伍不得重算
+            self.assertNotIn(team_id, rabbit)
+        rabbit_meta = self.catalog._stage_reserve_meta.get(10105) or {}
+        self.assertEqual(rabbit_meta.get("prefix"), "214")
+        self.assertEqual(rabbit_meta.get("prefix_length"), 3)   # 最短前缀
+        self.assertEqual(rabbit_meta.get("method"), "prefix")
+        # 最短前缀：11435 用 3 位「636」（而非 4 位 6363），命中不变
+        meta_11435 = self.catalog._stage_reserve_meta.get(11435) or {}
+        self.assertEqual(meta_11435.get("prefix"), "636")
+        self.assertEqual(meta_11435.get("prefix_length"), 3)
+        self.assertGreaterEqual(int(meta_11435.get("refs") or 0), 3)
+        self.assertEqual(meta_11435.get("method"), "prefix")
+        # 邻近窗口 fallback：50105 类（前缀法无候选）选到 ±20 内未引用队伍
+        neighbor_stage = next(
+            meta for meta in self.catalog._stage_reserve_meta.values()
+            if meta.get("method") == "neighbor")
+        self.assertGreater(int(neighbor_stage.get("count") or 0), 0)
+        self.assertEqual(neighbor_stage.get("prefix"), "")
         # 主线的普通关没有同族未引用队伍 → reserve 为空（合理）
         for stage in self.catalog.chapter("main-1")["stages"]:
             self.assertEqual(stage["reserve_team_count"], 0, stage["title"])
@@ -211,6 +245,48 @@ class CatalogDataTest(unittest.TestCase):
         # 有 reserve 的 stage 数量与 meta 一致
         self.assertEqual(len(self.catalog._stage_reserve_teams),
                          EXPECT_RESERVE_STAGES)
+
+    def test_reserve_audit(self):
+        """v1.8.1：全量 score 章节 reserve 审计（改进前后 + 仍为 0 的原因）。"""
+        report = self.catalog.reserve_audit(write=False)
+        summary = report["summary"]
+        self.assertEqual(summary["score_chapters"], 25)
+        self.assertEqual(summary["score_stages"], 53)
+        self.assertEqual(summary["stages_with_reserve"], 53)
+        self.assertEqual(summary["still_zero_stages"], 0)
+        self.assertEqual(summary["improved_from_zero"], 12)
+        self.assertEqual(summary["legacy_stages_with_reserve"], 41)
+        self.assertEqual(summary["prefix_stages"] + summary["neighbor_stages"], 53)
+        # 改进前 0 → 改进后 >0：坠入兔洞+（10105）在列
+        improved_ids = {row["stage_id"] for row in report["improved"]}
+        self.assertIn(10105, improved_ids)
+        rabbit = next(row for row in report["improved"] if row["stage_id"] == 10105)
+        self.assertEqual(rabbit["reserve_legacy_count"], 0)
+        self.assertEqual(rabbit["reserve_count"], 6)
+        self.assertEqual(rabbit["prefix"], "214")
+        self.assertEqual(rabbit["method"], "prefix")
+        self.assertTrue(rabbit["reserve_team_ids"])
+        # 逐关字段齐全；所有 score stage 现在都有 reserve
+        expected_keys = {"chapter_id", "chapter_title", "stage_id", "title",
+                         "difficulty", "team_count", "referenced_count",
+                         "referenced_gt_1000", "prefix", "prefix_length",
+                         "prefix_ref_count", "method", "reserve_count",
+                         "reserve_legacy_count", "reserve_team_ids",
+                         "still_zero_reason"}
+        self.assertEqual(len(report["stages"]), 53)
+        for row in report["stages"]:
+            self.assertEqual(set(row), expected_keys)
+            self.assertGreater(row["reserve_count"], 0)
+            self.assertEqual(row["still_zero_reason"], "")
+        self.assertEqual(report["still_zero"], [])
+        # write=True：完整报告写入 dataMiner/derived/targetforge/reserve_audit.json
+        written = self.catalog.reserve_audit(write=True)
+        self.assertEqual(written["summary"], summary)
+        audit_file = catalog.CATALOG_FILE.parent / "reserve_audit.json"
+        self.assertTrue(audit_file.is_file())
+        payload = json.loads(audit_file.read_text(encoding="utf-8"))
+        self.assertEqual(payload["summary"]["score_stages"], 53)
+        self.assertEqual(len(payload["stages"]), 53)
 
     # -- 章节 7 组 ----------------------------------------------------
     def test_chapter_groups(self):
