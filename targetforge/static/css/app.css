@@ -4391,3 +4391,67 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 @media (max-width: 1180px) {
   .region-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------- 32. 灰域：区域 → 节点（v1.8） ---------- */
+.gray-region-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.gray-special-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.region-card .rg-note { color: var(--text-mute); font-size: 10px; line-height: 1.5; min-height: 15px; }
+.region-card.tower {
+  border-color: rgba(242, 193, 78, 0.3);
+  background: linear-gradient(180deg, rgba(242, 193, 78, 0.08), rgba(10, 18, 39, 0.45));
+}
+.region-card.tower .rg-name { color: var(--gold-2); }
+.region-card.special { opacity: 0.9; }
+.region-card.special .rg-name { color: var(--text-dim); }
+.tower-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 2px;
+  color: #1b1505;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  font-size: 9px;
+  white-space: nowrap;
+}
+.special-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--text-mute);
+  font-size: 9px;
+}
+.node-list { display: flex; flex-direction: column; gap: 6px; }
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(15, 27, 54, 0.6), rgba(10, 18, 39, 0.4));
+  text-align: left;
+  color: var(--text-2);
+  transition: border-color 0.15s, background 0.15s;
+}
+.node-row:hover { border-color: rgba(94, 225, 255, 0.38); background: rgba(94, 225, 255, 0.05); }
+.node-main { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.node-title { font-size: 12.5px; color: var(--text); letter-spacing: 0.3px; }
+.node-loc { display: inline-flex; align-items: center; gap: 3px; color: var(--text-mute); font-size: 10px; }
+.node-tags { display: inline-flex; gap: 4px; }
+.node-tags .tag { height: 16px; font-size: 9px; padding: 0 5px; }
+.node-species { display: flex; align-items: center; gap: 4px; flex: none; min-width: 96px; }
+.node-species .node-sp { display: inline-flex; }
+.node-stats { display: flex; gap: 14px; flex: none; color: var(--text-mute); font-size: 10px; }
+.node-stats b { color: var(--text-2); font-family: var(--font-mono); font-weight: 600; }
+.node-go { color: var(--text-mute); flex: none; display: inline-flex; }
+.node-row:hover .node-go { color: var(--cyan); }
+@media (max-width: 1180px) {
+  .gray-region-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .node-stats { display: none; }
+}

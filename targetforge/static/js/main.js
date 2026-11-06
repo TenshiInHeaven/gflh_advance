@@ -32,6 +32,7 @@ import * as chapters from "./views/chapters.js";
 import * as chapterDetail from "./views/chapter-detail.js";
 import * as stage from "./views/stage.js";
 import * as grayzone from "./views/grayzone.js";
+import * as grayzoneRegion from "./views/grayzone-region.js";
 import * as species from "./views/species.js";
 import * as speciesDetail from "./views/species-detail.js";
 import * as roster from "./views/roster.js";
@@ -46,7 +47,8 @@ const ROUTES = [
   { pattern: /^\/chapters$/, view: chapters, nav: "chapters", viewId: "chapters", title: "关卡图鉴" },
   { pattern: /^\/chapters\/([^/]+)$/, view: chapterDetail, nav: "chapters", viewId: "chapter-detail", param: "id", title: "章节详情" },
   { pattern: /^\/stages\/([^/]+)$/, view: stage, nav: "chapters", viewId: "stage", param: "id", title: "关卡队伍" },
-  { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", viewId: "grayzone", param: "area", title: "灰域区域" },
+  { pattern: /^\/grayzone\/region\/([^/]+)$/, view: grayzoneRegion, nav: "chapters", viewId: "grayzone-region", param: "region", title: "灰域节点" },
+  { pattern: /^\/grayzone\/([^/]+)$/, view: grayzone, nav: "chapters", viewId: "grayzone", param: "area", title: "灰域地点" },
   { pattern: /^\/species$/, view: species, nav: "species", viewId: "species", title: "怪种图鉴" },
   { pattern: /^\/species\/([^/]+)$/, view: speciesDetail, nav: "species", viewId: "species-detail", param: "codex", title: "怪种详情" },
   { pattern: /^\/roster$/, view: roster, nav: "roster", viewId: "roster", title: "全怪组" },

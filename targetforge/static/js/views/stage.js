@@ -116,6 +116,22 @@ export async function render(root, { params }) {
 function renderPage() {
   const stage = loaded.stage || {};
   const teams = loaded.allTeams || [];
+  // 灰域节点：面包屑 灰域探查 / 区域 / 节点
+  let grayRegion = null;
+  try {
+    grayRegion = JSON.parse(sessionStorage.getItem("tf:gray-region") || "null");
+  } catch {
+    grayRegion = null;
+  }
+  const isGrayNode = Boolean(stage.gray_zone) || stage.category === "grayzone" || stage.chapter_id === "grayzone";
+  const grayCrumbs = [
+    { label: "关卡图鉴", nav: "/chapters" },
+    { label: "灰域探查", nav: "/chapters/grayzone" },
+    ...(grayRegion && grayRegion.title
+      ? [{ label: grayRegion.title, nav: `/grayzone/region/${encodeURIComponent(grayRegion.id || "")}` }]
+      : []),
+    { label: stage.title || `#${stage.id}` },
+  ];
   const enemyCount = loaded.enemyTeams?.length ?? teams.length;
   const supportCount = loaded.supportCount ?? 0;
   const reserveCount = loaded.reserveCount ?? 0;
@@ -128,16 +144,20 @@ function renderPage() {
 
   rootEl.innerHTML = `
     ${pageHeadHtml({
-      crumbs: [
-        { label: "关卡图鉴", nav: "/chapters" },
-        { label: "关卡队伍" },
-        { label: stage.code || `#${stage.id}` },
-      ],
+      crumbs: isGrayNode
+        ? grayCrumbs
+        : [
+            { label: "关卡图鉴", nav: "/chapters" },
+            { label: "关卡队伍" },
+            { label: stage.code || `#${stage.id}` },
+          ],
       title: stage.title || "未命名关卡",
-      badge: stage.code ? String(stage.code) : `#${stage.id}`,
-      sub: `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · ${sideChips}${supportCount || reserveCount ? "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`,
+      badge: isGrayNode ? `GRAY NODE${grayRegion && grayRegion.title ? ` · ${grayRegion.title}` : ""}` : stage.code ? String(stage.code) : `#${stage.id}`,
+      sub: isGrayNode
+        ? `灰域节点 · ${grayRegion && grayRegion.title ? `区域：${esc(grayRegion.title)} · ` : ""}${grayRegion && grayRegion.location ? `地点：${esc(grayRegion.location)} · ` : ""}mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b> · ${sideChips}${supportCount || reserveCount ? "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`
+        : `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · ${sideChips}${supportCount || reserveCount ? "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`,
       actions: `
-        <button class="btn btn-ghost" type="button" data-nav-back>${icon("chevronLeft", 14)} 返回章节</button>
+        <button class="btn btn-ghost" type="button" data-nav-back>${icon("chevronLeft", 14)} ${isGrayNode && grayRegion ? "返回节点列表" : "返回章节"}</button>
         <button class="btn btn-primary" type="button" data-act="add-all">${icon("plus", 14)} 全部加入序列 <span class="mono-inline" style="opacity:.75">(${teams.length})</span></button>
       `,
     })}
@@ -302,6 +322,10 @@ function renderPage() {
   });
 
   rootEl.querySelector("[data-nav-back]")?.addEventListener("click", () => {
+    if (isGrayNode && grayRegion && grayRegion.id) {
+      navigate(`/grayzone/region/${encodeURIComponent(grayRegion.id)}`);
+      return;
+    }
     let chapterId = stage.chapter_id || "";
     if (!chapterId) {
       try {

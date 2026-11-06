@@ -126,6 +126,15 @@ export const api = {
     }),
 
   grayzoneAreas: () => get("/api/grayzone/areas"),
+  grayzoneNodes: (params = {}) =>
+    get("/api/grayzone/nodes", {
+      region: "",
+      offset: 0,
+      limit: 30,
+      q: "",
+      sort: "id_asc",
+      ...params,
+    }),
   grayzoneTeams: (params = {}) =>
     get("/api/grayzone/teams", { area: "", offset: 0, limit: 60, q: "", ...params }),
 

@@ -42,8 +42,9 @@ run.log               运行日志（可选）
 - **UI 不得展示怪组/怪种的具体技能信息**（不出现技能名、技能描述、技能组 id、触发器等）。
   可以展示：数值、编制、等级、坐标、力场、效能、关卡出处、队伍 id 等参数。
 - 灰域（campaign=-404，标题以「旅团商道 / 放射区 / …」开头）**不列举每个节点的关卡**：
-  灰域只作为 1 个章节，内部按 **5 个真实区域**（沙尘带/风暴带/硅状带/结晶带/特殊区域）分组，
-  区域下面是 **14 个地点**（共生净土/晶团挖掘点/…），地点下列队伍。
+  灰域只作为 1 个章节，页面按 **区域 → 节点** 组织：**6 个区域**（沙尘带/风暴带/硅状带/
+  结晶带/**装甲突击爬塔**/**特殊区域**），区域下是节点（有可收藏队伍的 mission），
+  节点内再列小怪；mission 标题前缀（共生净土等 14 个）只是节点 location 副信息。
 - 无固定关卡的队伍归入「无固定关卡」章节（按队伍列出），保证 264 个可收藏怪种都能在怪种图鉴里找到队伍。
 - 序列上限 35；草稿保存 `team_id` 列表（顺序即目标顺序）。
 - 三种执行模式：
@@ -76,9 +77,10 @@ class Catalog:
     def chapters(self) -> list[dict]
     def chapter(self, chapter_id: str) -> dict | None
     def stage(self, mission_id: int) -> dict | None
-    def grayzone_areas(self) -> dict   # {"regions":[...5 个...], "areas":[...14 个地点...]}
+    def grayzone_areas(self) -> dict   # {"regions":[...6 个区域...], "areas":[...14 个地点，仅兼容...]}
     def grayzone_teams(self, area_id, offset, limit, q="", region="",
                        power_min=None, power_max=None, power_known=None, sort="default") -> dict
+    def grayzone_nodes(self, region, *, q="", offset=0, limit=50, sort="id_asc") -> dict
     def team(self, team_id: int) -> dict | None
     def team_summaries(self, team_ids: list[int]) -> list[dict]
     def team_list(*, q="", chapter="", species=None, role="any", collectable=True,
@@ -103,7 +105,7 @@ class Catalog:
 | 关卡 | `stc.table("mission")` (5016) | campaign/sub/type/difficulty/map_res_name/boss_team_id/order/if_emergency |
 | 点位 | `stc.table("spot")` (5002) | mission_id ↔ enemy_team_id（敌方）/ ally_team_id（支援队伍） |
 | 活动 | `stc.table("mission_event")` (5074)、`stc.table("normal_activity")` (5233) | campaign → 活动名/章节名 |
-| 灰域区域 | `stc.table("daily_mission_group")`、`stc.table("daily_mission_difficulty_group")` | mission → difficulty_group（1..6）→ 真实区域（沙尘带/风暴带/硅状带/结晶带；5/6/未映射→特殊区域） |
+| 灰域区域 | `stc.table("daily_mission_group")`、`stc.table("daily_mission_difficulty_group")` | mission → difficulty_group（1..6）→ 区域（沙尘带/风暴带/硅状带/结晶带；5/6/未映射→特殊区域；标题「装甲突击」→爬塔） |
 | 文本 | `dataMiner/derived/client_text.json` | `mission-{10000000+id}`、`enemy_character_type` 行内 name key、`enemy_illustration` 行内 name key、`mission_event` 行内 event_name key、`normal_activity` 行内 name/chapter_name key |
 | 类型索引 | `dataMiner/derived/enemy_full_model.csv` | type_id → codex_no / faction_name / boss / capturable（**只做映射与标签，不展示技能列**） |
 | 等级缩放 | `unit_model.core.enemy.enemy_attributes(type_id, level, scale_by_level=True)` | 展示用实际数值（660011 实测口径） |
@@ -156,13 +158,15 @@ class Catalog:
 - 原 `rerun`/`special` 全部并入 `event`，不再单独分组；event 章节 id 用 `event-{campaign}`（不跨 campaign 合并），
   subtitle/tags 标「往期复刻 · 第N章」「往期活动」等，保证搜索能命中活动名与副标题。
 - 关卡结算形式结构化：每个 stage 带 `settlement`（event_score / score_prize / rank），见 §2.3。
-- 灰域区域层级（v1.7）：真实区域来自 `daily_mission_group`（mission→difficulty_group）+
-  `daily_mission_difficulty_group`，固定 **5 个区域**：
-  沙尘带（组1）/ 风暴带（组2）/ 硅状带（组3）/ 结晶带（组4）/ **特殊区域**（组5+6+未映射，
-  客户端无区域名，不编造）。组 5/6 的节点数 286/12、未映射 28，都归特殊区域。
-- 灰域 **14 个地点**（原 mission 标题前缀去编号/空格）：共生净土/晶团挖掘点/旅团商道/放射区/
-  人形复制工厂/废弃居民区/秘密通道/图腾圣所/装甲突击/交易地/地坛遗迹/最终贮藏地/庇护所旧址/坍缩狭缝；
-  地点带 `region_ids`（该地点涉及的区域；如 共生净土 跨全部 5 个区域，装甲突击/最终贮藏地只在特殊区域）。
+- 灰域区域层级（v1.8）：真实区域来自 `daily_mission_group`（mission→difficulty_group）+
+  `daily_mission_difficulty_group`，固定 **6 个区域**：
+  沙尘带（组1）/ 风暴带（组2）/ 硅状带（组3）/ 结晶带（组4）/ **装甲突击**（爬塔，kind=tower，
+  按 mission 标题前缀「装甲突击」识别，10 节点/49 队/43 怪种）/ **特殊区域**（组5+6+未映射且
+  去掉装甲突击，316 节点，kind=special，客户端无区域名不编造）。
+- 灰域节点 = 有可收藏队伍的 mission（1288 个）；页面按「区域→节点→节点内小怪」组织。
+  mission 标题前缀（共生净土/晶团挖掘点/… 共 14 个）只是节点的 `location` 副信息，
+  顶部不再按地点筛选。`grayzone_nodes(region,...)` 返回节点列表（含 top_species ≤4）。
+- 旧的 14 个地点仅作兼容字段 `areas`（带 region_ids），不再作为主结构。
 - `spot` 里缺失 mission 表的 mission_id（例 404101）归入 event 的「特殊作战·未知」章节。
 
 ### 2.3 返回结构（前端直接消费）
@@ -182,12 +186,13 @@ class Catalog:
 
 // GET /api/chapters/{id}
 {"chapter": {...同上}, "stages":[...]}
-// grayzone chapter: stages 为空；subtitle "5 个区域 · 14 个地点 · 1288 个节点"；
-//   regions=[{"id":"sand","title":"沙尘带","groups":[1],"stage_count":228,"team_count":579,
-//             "species_count":39,"source":"daily_mission_difficulty_group-10000001","note":""},
-//            ... 5 个（special: groups [5,6], source:null, note:「客户端无区域名…」）]
-//   areas=[{"id":"共生净土","title":"共生净土","region_ids":["sand","storm","silicon","crystal","special"],
-//           "stage_count":240,"team_count":1104,"species_count":23},...14 个地点]
+// grayzone chapter: stages 为空；subtitle "6 个区域 · 1288 个节点"；
+//   regions=[{"id":"sand","title":"沙尘带","kind":"region","groups":[1],"stage_count":228,
+//             "team_count":579,"species_count":39,"source":"daily_mission_difficulty_group-10000001","note":""},
+//            ... 6 个：沙尘带/风暴带/硅状带/结晶带/装甲突击(kind=tower,10 节点/49 队/43 种,
+//                note「爬塔关卡，按节点逐个挑战」)/特殊区域(kind=special, 316 节点, source:null,
+//                note「组5/6/未映射节点（已把装甲突击爬塔节点拆出）…客户端无区域名」)]
+//   areas=[...14 个地点，仅兼容字段，不作为主结构]
 // orphan chapter: stages 为空，直接返回分页 teams：
 //   GET /api/chapters/orphan?offset=0&limit=60&q=
 {"chapter":{...}, "stages":[], "teams":[team_summary...], "teams_total":3802, "offset":0, "limit":60}
@@ -247,13 +252,23 @@ class Catalog:
 // GET /api/species/{codex_no}?offset=&limit=&q=&power_min=&power_max=&power_known=&sort=
 {"species":{...},"total":N,"offset":0,"limit":60,"teams":[...分页 team_summary...]}
 
-// GET /api/grayzone/areas -> {"regions":[{"id":"sand","title":"沙尘带","groups":[1],"stage_count":228,
-//    "team_count":579,"species_count":39,"source":"daily_mission_difficulty_group-10000001","note":""},...
-//    5 个：沙尘带/风暴带/硅状带/结晶带/特殊区域（special source:null, note 说明无客户端名称+未映射）],
-//  "areas":[{"id":"共生净土","title":"共生净土","region_ids":["sand",...,"special"],
-//            "stage_count":240,"team_count":1104,"species_count":23},...14 个地点]}
+// GET /api/grayzone/areas -> {"regions":[{"id":"sand","title":"沙尘带","kind":"region","groups":[1],
+//    "stage_count":228,"team_count":579,"species_count":39,
+//    "source":"daily_mission_difficulty_group-10000001","note":""},...
+//    6 个：沙尘带/风暴带/硅状带/结晶带/装甲突击(kind=tower, stage_count 10, team_count 49,
+//    species_count 43)/特殊区域(kind=special, stage_count 316, source:null, note 说明无客户端名称+未映射)],
+//  "areas":[...14 个地点，仅兼容保留，带 region_ids]}
+// GET /api/grayzone/nodes?region=crystal&q=&offset=&limit=&sort=id_asc
+//   region: sand/storm/silicon/crystal/armor_assault/special 或中文标题（沙尘带/…/装甲突击/特殊区域）
+//   sort: id_asc(默认)/id_desc/difficulty_asc/difficulty_desc/team_count_desc/species_count_desc；limit≤200
+//   -> {"region_id":"crystal","region_title":"结晶带","total":278,"offset":0,"limit":50,"sort":"id_asc",
+//       "items":[{"mission_id":500004,"title":"旅团商道-I","location":"旅团商道",
+//                 "region_id":"crystal","region_title":"结晶带","difficulty":6000,
+//                 "team_count":4,"species_count":12,
+//                 "top_species":[{"codex_no":4,"name":"切割者","icon":"ripper.png"},...≤4],
+//                 "tags":["普通"]}]}
 // GET /api/grayzone/teams?area=&region=&offset=&limit=&q=&power_min=&power_max=&power_known=&sort=
-//   region: 沙尘带/风暴带/硅状带/结晶带/特殊区域（也接受 sand/storm/silicon/crystal/special、组号 1..6）
+//   region: 沙尘带/风暴带/硅状带/结晶带/装甲突击/特殊区域（也接受 sand/storm/silicon/crystal/armor_assault/special、组号 1..6）
 //   -> {"total":789,"offset":0,"region":"crystal","items":[team_summary...]}
 // sort: default|power_desc|power_asc|hp_desc|units_desc；power_known=1 只看有标注效能的队伍
 // GET /api/icons/{icon} -> PNG（怪种/单位头像，来自本机游戏资源，缺失 404）
@@ -393,12 +408,13 @@ def set_system_proxy(enable: bool, addr: str = f"127.0.0.1:{CAPTURE_PORT}") -> d
 |---|---|---|
 | GET | `/api/health` | 应用/数据/game/gflzirc 状态 |
 | GET | `/api/chapters` | 章节分组 |
-| GET | `/api/chapters/{id}` | 章节详情 + 关卡（灰域返回 areas） |
+| GET | `/api/chapters/{id}` | 章节详情 + 关卡（灰域返回 regions/areas） |
 | GET | `/api/stages/{mission_id}` | 关卡 + 队伍列表 |
 | GET | `/api/teams` | 全怪组总表（q/chapter/species/role/power/units/sort/offset/limit，见 §2.5） |
 | GET | `/api/teams/{team_id}` | 队伍详情 |
-| GET | `/api/grayzone/areas` | 灰域层级：5 个区域 + 14 个地点（含 region_ids） |
-| GET | `/api/grayzone/teams?area=&region=&offset=&limit=&q=` | 灰域队伍分页（地点/区域筛选） |
+| GET | `/api/grayzone/areas` | 灰域 6 个区域（+ 兼容 areas） |
+| GET | `/api/grayzone/nodes?region=&q=&offset=&limit=&sort=` | 灰域节点列表（区域→节点→top_species） |
+| GET | `/api/grayzone/teams?area=&region=&offset=&limit=&q=` | 灰域队伍分页（区域筛选） |
 | GET | `/api/species?q=&faction=&category=&offset=&limit=` | 怪种列表 |
 | GET | `/api/species/{codex_no}` | 怪种 + 所有队伍 |
 | GET | `/api/search?q=` | 全局搜索 |

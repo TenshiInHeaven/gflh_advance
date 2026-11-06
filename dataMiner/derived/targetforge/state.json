@@ -1,0 +1,15 @@
+{
+ "draft": [],
+ "tutorial": {
+  "completed": [],
+  "dismissed": false
+ },
+ "settings": {
+  "capture_port": 18080,
+  "auto_restore_proxy": true,
+  "preferred_creds": "creds_latest.json",
+  "append_skip_existing": true
+ },
+ "last_execution": null,
+ "updated_at": "2026-11-07T02:47:34+08:00"
+}

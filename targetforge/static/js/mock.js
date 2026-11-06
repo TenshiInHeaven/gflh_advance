@@ -326,7 +326,7 @@ function buildChapter(groupDef, ordinal) {
   };
   if (groupDef.id === "grayzone") {
     chapter.areas = getAreas();
-    chapter.subtitle = `${GRAYZONE_AREAS.length} 个地点 · ${stageCount} 个节点`;
+    chapter.subtitle = `5 个区域 · 1288 个节点`;
   }
   state.chaptersById.set(chapterId, chapter);
   return chapter;
@@ -349,20 +349,21 @@ function ensureChapters() {
 const GRAYZONE_REGION_DEFS = [
   { id: "sand", title: "沙尘带", areas: ["晶团挖掘点", "旅团商道", "放射区"] },
   { id: "storm", title: "风暴带", areas: ["人形复制工厂", "废弃居民区", "秘密通道"] },
-  { id: "silicon", title: "硅状带", areas: ["交易地", "装甲突击"] },
+  { id: "silicon", title: "硅状带", areas: ["交易地"] },
   { id: "crystal", title: "结晶带", areas: ["共生净土", "最终贮藏地", "图腾圣所", "地坛遗迹"] },
-  { id: "special", title: "特殊区域", areas: ["庇护所旧址", "坍缩狭缝"] },
+  { id: "special", title: "特殊区域", areas: ["装甲突击", "庇护所旧址", "坍缩狭缝"] },
 ];
 
 function getRegions() {
   if (state.regions) return state.regions;
   const areas = getAreas();
+  const fixedNodes = { sand: 228, storm: 228, silicon: 228, crystal: 278, special: 326 };
   state.regions = GRAYZONE_REGION_DEFS.map((region) => {
     const own = areas.filter((area) => (area.region_ids || []).includes(region.id));
     return {
       id: region.id,
       title: region.title,
-      stage_count: own.reduce((acc, area) => acc + area.stage_count, 0),
+      stage_count: fixedNodes[region.id] || own.reduce((acc, area) => acc + area.stage_count, 0),
       team_count: own.reduce((acc, area) => acc + area.team_count, 0),
       species_count: own.reduce((acc, area) => acc + area.species_count, 0),
     };
@@ -379,9 +380,9 @@ function getAreas() {
       id: name,
       title: name,
       region_ids: regionIds,
-      stage_count: randInt(rng, 32, 240),
-      team_count: [197, 240, 320, 410, 512, 620, 758, 880, 940, 1000, 1050, 1104][idx],
-      species_count: randInt(rng, 30, 150),
+      stage_count: name === "装甲突击" ? 10 : randInt(rng, 32, 240),
+      team_count: name === "装甲突击" ? 49 : [197, 240, 320, 410, 512, 620, 758, 880, 940, 1000, 1050, 1104][idx],
+      species_count: name === "装甲突击" ? 43 : randInt(rng, 30, 150),
     };
   });
   return state.areas;
@@ -795,6 +796,90 @@ function applyMockTeamQuery(items, query = {}) {
   else if (sort === "hp_desc") list.sort((a, b) => (Number(b.hp_total) || 0) - (Number(a.hp_total) || 0));
   else if (sort === "units_desc") list.sort((a, b) => (Number(b.units) || 0) - (Number(a.units) || 0));
   return { total: list.length, items: list };
+}
+
+/* ------------------------------------------------------------------ */
+/* 灰域节点列表（mock）：区域 → 节点，装甲突击单独 10 个               */
+/* ------------------------------------------------------------------ */
+const MOCK_GRAY_LAYOUT = [
+  { region: "sand", count: 228 },
+  { region: "storm", count: 228 },
+  { region: "silicon", count: 228 },
+  { region: "crystal", count: 278 },
+  { region: "special", count: 316 },
+  { region: "armor_assault", count: 10 },
+];
+
+function mockGrayNodePool(regionId) {
+  const areas = getAreas();
+  let offset = 0;
+  for (const layout of MOCK_GRAY_LAYOUT) {
+    const start = offset;
+    offset += layout.count;
+    if (layout.region !== regionId) continue;
+    const regionAreas = areas.filter((area) =>
+      layout.region === "armor_assault" ? area.id === "装甲突击" : (area.region_ids || []).includes(layout.region),
+    );
+    const regionTitle =
+      { sand: "沙尘带", storm: "风暴带", silicon: "硅状带", crystal: "结晶带", special: "特殊区域", armor_assault: "装甲突击" }[
+        layout.region
+      ] || layout.region;
+    return Array.from({ length: layout.count }, (_, index) => {
+      const globalIndex = start + index;
+      const nodeId = 8800000 + globalIndex;
+      const rng = mulberry32(hash32(`gznode:${layout.region}:${index}`));
+      const area = regionAreas.length ? regionAreas[index % regionAreas.length] : { title: "灰域" };
+      const species = [];
+      for (let i = 0; i < 4; i += 1) {
+        const codex = 1 + ((rng() * 264) | 0);
+        species.push({ codex_no: codex, name: speciesName(codex), icon: mockIconUri(factionByCodex(codex), codex) });
+      }
+      return {
+        mission_id: nodeId,
+        title: layout.region === "armor_assault" ? `装甲突击-${index + 1}` : `${area.title}-${index + 1}`,
+        location: area.title,
+        region_id: layout.region,
+        region_title: regionTitle,
+        difficulty: 1000 + (index % 42) * 800,
+        team_count: 4 + (rng() * 9) | 0,
+        species_count: 6 + ((rng() * 20) | 0),
+        top_species: species,
+        tags: layout.region === "armor_assault" ? ["爬塔"] : ["灰域"],
+      };
+    });
+  }
+  return [];
+}
+
+function mockGrayNodes(query = {}) {
+  const regionId = String(query.region || "crystal");
+  const limit = Math.max(1, Math.min(200, Number(query.limit) || 30));
+  const offset = Math.max(0, Number(query.offset) || 0);
+  const q = String(query.q || "").trim().toLowerCase();
+  const sort = String(query.sort || "id_asc");
+  let nodes = mockGrayNodePool(regionId);
+  if (q) {
+    nodes = nodes.filter((node) =>
+      `${node.mission_id} ${node.title} ${node.location}`.toLowerCase().includes(q),
+    );
+  }
+  nodes.sort((a, b) => {
+    switch (sort) {
+      case "id_desc":
+        return b.mission_id - a.mission_id;
+      case "teams_desc":
+        return b.team_count - a.team_count;
+      case "difficulty_desc":
+        return b.difficulty - a.difficulty;
+      default:
+        return a.mission_id - b.mission_id;
+    }
+  });
+  const regionTitle =
+    { sand: "沙尘带", storm: "风暴带", silicon: "硅状带", crystal: "结晶带", special: "特殊区域", armor_assault: "装甲突击" }[
+      regionId
+    ] || regionId;
+  return { region_id: regionId, region_title: regionTitle, total: nodes.length, offset, limit, items: nodes.slice(offset, offset + limit) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -1350,6 +1435,9 @@ export async function mockRequest(method, path, body = {}) {
         support_team_count: supportTeams.length,
         reserve_team_count: reserveTeams.length,
         chapter_title: chapter.title,
+        chapter_id: chapter.id,
+        category: chapter.category,
+        gray_zone: chapter.category === "grayzone",
       },
       teams,
       support_teams: supportTeams,
@@ -1365,6 +1453,9 @@ export async function mockRequest(method, path, body = {}) {
   }
   if (route === "/api/grayzone/areas") {
     return ok({ regions: getRegions(), areas: getAreas() });
+  }
+  if (route === "/api/grayzone/nodes") {
+    return ok(mockGrayNodes(query));
   }
   if (route === "/api/grayzone/teams") {
     return ok(grayzoneTeams(query.area || "", Number(query.offset || 0), Number(query.limit || 60), query));

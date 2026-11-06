@@ -13,13 +13,7 @@ import {
   bindPager,
 } from "../ui.js";
 import { settlementBadgeHtml } from "../components/settlement.js";
-import {
-  normalizeGrayMeta,
-  areaRegionNames,
-  regionStats,
-  grayStats,
-  grayStatTiles,
-} from "../components/grayzone-meta.js";
+import { normalizeGrayMeta, grayHomeModel } from "../components/grayzone-meta.js";
 import {
   filterAndSortTeams,
   bindPowerFilter,
@@ -57,7 +51,7 @@ export async function render(root, { params }) {
     const chapterAreas = data.areas || chapter.areas || [];
     const areas = grayMeta.areas.length ? grayMeta.areas : normalizeGrayMeta({ areas: chapterAreas }).areas;
     const regions = grayMeta.regions || [];
-    const gzStats = grayStats(chapter, { regions, areas });
+    const grayHome = grayHomeModel(regions, areas);
 
     root.innerHTML = `
       ${pageHeadHtml({
@@ -65,7 +59,7 @@ export async function render(root, { params }) {
         title: chapter.title || chapterId,
         badge: isGray ? "GRAY ZONE" : isOrphan ? "ORPHAN" : "CHAPTER",
         sub: isGray
-          ? `${esc(chapter.subtitle || "灰域按区域与地点分组")} · 区域（沙尘带/风暴带/硅状带/结晶带/特殊区域）下的地点可进入队伍列表；灰域不逐节点列举关卡。`
+          ? `${esc(chapter.subtitle || "灰域按区域分组")} · 点区域查看节点列表，再点节点查看节点内小怪；装甲突击（爬塔）单独入口。`
           : isOrphan
             ? `没有固定关卡的 ${fmtNum(chapter.team_count)} 支可收藏队伍，直接按队伍列出；支持搜索与分页。`
             : `${esc(chapter.subtitle || "")} 共 ${fmtNum(stages.length)} 个关卡、${fmtNum(chapter.team_count)} 支可收藏队伍、${fmtNum(chapter.species_count)} 个怪种。`,
@@ -77,9 +71,16 @@ export async function render(root, { params }) {
       <div class="stat-grid" style="grid-template-columns:repeat(${isGray ? 5 : 4},minmax(0,1fr));margin-bottom:24px">
         ${
           isGray
-            ? grayStatTiles(gzStats)
+            ? [
+                ["radar", "区域数量", fmtNum(grayHome.mainRegions.length), "沙尘带 / 风暴带 / 硅状带 / 结晶带", "cyan"],
+                ["zap", "装甲突击", grayHome.armor ? "1" : "—", `爬塔关卡 · ${fmtNum(grayHome.armor?.stage_count || 0)} 个节点`, "gold"],
+                ["flag", "节点", fmtNum(grayHome.nodeTotal || chapter.stage_count), "全部节点（含装甲突击 / 特殊区域）", ""],
+                ["users", "可收藏队伍", fmtNum(chapter.team_count), "全部节点合计", ""],
+                ["crosshair", "怪种", fmtNum(chapter.species_count), "全部节点出现", ""],
+              ]
                 .map(
-                  (tile) => `<div class="stat-tile"><div class="st-label">${icon(tile.icon, 12)} ${tile.label}</div><div class="st-value ${tile.accent || ""}">${tile.value}</div><div class="st-sub">${esc(tile.sub)}</div></div>`,
+                  ([iconName, label, value, sub, accent]) =>
+                    `<div class="stat-tile"><div class="st-label">${icon(iconName, 12)} ${label}</div><div class="st-value ${accent}">${value}</div><div class="st-sub">${esc(sub)}</div></div>`,
                 )
                 .join("")
             : isOrphan
@@ -97,56 +98,59 @@ export async function render(root, { params }) {
       ${
         isGray
           ? `<div class="gray-sections">
-              ${
-                regions.length
-                  ? `<section class="section gray-region-section">
-                      ${sectionHeadHtml("灰域区域", {
-                        hint: `${regions.length} 个区域 · 点区域筛选下方地点`,
-                        iconName: "radar",
-                        actions: `<button class="btn btn-sm btn-ghost region-reset active" type="button" data-region-reset>全部区域</button>`,
-                      })}
-                      <div class="region-grid">
-                        ${regions
-                          .map((region) => {
-                            const rs = regionStats(region, areas);
-                            return `<button class="region-card" type="button" data-region-id="${esc(region.id)}" data-region-name="${esc(region.title)}">
-                              <div class="rg-head"><span class="rg-name">${esc(region.title)}</span><span class="rg-go">${icon("filter", 12)} 筛选</span></div>
-                              <div class="rg-stats">
-                                <div><b>${fmtNum(rs.stage_count)}</b><span>节点</span></div>
-                                <div><b>${fmtNum(rs.team_count)}</b><span>可收藏队伍</span></div>
-                                <div><b>${fmtNum(rs.species_count)}</b><span>怪种</span></div>
-                              </div>
-                            </button>`;
-                          })
-                          .join("")}
-                      </div>
-                    </section>`
-                  : ""
-              }
-              <section class="section gray-area-section">
-                ${sectionHeadHtml("灰域地点", {
-                  hint: `区域内的地点，不是区域 · ${areas.length} 个地点 · 点地点查看队伍`,
-                  iconName: "map",
+              <section class="section gray-region-section">
+                ${sectionHeadHtml("灰域区域", {
+                  hint: "区域 → N 个节点 → 节点内小怪 · 点区域查看节点列表",
+                  iconName: "radar",
                 })}
-                <div class="area-filter-meta" data-area-filter-meta>全部区域 · ${areas.length} 个地点</div>
-                <div class="area-grid">
-                  ${areas
-                    .map((area, index) => {
-                      const regionNames = areaRegionNames(area, regions);
-                      return `
-                    <button class="area-card" type="button" data-area-id="${esc(area.id)}" data-regions="${esc((area.region_ids || []).join(","))}">
-                      <div class="area-code">SECTOR ${String(index + 1).padStart(2, "0")} // GZ-${String(index + 1).padStart(2, "0")}</div>
-                      <div class="area-name">${esc(area.title || area.id)}</div>
-                      ${regionNames.length ? `<div class="area-regions">${regionNames.map((name) => `<span class="region-badge">${esc(name)}</span>`).join("")}</div>` : ""}
-                      <div class="area-stats">
-                        <div><b>${fmtNum(area.team_count)}</b><span>可收藏队伍</span></div>
-                        <div><b>${fmtNum(area.species_count)}</b><span>怪种</span></div>
-                        <div><b>${fmtNum(area.stage_count)}</b><span>节点</span></div>
+                <div class="gray-region-grid">
+                  ${grayHome.mainRegions
+                    .map(
+                      (region) => `
+                    <button class="region-card" type="button" data-gray-region="${esc(region.id)}">
+                      <div class="rg-head"><span class="rg-name">${esc(region.title)}</span><span class="rg-go">${icon("chevronRight", 12)} 节点</span></div>
+                      <div class="rg-stats">
+                        <div><b>${fmtNum(region.stage_count)}</b><span>节点</span></div>
+                        <div><b>${fmtNum(region.team_count)}</b><span>可收藏队伍</span></div>
+                        <div><b>${fmtNum(region.species_count)}</b><span>怪种</span></div>
                       </div>
-                      <span class="area-go">${icon("chevronRight", 17)}</span>
-                    </button>`;
-                    })
+                    </button>`,
+                    )
                     .join("")}
+                </div>
+              </section>
+              <section class="section gray-special-section">
+                ${sectionHeadHtml("特殊玩法 / 特殊区域", {
+                  hint: "装甲突击为爬塔关卡，单独入口；特殊区域是组 5/6 等客户端无区域名的节点集合",
+                  iconName: "zap",
+                })}
+                <div class="gray-special-grid">
+                  ${
+                    grayHome.armor
+                      ? `<button class="region-card tower" type="button" data-gray-region="${esc(grayHome.armor.id)}">
+                          <div class="rg-head"><span class="rg-name">${esc(grayHome.armor.title)}</span><span class="tower-badge">${icon("zap", 10)} 爬塔关卡</span></div>
+                          <div class="rg-note">独立爬塔入口 · 共 ${fmtNum(grayHome.armor.stage_count)} 个节点</div>
+                          <div class="rg-stats">
+                            <div><b>${fmtNum(grayHome.armor.stage_count)}</b><span>节点</span></div>
+                            <div><b>${fmtNum(grayHome.armor.team_count)}</b><span>可收藏队伍</span></div>
+                            <div><b>${fmtNum(grayHome.armor.species_count)}</b><span>怪种</span></div>
+                          </div>
+                        </button>`
+                      : ""
+                  }
+                  ${
+                    grayHome.special
+                      ? `<button class="region-card special" type="button" data-gray-region="${esc(grayHome.special.id)}">
+                          <div class="rg-head"><span class="rg-name">${esc(grayHome.special.title || "特殊区域")}</span><span class="special-badge">特殊</span></div>
+                          <div class="rg-note">${esc(grayHome.special.note || "客户端无区域名的节点集合")}</div>
+                          <div class="rg-stats">
+                            <div><b>${fmtNum(grayHome.special.stage_count)}</b><span>节点</span></div>
+                            <div><b>${fmtNum(grayHome.special.team_count)}</b><span>可收藏队伍</span></div>
+                            <div><b>${fmtNum(grayHome.special.species_count)}</b><span>怪种</span></div>
+                          </div>
+                        </button>`
+                      : ""
+                  }
                 </div>
               </section>
             </div>`
@@ -185,63 +189,18 @@ export async function render(root, { params }) {
         navigate(`/stages/${row.dataset.stageDetail}`);
       });
     });
-    if (isGray) initGrayRegionFilter(root);
+    if (isGray) {
+      root.querySelectorAll("[data-gray-region]").forEach((card) => {
+        card.addEventListener("click", () => {
+          const regionId = String(card.dataset.grayRegion || "").trim();
+          if (regionId) navigate(`/grayzone/region/${encodeURIComponent(regionId)}`);
+        });
+      });
+    }
     if (isOrphan) initOrphanSection(root, chapterId, chapter);
   } catch (err) {
     handleViewError(root, err, () => render(root, { params }));
   }
-}
-
-/* ------------------------------------------------------------------ */
-/* 灰域：区域 → 地点筛选（区域是沙尘带/风暴带/硅状带/结晶带/特殊区域，   */
-/* 地点是 14 个 mission 前缀；点地点进入队伍列表时带 region 面包屑）      */
-/* ------------------------------------------------------------------ */
-function initGrayRegionFilter(root) {
-  const regionCards = [...root.querySelectorAll("[data-region-id]")];
-  const areaCards = [...root.querySelectorAll("[data-area-id]")];
-  const resetBtn = root.querySelector("[data-region-reset]");
-  const metaEl = root.querySelector("[data-area-filter-meta]");
-  let selected = "";
-
-  const apply = () => {
-    const selectedName = regionCards.find((card) => card.dataset.regionId === selected)?.dataset.regionName || selected;
-    let shown = 0;
-    areaCards.forEach((card) => {
-      const ids = String(card.dataset.regions || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const visible = !selected || ids.includes(selected);
-      card.classList.toggle("is-hidden", !visible);
-      if (visible) shown += 1;
-    });
-    regionCards.forEach((card) => card.classList.toggle("active", card.dataset.regionId === selected));
-    if (resetBtn) resetBtn.classList.toggle("active", !selected);
-    if (metaEl) {
-      metaEl.textContent = selected
-        ? `当前区域：${selectedName} · 显示 ${shown} / ${areaCards.length} 个地点`
-        : `全部区域 · ${areaCards.length} 个地点`;
-    }
-  };
-
-  regionCards.forEach((card) => {
-    card.addEventListener("click", () => {
-      selected = selected === card.dataset.regionId ? "" : card.dataset.regionId;
-      apply();
-    });
-  });
-  resetBtn?.addEventListener("click", () => {
-    selected = "";
-    apply();
-  });
-  areaCards.forEach((card) => {
-    card.addEventListener("click", () => {
-      const areaId = String(card.dataset.areaId || "").trim();
-      const suffix = selected ? `?region=${encodeURIComponent(selected)}` : "";
-      navigate(`/grayzone/${encodeURIComponent(areaId)}${suffix}`);
-    });
-  });
-  apply();
 }
 
 /* ------------------------------------------------------------------ */

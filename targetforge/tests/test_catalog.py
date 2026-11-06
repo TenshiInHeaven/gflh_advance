@@ -17,8 +17,8 @@
   reserve 不影响 team_count/support_team_count/orphan 真实状态；
 * **全怪组总表 team_list（v1.6）**：q/chapter/species(AND)/role/enemy·support·reserve/
   power/units 筛选、8 种排序（稳定、未知效能最后）、分页；13,700 队单查询 <100ms；
-* 灰域 **5 个真实区域**（沙尘带/风暴带/硅状带/结晶带/特殊区域）+ **14 个地点**
-  （原 mission 标题前缀，带 region_ids；特殊区域含组5/6/未映射）；
+* 灰域 **6 个区域**（沙尘带/风暴带/硅状带/结晶带/装甲突击爬塔/特殊区域）→
+  `grayzone_nodes(region)` 节点列表（location=标题前缀副信息、top_species≤4）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
 * 队伍/物种列表分页；species() 无参仍返回全量 teams（app.py 兼容）；
@@ -423,37 +423,49 @@ class CatalogDataTest(unittest.TestCase):
         main_stage = self.catalog.chapter("main-1")["stages"][0]
         self.assertEqual(main_stage["settlement"]["type"], "normal")
 
-    # -- 灰域：5 个真实区域 / 14 个地点 ---------------------------------
+    # -- 灰域 v1.8：6 个区域 → 节点（装甲突击爬塔单独） -------------------
     def test_grayzone_areas(self):
         payload = self.catalog.grayzone_areas()
         self.assertEqual(set(payload), {"regions", "areas"})
         regions = payload["regions"]
-        self.assertEqual(len(regions), 5)
+        self.assertEqual(len(regions), 6)
         self.assertEqual([region["id"] for region in regions],
-                         ["sand", "storm", "silicon", "crystal", "special"])
+                         ["sand", "storm", "silicon", "crystal",
+                          "armor_assault", "special"])
         self.assertEqual([region["title"] for region in regions],
-                         ["沙尘带", "风暴带", "硅状带", "结晶带", "特殊区域"])
-        expected_stages = [228, 228, 228, 278, 326]
+                         ["沙尘带", "风暴带", "硅状带", "结晶带", "装甲突击", "特殊区域"])
+        self.assertEqual([region["kind"] for region in regions],
+                         ["region", "region", "region", "region", "tower", "special"])
+        expected_stages = [228, 228, 228, 278, 10, 316]
         for region, stage_count in zip(regions, expected_stages):
-            self.assertEqual(region["groups"], [1] if region["id"] == "sand" else
-                             ([2] if region["id"] == "storm" else
-                              ([3] if region["id"] == "silicon" else
-                               ([4] if region["id"] == "crystal" else [5, 6]))))
-            self.assertEqual(region["stage_count"], stage_count)
+            self.assertEqual(region["stage_count"], stage_count, region["id"])
             self.assertGreater(region["team_count"], 0)
             self.assertGreater(region["species_count"], 0)
-            self.assertEqual(set(region), {"id", "title", "groups", "stage_count",
-                                           "team_count", "species_count", "source",
-                                           "note"})
+            self.assertEqual(set(region), {"id", "title", "kind", "groups",
+                                           "stage_count", "team_count",
+                                           "species_count", "source", "note"})
+        # 前 4 个正式区域沿用 client_text 名称
         for region in regions[:4]:
             self.assertIn("daily_mission_difficulty_group", region["source"])
             self.assertEqual(region["note"], "")
-        special = regions[-1]
+        # 装甲突击：爬塔模式，单独一块（10 节点 / 49 队 / 43 怪种）
+        armor = regions[4]
+        self.assertEqual(armor["kind"], "tower")
+        self.assertEqual(armor["stage_count"], 10)
+        self.assertEqual(armor["team_count"], 49)
+        self.assertEqual(armor["species_count"], 43)
+        self.assertIsNone(armor["source"])
+        self.assertIn("爬塔", armor["note"])
+        # 特殊区域 = 组5/6/未映射去掉装甲突击（316 节点）
+        special = regions[5]
+        self.assertEqual(special["kind"], "special")
+        self.assertEqual(special["stage_count"], 316)
+        self.assertEqual(special["team_count"], 974)
         self.assertIsNone(special["source"])
         self.assertIn("客户端无区域名", special["note"])
-        self.assertEqual(special["groups"], [5, 6])
+        self.assertIn("装甲突击", special["note"])
         self.assertEqual(sum(region["stage_count"] for region in regions), 1288)
-        # 地点（原来的 14 个）统计不变，新增 region_ids
+        # 旧「地点」仅兼容保留：14 个数量/统计不变，region_ids 反映新区域拆分
         areas = payload["areas"]
         self.assertEqual(len(areas), 14)
         self.assertEqual({area["id"] for area in areas}, set(GRAY_AREAS))
@@ -471,10 +483,10 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(by_id["晶团挖掘点"]["team_count"], 872)
         self.assertEqual(by_id["旅团商道"]["stage_count"], 210)
         self.assertEqual(by_id["放射区"]["team_count"], 315)
-        # 只在特殊区域的地点
         self.assertEqual(by_id["最终贮藏地"]["region_ids"], ["special"])
-        self.assertEqual(by_id["装甲突击"]["region_ids"], ["special"])
-        # 没有可收藏队伍的地点也要存在（region_ids 由 mission 映射得出）
+        # 装甲突击（爬塔）地点 → 新区域 id
+        self.assertEqual(by_id["装甲突击"]["region_ids"], ["armor_assault"])
+        self.assertEqual(by_id["装甲突击"]["stage_count"], 10)
         self.assertEqual(by_id["庇护所旧址"]["stage_count"], 0)
         self.assertEqual(by_id["坍缩狭缝"]["stage_count"], 0)
         self.assertTrue(by_id["庇护所旧址"]["region_ids"])
@@ -486,13 +498,83 @@ class CatalogDataTest(unittest.TestCase):
         chapter = detail["chapter"]
         self.assertEqual(chapter["stage_count"], 1288)
         self.assertEqual(chapter["team_count"], 3352)
-        self.assertEqual(chapter["subtitle"], "5 个区域 · 14 个地点 · 1288 个节点")
+        self.assertEqual(chapter["subtitle"], "6 个区域 · 1288 个节点")
         self.assertEqual(chapter["tags"], ["打灰"])
         self.assertEqual(detail["stages"], [])
-        self.assertEqual(len(detail["regions"]), 5)
-        self.assertEqual(len(detail["areas"]), 14)
-        self.assertEqual(len(chapter["regions"]), 5)
+        self.assertEqual(len(detail["regions"]), 6)
+        self.assertEqual(len(detail["areas"]), 14)   # 兼容字段
+        self.assertEqual(len(chapter["regions"]), 6)
         self.assertEqual(len(chapter["areas"]), 14)
+
+    def test_grayzone_nodes(self):
+        """v1.8：区域 → 节点列表（grayzone_nodes）。"""
+        for region_id, expected in (("sand", 228), ("storm", 228),
+                                    ("silicon", 228), ("crystal", 278),
+                                    ("armor_assault", 10), ("special", 316)):
+            result = self.catalog.grayzone_nodes(region_id)
+            self.assertEqual(result["total"], expected, region_id)
+            self.assertEqual(result["region_id"], region_id)
+            self.assertTrue(result["region_title"])
+        # 中文标题 / id 都接受
+        self.assertEqual(self.catalog.grayzone_nodes("结晶带")["total"], 278)
+        self.assertEqual(self.catalog.grayzone_nodes("装甲突击")["total"], 10)
+        self.assertEqual(self.catalog.grayzone_nodes("特殊区域")["total"], 316)
+        # 全区域合计
+        self.assertEqual(self.catalog.grayzone_nodes("")["total"], 1288)
+        # 节点字段
+        node = self.catalog.grayzone_nodes("crystal", limit=1)["items"][0]
+        self.assertEqual(set(node), {"mission_id", "title", "location",
+                                     "region_id", "region_title", "difficulty",
+                                     "team_count", "species_count",
+                                     "top_species", "tags"})
+        self.assertEqual(node["region_id"], "crystal")
+        self.assertEqual(node["region_title"], "结晶带")
+        self.assertGreater(len(node["top_species"]), 0)
+        self.assertLessEqual(len(node["top_species"]), 4)
+        for species in node["top_species"]:
+            self.assertEqual(set(species), {"codex_no", "name", "icon"})
+        # 装甲突击节点：title/location 都是装甲突击；特殊区域不含装甲突击
+        armor_nodes = self.catalog.grayzone_nodes("armor_assault", limit=200)["items"]
+        self.assertEqual(len(armor_nodes), 10)
+        for item in armor_nodes:
+            self.assertEqual(item["location"], "装甲突击")
+            self.assertTrue(item["title"].startswith("装甲突击"))
+        special_result = self.catalog.grayzone_nodes("special", limit=200)
+        self.assertEqual(special_result["total"], 316)
+        self.assertEqual(len(special_result["items"]), 200)   # limit 上限 200
+        self.assertTrue(all(item["location"] != "装甲突击"
+                            for item in special_result["items"]))
+        # 分页 / limit 上限
+        page1 = self.catalog.grayzone_nodes("crystal", limit=3)
+        page2 = self.catalog.grayzone_nodes("crystal", offset=3, limit=3)
+        whole = self.catalog.grayzone_nodes("crystal", limit=6)
+        self.assertEqual([item["mission_id"] for item in page1["items"]]
+                         + [item["mission_id"] for item in page2["items"]],
+                         [item["mission_id"] for item in whole["items"]])
+        self.assertLessEqual(len(self.catalog.grayzone_nodes("crystal",
+                                                            limit=999)["items"]), 200)
+        # q：标题 / 地点 / mission id
+        q_title = self.catalog.grayzone_nodes("crystal", q="旅团商道")
+        self.assertGreater(q_title["total"], 0)
+        self.assertTrue(all("旅团商道" in (item["title"] + item["location"])
+                            for item in q_title["items"]))
+        q_id = self.catalog.grayzone_nodes("crystal", q="500004")
+        self.assertEqual(q_id["total"], 1)
+        self.assertEqual(q_id["items"][0]["mission_id"], 500004)
+        # sort 单调
+        by_difficulty = self.catalog.grayzone_nodes("crystal",
+                                                    sort="difficulty_desc",
+                                                    limit=10)["items"]
+        self.assertEqual([item["difficulty"] for item in by_difficulty],
+                         sorted((item["difficulty"] for item in by_difficulty),
+                                reverse=True))
+        by_teams = self.catalog.grayzone_nodes("special",
+                                               sort="team_count_desc",
+                                               limit=10)["items"]
+        self.assertEqual([item["team_count"] for item in by_teams],
+                         sorted((item["team_count"] for item in by_teams),
+                                reverse=True))
+        self.assertEqual(self.catalog.grayzone_nodes("不存在")["total"], 0)
 
     def test_grayzone_teams_pagination_and_filters(self):
         page = self.catalog.grayzone_teams("共生净土", 0, 10)
@@ -509,7 +591,7 @@ class CatalogDataTest(unittest.TestCase):
                          1104)
         self.assertEqual(self.catalog.grayzone_teams(area_id="共生净土", offset=0,
                                                      limit=2)["total"], 1104)
-        # 真实区域筛选（v1.7）：region 支持 标题/id/组号；special 含组5/6/未映射
+        # 真实区域筛选（v1.8）：region 支持 标题/id/组号；特殊区域不含装甲突击
         crystal = self.catalog.grayzone_teams(region="结晶带")
         self.assertEqual(crystal["total"], 789)
         self.assertEqual(crystal["region"], "crystal")
@@ -518,15 +600,21 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(self.catalog.grayzone_teams(region="沙尘带")["total"], 579)
         self.assertEqual(self.catalog.grayzone_teams(region="storm")["total"], 580)
         self.assertEqual(self.catalog.grayzone_teams(region="硅状带")["total"], 580)
-        self.assertEqual(self.catalog.grayzone_teams(region="特殊区域")["total"], 1023)
-        self.assertEqual(self.catalog.grayzone_teams(region="special")["total"], 1023)
-        self.assertEqual(self.catalog.grayzone_teams(region="5")["total"], 1023)
+        # 装甲突击（爬塔）单独成区：49 队
+        self.assertEqual(self.catalog.grayzone_teams(region="装甲突击")["total"], 49)
+        self.assertEqual(self.catalog.grayzone_teams(region="armor_assault")["total"], 49)
+        # 特殊区域 = 组5/6/未映射去掉装甲突击：974 队
+        self.assertEqual(self.catalog.grayzone_teams(region="特殊区域")["total"], 974)
+        self.assertEqual(self.catalog.grayzone_teams(region="special")["total"], 974)
+        self.assertEqual(self.catalog.grayzone_teams(region="5")["total"], 974)
         self.assertEqual(self.catalog.grayzone_teams(region="不存在")["total"], 0)
         combo = self.catalog.grayzone_teams(area="共生净土", region="结晶带", limit=10)
         self.assertGreater(combo["total"], 0)
         self.assertLessEqual(combo["total"], 1104)
         self.assertEqual(combo["area"], "共生净土")
         self.assertEqual(combo["region"], "crystal")
+        armor_combo = self.catalog.grayzone_teams(area="装甲突击", region="装甲突击")
+        self.assertEqual(armor_combo["total"], 49)
         regions_meta = {region["id"]: region for region in
                         self.catalog.grayzone_areas()["regions"]}
         self.assertEqual(crystal["total"], regions_meta["crystal"]["team_count"])

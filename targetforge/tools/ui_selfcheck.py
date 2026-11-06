@@ -1147,87 +1147,125 @@ def run_checks(base_url: str, mock: bool) -> int:
             page.keyboard.press("Escape")
             page.wait_for_timeout(400)
 
-            # ---------------- 13 灰域区域（沙尘带/风暴带/硅状带/结晶带）→ 14 个灰域地点 ----------------
-            load("/chapters/grayzone", ".region-card, .area-card")
-            try:
-                page.wait_for_selector(".region-card", timeout=20000)
-            except Exception:  # noqa: BLE001
-                pass
-            page.wait_for_timeout(1100)
+            # ---------------- 13 灰域首页（区域 → 节点；装甲突击爬塔单独入口；无地点区块/筛选） ----------------
+            load("/chapters/grayzone", ".region-card")
+            page.wait_for_timeout(1200)
             region_names = [name.strip() for name in page.locator(".rg-name").all_inner_texts()]
-            has_regions = page.locator(".region-card").count() >= 5 and all(
-                name in " ".join(region_names) for name in ["沙尘带", "风暴带", "硅状带", "结晶带"]
-            )
-            if has_regions:
-                checker.passed.append(f"灰域区域区块 {page.locator('.region-card').count()} 个区域（{'/'.join(region_names)}）")
+            required_regions = ["沙尘带", "风暴带", "硅状带", "结晶带", "装甲突击", "特殊区域"]
+            if page.locator(".region-card").count() >= 6 and all(name in " ".join(region_names) for name in required_regions):
+                checker.passed.append(f"灰域首页区域卡 {'/'.join(region_names)}")
             else:
-                checker.failures.append(f"灰域区域区块异常：{region_names}")
-            if page.locator(".area-card").count() == 14:
-                checker.passed.append("灰域地点区块 14 张地点卡")
+                checker.failures.append(f"灰域首页区域卡异常：{region_names}")
+            tower_text = page.locator(".region-card.tower").inner_text() if page.locator(".region-card.tower").count() else ""
+            if "爬塔" in tower_text and "装甲突击" in tower_text:
+                checker.passed.append("装甲突击卡片标注爬塔关卡")
             else:
-                checker.failures.append(f"灰域地点卡数量 {page.locator('.area-card').count()} != 14")
+                checker.failures.append(f"装甲突击卡片缺少爬塔标记：{tower_text[:120]}")
+            special_text = page.locator(".region-card.special").inner_text() if page.locator(".region-card.special").count() else ""
+            if "特殊区域" in special_text and ("客户端无区域名" in special_text or "无区域名" in special_text):
+                checker.passed.append("特殊区域卡片为次要样式并注明客户端无区域名")
+            else:
+                checker.failures.append(f"特殊区域卡片异常：{special_text[:120]}")
             chapter_gray_text = page.locator("#view").inner_text()
-            if "灰域地点" in chapter_gray_text and "区域内的地点" in chapter_gray_text:
-                checker.passed.append("地点区块标题为「灰域地点」（说明不是区域）")
+            if page.locator(".area-card").count() == 0 and "灰域地点" not in chapter_gray_text and "14 个地点" not in chapter_gray_text:
+                checker.passed.append("灰域首页已删除「灰域地点」区块 / 区域筛选 / 14 个地点文案")
             else:
-                checker.failures.append("地点区块标题/说明缺失")
-            if "区域数量" in chapter_gray_text and "地点数量" in chapter_gray_text:
-                checker.passed.append("灰域统计含区域数量 / 地点数量")
+                checker.failures.append("灰域首页仍存在地点区块/旧文案")
+            if all(key in chapter_gray_text for key in ["区域数量", "装甲突击", "节点", "1,288"]):
+                checker.passed.append("灰域统计为 区域 4 / 装甲突击 1 / 节点 1,288（+队伍/怪种）")
             else:
-                checker.failures.append("灰域统计缺少区域数量/地点数量")
-            area_names = [name.strip() for name in page.locator(".area-name").all_inner_texts()]
-            if "庇护所旧址" in area_names or "坍缩狭缝" in area_names:
-                checker.passed.append("灰域地点含庇护所旧址/坍缩狭缝")
-            region_badges = page.locator(".area-regions .region-badge").count()
-            if region_badges >= 14:
-                checker.passed.append(f"地点卡显示所属区域 badges（{region_badges} 个）")
-            else:
-                checker.failures.append(f"地点卡缺少所属区域 badges（{region_badges} 个）")
-            EVIDENCE["grayzone_areas"] = {"count": len(area_names), "names": area_names, "regions": region_names}
-            checker.shot("13_grayzone_areas.png", ".region-grid", scroll_top=False, settle=400)
+                checker.failures.append("灰域统计缺少区域/装甲突击/节点 1,288")
+            EVIDENCE["grayzone_home"] = {"regions": region_names, "stats_preview": chapter_gray_text.replace("\n", " ")[:260]}
+            checker.shot("13_grayzone_areas.png", ".gray-sections", scroll_top=False, settle=400)
 
-            # 区域筛选：点「结晶带」→ 地点数减少且包含共生净土；重置恢复 14
+            # 点「结晶带」→ 节点列表（278 节点、行内地点小字/队伍数/怪种 icons）
             crystal = page.locator(".region-card", has_text="结晶带").first
             if crystal.count():
                 crystal.click()
-                page.wait_for_timeout(700)
-                visible_areas = page.locator(".area-card:visible").count()
-                visible_names = page.locator(".area-card:visible .area-name").all_inner_texts()
-                if 0 < visible_areas < 14 and any("共生净土" in str(name) for name in visible_names):
-                    checker.passed.append(f"点击「结晶带」后地点筛选生效（{visible_areas} 个，含共生净土）")
-                else:
-                    checker.failures.append(f"结晶带筛选异常：{visible_areas} 个 / {visible_names[:6]}")
-                checker.shot("24_grayzone_region.png", ".region-grid", scroll_top=False, settle=400)
-                page.locator("[data-region-reset]").first.click()
-                page.wait_for_timeout(600)
-                if page.locator(".area-card:visible").count() == 14:
-                    checker.passed.append("重置区域后恢复 14 个地点")
-                else:
-                    checker.failures.append("重置区域后地点数没有恢复 14")
+                checker.wait(".node-row", timeout=25000)
+                page.wait_for_timeout(900)
             else:
                 checker.failures.append("缺少「结晶带」区域卡片")
-
-            load("/grayzone/共生净土", ".team-card")
-            checker.wait(".pager")
-            checker.wait(".power-filter")
-            checker.passed.append("灰域地点队伍页含效能筛选/排序条")
-            title_text = page.locator(".page-title").first.inner_text()
-            if "%E" in title_text:
-                checker.failures.append(f"灰域地点标题未解码：{title_text}")
-            elif "共生净土" in title_text:
-                checker.passed.append("灰域地点标题已解码")
-            gray_page_text = page.locator("#view").inner_text()
-            if "区域：" in gray_page_text and "灰域地点内的可收藏队伍" in gray_page_text:
-                checker.passed.append("灰域地点队伍页显示所属区域面包屑/说明")
+            gray_node_title = page.locator(".page-title").first.inner_text()
+            if "278" in gray_node_title:
+                checker.passed.append(f"结晶带节点列表标题：{gray_node_title}")
             else:
-                checker.failures.append("灰域地点队伍页缺少区域说明")
-            checker.shot("12_grayzone.png", ".team-grid")
+                checker.failures.append(f"结晶带节点列表标题不含 278：{gray_node_title}")
+            node_rows = page.locator(".node-row").count()
+            if node_rows > 0:
+                checker.passed.append(f"结晶带节点列表 {node_rows} 行（分页）")
+            else:
+                checker.failures.append("结晶带节点列表没有行")
+            first_node = page.locator(".node-row").first
+            first_node_title = page.locator(".node-row .node-title").first.inner_text()
+            node_loc = page.locator(".node-row .node-loc").first.inner_text() if page.locator(".node-row .node-loc").count() else ""
+            node_stats_text = first_node.inner_text()
+            if node_loc.strip() and ("队伍" in node_stats_text and "怪种" in node_stats_text):
+                checker.passed.append(f"节点行含地点小字 / 队伍数 / 怪种数（{node_loc.strip()}）")
+            else:
+                checker.failures.append(f"节点行信息缺失：{node_stats_text[:160]}")
+            if page.locator(".node-row .sp-icon").count() > 0:
+                checker.passed.append(f"节点行显示怪种 icons（{page.locator('.node-row .sp-icon').count()} 个）")
+            else:
+                checker.failures.append("节点行缺少怪种图标")
+            EVIDENCE["grayzone_nodes"] = {"title": gray_node_title, "rows": node_rows, "first": node_stats_text.replace("\n", " ")[:200]}
+            checker.shot("24_grayzone_nodes.png", ".node-list", scroll_top=False, settle=400)
 
-            add_page = page.locator('[data-act="add-page"]')
-            if add_page.count() > 0:
-                add_page.first.click()
+            # 点节点 → 节点队伍页（面包屑 灰域探查 / 结晶带 / 节点）
+            first_node.click()
+            checker.wait(".team-card", timeout=25000)
+            page.wait_for_timeout(900)
+            node_team_count = page.locator(".team-card").count()
+            node_team_title = page.locator(".page-title").first.inner_text()
+            node_crumbs = page.locator(".page-head").inner_text()
+            if node_team_count > 0:
+                checker.passed.append(f"节点队伍页显示 {node_team_count} 张队伍卡（{node_team_title}）")
+            else:
+                checker.failures.append("节点队伍页没有队伍卡")
+            if "灰域探查" in node_crumbs and "结晶带" in node_crumbs and first_node_title.strip() in node_crumbs:
+                checker.passed.append(f"节点队伍页面包屑：灰域探查 / 结晶带 / {first_node_title.strip()}")
+            else:
+                checker.failures.append(f"节点队伍页面包屑异常：{node_crumbs.replace(chr(10), ' ')[:200]}")
+            checker.shot("25_grayzone_node_teams.png", ".team-grid", scroll_top=False, settle=400)
+
+            # 加入序列供后续 08/09 截图
+            add_all = page.locator('[data-act="add-all"]')
+            if add_all.count() > 0:
+                add_all.first.click()
                 maybe_confirm()
-                page.wait_for_timeout(700)
+                try:
+                    page.wait_for_function(
+                        "() => { const el = document.querySelector('[data-nav-count=\"sequence\"]');"
+                        " return el && Number(el.textContent) > 0; }",
+                        timeout=12000,
+                    )
+                    checker.passed.append("从灰域节点队伍页加入序列")
+                except Exception as exc:  # noqa: BLE001
+                    checker.failures.append(f"灰域节点加入序列失败：{exc}")
+
+            # 装甲突击节点列表（10 个）
+            load("/grayzone/region/armor_assault", ".node-row")
+            page.wait_for_timeout(900)
+            armor_rows = page.locator(".node-row").count()
+            armor_title = page.locator(".page-title").first.inner_text()
+            if armor_rows == 10 and "10" in armor_title:
+                checker.passed.append(f"装甲突击节点列表 10 个节点（{armor_title}）")
+            else:
+                checker.failures.append(f"装甲突击节点数异常：{armor_rows} / {armor_title}")
+            if "爬塔" in page.locator(".page-head").inner_text():
+                checker.passed.append("装甲突击页标注爬塔关卡")
+            else:
+                checker.failures.append("装甲突击页缺少爬塔标注")
+
+            # 特殊区域节点列表（316 个）
+            load("/grayzone/region/special", ".node-row")
+            page.wait_for_timeout(900)
+            special_total = page.locator(".node-row").count()
+            special_title = page.locator(".page-title").first.inner_text()
+            if "316" in special_title:
+                checker.passed.append(f"特殊区域节点列表 316 个节点（{special_title}）")
+            else:
+                checker.failures.append(f"特殊区域节点数异常：{special_total} / {special_title}")
 
             # ---------------- 08 序列编排 ----------------
             load("/sequence", ".seq-big-item")
@@ -1381,50 +1419,46 @@ def run_checks(base_url: str, mock: bool) -> int:
                 except Exception:  # noqa: BLE001
                     pass
 
-    # 后端 12 个灰域区域都能返回队伍（真实 API 模式）
+    # 后端灰域层级（v1.8）：6 区域（4 主区域 + 装甲突击爬塔 + 特殊区域）→ 节点合计 1288
     if not mock:
         try:
             gray_payload = http_json(base_url.rstrip("/") + "/api/grayzone/areas")
-            areas = gray_payload.get("areas") or []
             regions = gray_payload.get("regions") or []
-            assert len(areas) == 14, f"灰域地点数量 {len(areas)} != 14"
-            names = [str(area.get("title") or area.get("id") or "").strip() for area in areas]
-            assert "庇护所旧址" in names and "坍缩狭缝" in names, f"缺少灰域地点：{names}"
-            region_names = [
-                str(region.get("title") or region.get("name") or region.get("id") or "").strip() for region in regions
-            ]
-            if regions:
-                assert len(regions) == 5, f"灰域区域数量 {len(regions)} != 5"
-                for required in ("沙尘带", "风暴带", "硅状带", "结晶带", "特殊区域"):
-                    assert required in region_names, f"缺少灰域区域 {required}：{region_names}"
-                region_ids = {str(region.get("id") or "").strip() for region in regions}
-                for area in areas:
-                    area_regions = area.get("region_ids") or []
-                    assert area_regions, f"地点 {area.get('id')} 没有 region_ids"
-                    assert all(str(rid) in region_ids for rid in area_regions), f"地点 {area.get('id')} region_ids 未匹配区域"
-                node_total = sum(int(area.get("stage_count") or 0) for area in areas)
-                assert node_total == 1288, f"地点节点合计 {node_total} != 1288"
-                checker.passed.append(f"灰域层级：{len(regions)} 区域 / {len(areas)} 地点 / 节点合计 1288")
-            bad = []
-            for area in areas:
+            assert len(regions) == 6, f"灰域区域数量 {len(regions)} != 6"
+            region_map = {
+                str(region.get("title") or region.get("name") or region.get("id") or "").strip(): region
+                for region in regions
+            }
+            for required in ("沙尘带", "风暴带", "硅状带", "结晶带", "装甲突击", "特殊区域"):
+                assert required in region_map, f"缺少灰域区域 {required}：{list(region_map)}"
+            assert int(region_map["装甲突击"].get("stage_count") or 0) == 10, "装甲突击节点数 != 10"
+            assert int(region_map["特殊区域"].get("stage_count") or 0) == 316, "特殊区域节点数 != 316"
+            node_total = sum(int(region.get("stage_count") or 0) for region in regions)
+            assert node_total == 1288, f"灰域节点合计 {node_total} != 1288"
+            checker.passed.append("灰域后端：6 区域（含装甲突击 10 / 特殊区域 316）/ 节点合计 1288")
+
+            def node_meta(region_id):
                 data = http_json(
                     base_url.rstrip("/")
-                    + "/api/grayzone/teams?area="
-                    + urllib.parse.quote(area["id"])
-                    + "&limit=1"
+                    + "/api/grayzone/nodes?region="
+                    + urllib.parse.quote(region_id)
+                    + "&limit=2"
                 )
-                total = area.get("team_count")
-                has_items = bool(data.get("items"))
-                if total and not has_items:
-                    bad.append(area["id"])
-                if not total and has_items:
-                    bad.append(f"{area['id']}(空区域却有队伍)")
-            if bad:
-                checker.failures.append(f"灰域地点取队伍为空：{bad}")
-            else:
-                checker.passed.append(f"灰域 14 个地点齐全（含庇护所旧址/坍缩狭缝），有队伍的地点均能取到队伍")
+                return int(data.get("total") or 0), (data.get("items") or [])
+
+            crystal_total, crystal_items = node_meta("crystal")
+            assert crystal_total == 278, f"结晶带节点数 {crystal_total} != 278"
+            assert crystal_items, "结晶带节点列表为空"
+            first_item = crystal_items[0]
+            for field in ("mission_id", "title", "location", "difficulty", "team_count", "species_count", "top_species"):
+                assert field in first_item, f"节点缺少字段 {field}"
+            armor_total, _ = node_meta("armor_assault")
+            special_total, _ = node_meta("special")
+            assert armor_total == 10, f"装甲突击节点数 {armor_total} != 10"
+            assert special_total == 316, f"特殊区域节点数 {special_total} != 316"
+            checker.passed.append("灰域节点 API：结晶带 278 / 装甲突击 10 / 特殊区域 316，节点字段齐全")
         except Exception as exc:  # noqa: BLE001
-            checker.failures.append(f"灰域区域后端校验失败：{exc}")
+            checker.failures.append(f"灰域层级后端校验失败：{exc}")
 
     # 恢复原始序列（真实 API 模式）
     if original_sequence is not None:

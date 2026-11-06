@@ -36,6 +36,8 @@ export function normalizeGrayMeta(payload) {
       return {
         id,
         title: text(region.title ?? region.name ?? id),
+        kind: text(region.kind ?? region.type),
+        note: text(region.note ?? region.description ?? ""),
         stage_count: Number(region.stage_count ?? region.stageCount ?? 0) || 0,
         team_count: Number(region.team_count ?? region.teamCount ?? 0) || 0,
         species_count: Number(region.species_count ?? region.speciesCount ?? 0) || 0,
@@ -94,4 +96,51 @@ export function grayStatTiles(stats) {
     { label: "怪种", icon: "crosshair", value: fmtNum(stats.species_count), sub: "地点合计" },
     { label: "节点", icon: "flag", value: fmtNum(stats.stage_count), sub: "仅计数，不逐节点列举" },
   ];
+}
+/** 灰域首页模型：4 个主区域 + 装甲突击（爬塔，单独一块）+ 特殊区域（次要） */
+export function grayHomeModel(regions, areas) {
+  const list = (regions || []).map((region) => ({
+    ...region,
+    kind: String(region.kind || "").toLowerCase(),
+    isTower: false,
+    isSpecial: false,
+  }));
+  list.forEach((region) => {
+    region.isTower =
+      region.kind === "tower" ||
+      region.id === "armor_assault" ||
+      /装甲突击|爬塔/.test(`${region.id} ${region.title}`);
+    region.isSpecial =
+      !region.isTower &&
+      (region.kind === "special" || region.id === "special" || /特殊区域/.test(`${region.id} ${region.title}`));
+  });
+  const armorArea = (areas || []).find((area) => /装甲突击/.test(`${area.id} ${area.title}`));
+  let armor = list.find((region) => region.isTower) || null;
+  if (!armor && armorArea) {
+    armor = {
+      id: "armor_assault",
+      title: armorArea.title || "装甲突击",
+      stage_count: Number(armorArea.stage_count) || 0,
+      team_count: Number(armorArea.team_count) || 0,
+      species_count: Number(armorArea.species_count) || 0,
+      kind: "tower",
+      isTower: true,
+      isSpecial: false,
+      note: "爬塔关卡（客户端独立入口）",
+    };
+  }
+  let special = list.find((region) => region.isSpecial) || null;
+  const mainRegions = list.filter((region) => !region.isTower && !region.isSpecial);
+  const armorRegionPresent = list.some((region) => region.isTower);
+  if (special) {
+    special = { ...special };
+    if (!armorRegionPresent && armor) {
+      special.stage_count = Math.max(0, (Number(special.stage_count) || 0) - (Number(armor.stage_count) || 0));
+    }
+    special.note = special.note || "组 5/6 等无客户端区域名的节点集合";
+  }
+  const nodeTotal = list.reduce((acc, region) => acc + (Number(region.stage_count) || 0), 0)
+    || (special ? special.stage_count : 0) + mainRegions.reduce((acc, region) => acc + region.stage_count, 0);
+  const regionCount = mainRegions.length + (special ? 1 : 0);
+  return { mainRegions, armor, special, regionCount, nodeTotal, armorRegionPresent };
 }
