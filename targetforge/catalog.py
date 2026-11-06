@@ -34,6 +34,13 @@ v1.2 变化（用户实测反馈）
    :data:`ICON_DIR`，在 species / team_summary.species / 队伍详情 members 上加
    ``icon`` 字段（缺失为 ``None``，前端退化显示）。
 
+6. **关卡结算形式（v1.3）**：每个 stage 带 ``settlement``：``type``（score/normal）、
+   ``event_score``（``{"mode","params"}``，来自 ``mission.event_score`` 的
+   ``mode|参数,...``）、``score_prize``（``{"raw","tiers"}``，来自
+   ``mission.score_prize``）、``rank``（积分榜，来自 ``rank`` 表 ``sub_type`` 的
+   mission id 列表；同 mission 多行优先 ``type=10`` 常驻积分榜，其次 ``type=6``）。
+   这样前端/分析工具可以真正读懂"结算形式"，而不是靠活动名里有没有「+」。
+
 设计取舍
 --------
 catalog.json 不存"前端完整详情"，而是存**查询所需的紧凑索引**：
@@ -87,7 +94,7 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 #: mission 文本 key 前缀：``mission-{10000000 + mission_id}``
 MISSION_TEXT_BASE = 10_000_000
@@ -122,10 +129,10 @@ SCORE_SPECIAL_CAMPAIGNS: frozenset[int] = frozenset({-40401, -40402, -40403, -40
 #: 模拟作战的固定 mission id 段（1104..1106 的 map_res 是 OPS5_Y，1701..1745 是靶场系列）
 SIMULATION_ID_RANGES: tuple[tuple[int, int], ...] = ((1101, 1106), (1701, 1745))
 
-#: 章节列表里关卡摘要的字段（contract §2.3）
+#: 章节列表里关卡摘要的字段（v1.3 加 settlement；contract 基础字段 + 结算结构化）
 STAGE_LIST_KEYS = (
     "id", "title", "code", "difficulty", "recommend_level",
-    "team_count", "species_count", "tags", "order",
+    "team_count", "species_count", "tags", "order", "settlement",
 )
 
 #: 队伍详情里展示的数值键（contract §2.3 示例；只展示参数，不含技能）
@@ -230,6 +237,39 @@ def _optional_bool(value: Any) -> bool | None:
 def _has_plus(text: Any) -> bool:
     text = str(text or "")
     return "+" in text or "＋" in text
+
+
+def _plain_text(text_map: dict[str, str], key: Any) -> str:
+    """客户端文本的"保标签"清洗：只压空白，保留 ``<活动名>`` 之类的尖括号标题。"""
+    raw = str((text_map or {}).get(str(key or ""), ""))
+    return " ".join(raw.replace("\u00a0", " ").split()).strip()
+
+
+def _parse_event_score(raw: Any) -> dict | None:
+    """``mission.event_score`` → ``{"mode": "1", "params": 24}``（无配置返回 None）。
+
+    格式：``mode|参数,参数,...``；``params`` = 第 2 段逗号分隔的参数个数
+    （忽略空段，例如序列尾部多余的逗号）。
+    """
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    head, sep, tail = raw.partition("|")
+    params = len([part for part in tail.split(",") if part.strip()]) if sep else 0
+    return {"mode": head.strip(), "params": params}
+
+
+def _parse_score_prize(raw: Any) -> dict | None:
+    """``mission.score_prize`` → ``{"raw": ..., "tiers": 2}``（无配置返回 None）。
+
+    格式：``tier-flag|奖励1,奖励2,...``；``tiers`` = 第 2 段逗号分组项数。
+    """
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    _, sep, tail = raw.partition("|")
+    tiers = len([part for part in tail.split(",") if part.strip()]) if sep else 0
+    return {"raw": raw, "tiers": tiers}
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +475,7 @@ def _load_stc_tables() -> dict[str, Any]:
         "spot": table("spot"),
         "mission_event": table("mission_event"),
         "normal_activity": table("normal_activity"),
+        "rank": table("rank"),
     }
 
 
@@ -614,6 +655,31 @@ def _build_payload() -> dict:
     for campaign, event_name in campaign_to_event.items():
         if _has_plus(event_name):
             plus_campaigns.add(campaign)
+
+    # ---- 积分榜（rank 表）：sub_type 逗号列表就是 mission id -----------------
+    # 同一 mission 多行时优先 type=10「常驻积分榜」，其次 type=6「活动积分榜」。
+    rank_priority = {10: 0, 6: 1}
+    mission_rank: dict[int, dict] = {}
+    for row in tables["rank"]:
+        rank_type = _int(row.get("type"))
+        priority = rank_priority.get(rank_type)
+        if priority is None:
+            continue
+        rank_payload = {
+            "id": _int(row.get("id")),
+            "name": _plain_text(text, row.get("name")),
+            "title": _plain_text(text, row.get("title")),
+            "type": rank_type,
+            "score_rewards": str(row.get("score_rewards") or ""),
+        }
+        for token in str(row.get("sub_type") or "").split(","):
+            token = token.strip()
+            if not token.lstrip("-").isdigit():
+                continue
+            mission_id = _int(token)
+            current = mission_rank.get(mission_id)
+            if current is None or priority < rank_priority.get(current["type"], 99):
+                mission_rank[mission_id] = dict(rank_payload)
 
     # ---- 可收藏有效队伍 -------------------------------------------------
     collectable: set[int] = {
@@ -929,6 +995,14 @@ def _build_payload() -> dict:
         species_union: set[int] = set()
         for team_id in team_ids:
             species_union |= team_species.get(team_id, set())
+        # 结算形式结构化（v1.3）：score=event_score 结算，normal=普通结算
+        event_score = _parse_event_score((mission or {}).get("event_score"))
+        settlement = {
+            "type": "score" if event_score else "normal",
+            "event_score": event_score,
+            "score_prize": _parse_score_prize((mission or {}).get("score_prize")),
+            "rank": mission_rank.get(mission_id),
+        }
         record = {
             "id": mission_id,
             "chapter_id": mid_chapter.get(mission_id, ""),
@@ -941,6 +1015,7 @@ def _build_payload() -> dict:
             "tags": tags,
             "order": order,
             "gray_zone": _int((mission or {}).get("campaign")) == -404,
+            "settlement": settlement,
         }
         stage_records.append(record)
         stage_by_id[mission_id] = record
@@ -1213,6 +1288,12 @@ def _build_payload() -> dict:
             "spot": len(tables["spot"]),
             "mission_event": len(tables["mission_event"]),
             "normal_activity": len(tables["normal_activity"]),
+            "rank": len(tables["rank"]),
+        },
+        "settlement": {
+            "score_stages": len(score_mission_ids),
+            "rank_matched_stages": sum(1 for mid in score_mission_ids
+                                       if mid in mission_rank),
         },
         "client_text": _source_file_info(TEXT_FILE),
         "enemy_full_model": _source_file_info(MODEL_FILE),

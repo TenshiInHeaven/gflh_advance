@@ -98,6 +98,31 @@ function tagsFor(seed) {
   return pool.slice(0, count).map((tag) => tag[0]);
 }
 
+function mockSettlement(chapter, stageSeed) {
+  const isScore = chapter.category === "score" || chapter.kind === "score";
+  if (!isScore) {
+    return { type: "normal", event_score: null, score_prize: null, rank: null };
+  }
+  const rng = mulberry32(hash32(`settle:${stageSeed}`));
+  const hasPrize = rng() > 0.25;
+  const hasRank = rng() > 0.2;
+  const baseTitle = String(chapter.title || "积分关卡").replace(/\s*·\s*积分关卡$/, "").replace(/\+$/, "");
+  return {
+    type: "score",
+    event_score: { mode: String(randInt(rng, 1, 3)), params: randInt(rng, 8, 32) },
+    score_prize: hasPrize ? { raw: "1-0|110054:1", tiers: randInt(rng, 1, 3) } : null,
+    rank: hasRank
+      ? {
+          id: randInt(rng, 280, 330),
+          name: `${baseTitle}PLUS常驻`,
+          title: `<${baseTitle}>常驻积分榜`,
+          type: 10,
+          score_rewards: "",
+        }
+      : null,
+  };
+}
+
 function makeStage(chapterSeed, ordinal, chapter) {
   const rng = mulberry32(hash32(`stage:${chapterSeed}:${ordinal}`));
   const stageId = 100000 + (chapterSeed % 900) * 1000 + ordinal + 1;
@@ -111,7 +136,10 @@ function makeStage(chapterSeed, ordinal, chapter) {
   if (!tags.length) tags.push("普通");
   return {
     id: stageId,
-    title: `${pick(rng, STAGE_TITLES)}`,
+    title:
+      chapter.category === "score" && String(chapter.title || "").includes("思域迷航")
+        ? ["禁止喂食", "禁止喂食EX"][ordinal % 2]
+        : `${pick(rng, STAGE_TITLES)}`,
     code: chapter.code_prefix ? `${chapter.code_prefix}${ordinal + 1}` : `${ordinal + 1}`,
     difficulty,
     recommend_level: randInt(rng, 0, 120),
@@ -119,6 +147,7 @@ function makeStage(chapterSeed, ordinal, chapter) {
     species_count: randInt(rng, 6, 26),
     tags,
     order: ordinal,
+    settlement: mockSettlement(chapter, `${chapterSeed}:${ordinal}`),
   };
 }
 
@@ -232,9 +261,12 @@ function buildChapter(groupDef, ordinal) {
     subtitle = `${EVENT_NAMES[(ordinal + 13) % EVENT_NAMES.length]} 特别行动`;
     codePrefix = `S${ordinal + 1}-`;
   } else if (groupDef.id === "score") {
-    chapterId = `score-${ordinal}`;
-    title = `积分关卡·第${ordinal + 1}期`;
-    subtitle = "积分关卡 · 队伍效能有标注（可能为负）";
+    const scoreIds = ["score--61", "score--40401", "score--55", "score--45", "score--39", "score--29"];
+    const scoreTitles = ["思域迷航 · 积分关卡", "贝蒂数", "终焉花海+", "飓风营救+", "马蜂窝+", "虚数迷宫+"];
+    const scoreSubs = ["节日活动Ⅴ · 积分关卡", "静风点 · 积分关卡", "终焉花海 · 积分关卡", "有序紊流 · 积分关卡", "坍缩点 · 积分关卡", "深层映射 · 积分关卡"];
+    chapterId = scoreIds[ordinal % scoreIds.length];
+    title = scoreTitles[ordinal % scoreTitles.length];
+    subtitle = scoreSubs[ordinal % scoreSubs.length];
     codePrefix = `S${ordinal + 1}-`;
   } else if (groupDef.id === "simulation") {
     chapterId = "simulation";

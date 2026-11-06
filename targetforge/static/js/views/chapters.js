@@ -2,6 +2,7 @@
 import { store, loadChapters } from "../store.js";
 import { icon, pageHeadHtml, skeletonCards, handleViewError, emptyState } from "../ui.js";
 import { esc, fmtNum, fmtCompact, navigate, bindSearch } from "../util.js";
+import { chapterSettlementHint } from "../components/settlement.js";
 
 const state = { group: "all", query: "" };
 let container = null;
@@ -128,7 +129,7 @@ function chapterCardHtml({ chapter, group, index }) {
   const subtitle = chapter.subtitle
     || (isGray ? `${areaCount} 个区域` : isOrphan ? "没有固定关卡的可收藏队伍" : isScore ? "积分关卡 · 效能非 0" : "点击查看关卡列表");
   return `
-    <button class="chapter-card ${isGray ? "grayzone" : ""} ${isOrphan ? "orphan" : ""} ${isScore ? "score" : ""}" type="button" data-chapter-detail="${esc(chapter.id)}">
+    <button class="chapter-card ${isGray ? "grayzone" : ""} ${isOrphan ? "orphan" : ""} ${isScore ? "score" : ""}" type="button" data-chapter-detail="${esc(chapter.id)}"${chapterSettlementHint(chapter) ? ` title="${esc(chapterSettlementHint(chapter))}"` : ""}>
       <div class="cc-top">
         <span class="cc-cat">${esc(group.title)}</span>
         ${badge}

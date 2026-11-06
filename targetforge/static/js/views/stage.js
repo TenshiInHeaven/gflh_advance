@@ -15,6 +15,7 @@ import {
   confirmDialog,
   setBusy,
 } from "../ui.js";
+import { settlementLineHtml } from "../components/settlement.js";
 import {
   filterAndSortTeams,
   bindPowerFilter,
@@ -71,6 +72,7 @@ function renderPage() {
         <button class="btn btn-primary" type="button" data-act="add-all">${icon("plus", 14)} 全部加入序列 <span class="mono-inline" style="opacity:.75">(${teams.length})</span></button>
       `,
     })}
+    ${settlementLineHtml(stage)}
     <div class="toolbar">
       <div class="input-wrap">
         <span class="in-ico">${icon("search", 14)}</span>

@@ -22,11 +22,17 @@
 
 ![灰域探查：14 个区域](docs/screenshots/grayzone-areas.jpg)
 
+| 积分结算：关卡行徽标 + tooltip | 关卡队伍页：结算形式（event_score / 积分奖励 / 积分榜） |
+|---|---|
+| ![积分结算](docs/screenshots/score-settlement.jpg) | ![结算形式](docs/screenshots/score-teams.jpg) |
+
 ## 功能
 
-- **关卡图鉴**：**7 组 121 章 2345 关**——主线 / 活动（含往期复刻、特殊作战）/ **积分关卡**（按 mission.event_score 精确标记，混合活动会单独拆出积分关卡章，如「思域迷航 · 积分关卡：禁止喂食 / 禁止喂食EX」）
-  （终焉花海+、谜境守卫+、自画像、贝蒂数…）/ 教学 / 模拟作战 / 灰域探查 / 无固定关卡；
+- **关卡图鉴**：**7 组 121 章 2345 关**——主线 / 活动（含往期复刻、特殊作战）/ **积分关卡** / 教学 / 模拟作战 / 灰域探查 / 无固定关卡。
+  积分关卡按 `mission.event_score` **结算配置**精确标记，混合活动会单独拆章（如「思域迷航 · 积分关卡：禁止喂食 / 禁止喂食EX」）；
   章节卡 → 关卡列表 → 该关可收藏队伍，支持「整关全部加入序列」。
+- **结算形式**：每个关卡显示结算类型——**积分结算**（`event_score` 模式/参数数量、`score_prize` 积分奖励、`rank` 常驻积分榜）
+  或**普通结算**；由 STC 结算字段决定，不靠名字/加号猜。可用 `targetforge/tools/analyze_score_stages.py` 复跑分析。
 - **怪种图鉴**：264 个图鉴怪种，每只怪都有从**本机游戏资源提取的真实头像**（透明底 160px）；
   按阵营 / 固定关卡 / 灰域 / 无固定关卡筛选（筛「灰域」得到所有在灰域出现过的怪种，含灰域 BOSS）；
   怪种详情列出所有怪组并分页。
@@ -42,7 +48,7 @@
   执行过程有 job 日志，完成后引导大退重登，并提供「重启游戏」按钮（二次确认）。
 - **登录抓取**：内置向导启动本地抓包代理（端口可配置，默认 18080）→ 设置系统代理并重启游戏 →
   抓取 uid / sign / 当前靶机 → 关闭代理；也可加载历史凭证列表。
-- **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、10 条 FAQ、安全须知。
+- **教程**：首次进入自动 6 步新手引导；教程页含概念、完整流程、抓取分步、三种执行模式、11 条 FAQ、安全须知。
 
 数据规模（以当前国服客户端为例）：7 组 121 章（活动 73 + 积分关卡 25）/ 2345 关 / 13,700 支可收藏队伍 / 264 个可收藏怪种 /
 灰域 14 区域 3352 队 / 无固定关卡 4381 队。
@@ -136,12 +142,13 @@ python -c "from targetforge import catalog; catalog.build(force=True)"
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .      # 125 个单测（app / catalog / gflh）
+python -m unittest discover -s targetforge/tests -t .      # 128 个单测（app / catalog / gflh）
 python targetforge/tools/api_smoke.py --url http://127.0.0.1:8765   # 真实数据 API 冒烟（29 项）
-python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 16 张截图
+python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765 # Playwright 页面自检 + 19 张截图
+python targetforge/tools/analyze_score_stages.py          # 积分关卡结算依据分析（event_score / score_prize / rank）
 ```
 
-前端自检结果：107 项 DOM 断言通过，console error / page error 均为 0。
+前端自检结果：127 项 DOM 断言通过，console error / page error 均为 0。
 
 ## 目录
 
@@ -157,8 +164,8 @@ gflh_advance/
     datapaths.py               数据目录唯一来源（支持 TARGETFORGE_DATA_DIR）
     static/                    前端（原生 HTML/CSS/JS，无构建步骤，离线）
     tests/                     unittest（app / catalog / gflh）
-    tools/                     build_icons.py（游戏资源导出小怪头像）/ api_smoke.py /
-                               ui_selfcheck.py / screenshot.py
+    tools/                     build_icons.py（游戏资源导出小怪头像）/ analyze_score_stages.py（结算分析）/
+                               api_smoke.py / ui_selfcheck.py / screenshot.py
     contract.md                模块 / API 契约
     README.md                  应用层说明
 ```
@@ -172,10 +179,23 @@ gflh_advance/
 - **注入后游戏里没变化**：大退重登游戏同步。
 - **游戏进不去 / 网络异常**：检查系统代理是否已关闭（Windows 设置 → 网络和 Internet → 代理）。
 - **sign 过期**：重新走一遍登录抓取。
+- **积分关卡是怎么判定的？**：不是按名字带 `+`，而是读 STC 的 `mission.event_score`（积分结算配置）、
+  `mission.score_prize`（积分奖励）和 `rank`（常驻积分榜）；混合活动会拆出「XX · 积分关卡」章节；
+  普通 EX 关卡没有该结算配置，仍属活动/普通结算。
 - **为什么很多队伍效能是「未标注」**：客户端只在积分关卡/部分特殊队伍里写入 `effect_ext`（目标作战效能），
   常规关卡队伍该字段为 0；没有可靠公式可以从面板数值反推，所以应用不伪造效能，只对「有标注」的队伍做筛选排序。
 
 ## 更新记录
+
+### v1.3.0（2026-11-06）
+
+- **积分关卡改为读取结算形式**：每个关卡解析 `mission.event_score`（积分结算配置：mode + 21~30 项参数）、
+  `mission.score_prize`（积分奖励档位）与 `rank` 表（`type=10` 常驻积分榜 / `type=6` 活动积分榜），
+  界面新增「积分结算 / 普通结算」徽标与关卡队伍页「结算形式」行，不再靠名字/加号猜。
+- 新增 `tools/analyze_score_stages.py`：输出 event_score 分布、score_prize 覆盖、积分榜映射、普通 EX 反例，
+  支持 `--json`；用于复核分类（当前：53 个积分关卡 / 25 个 campaign；普通 EX 无 event_score 反例 191 个）。
+- 教程 FAQ 新增「积分关卡是怎么判定的？」；19 张页面自检截图。
+- 版本号 v1.3.0（数据 schema=3，settlement 字段向后兼容）。
 
 ### v1.2.2（2026-11-06）
 

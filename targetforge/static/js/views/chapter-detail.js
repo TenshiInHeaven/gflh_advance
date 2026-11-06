@@ -12,6 +12,7 @@ import {
   renderPager,
   bindPager,
 } from "../ui.js";
+import { settlementBadgeHtml } from "../components/settlement.js";
 import {
   filterAndSortTeams,
   bindPowerFilter,
@@ -262,6 +263,7 @@ function stageRowHtmlLocal(stage, chapter) {
       </span>
       <span class="stage-counts"><span><b>${stage.team_count ?? 0}</b> 支队伍</span><span>${stage.species_count ?? 0} 个怪种</span></span>
       <span class="stage-tags">${tagsHtml(stage.tags, { max: 3 })}</span>
+      <span class="stage-settle">${settlementBadgeHtml(stage)}</span>
       <span class="stage-row-arrow">${icon("chevronRight", 15)}</span>
     </button>
   `;

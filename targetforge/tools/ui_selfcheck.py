@@ -258,6 +258,8 @@ ROUTE_SMOKE = [
     "/overview",
     "/chapters",
     "/chapters/main-1",
+    "/chapters/score--61",
+    "/chapters/score--40401",
     "/stages/5",
     "/chapters/grayzone",
     "/grayzone/共生净土",
@@ -419,8 +421,21 @@ def run_checks(base_url: str, mock: bool) -> int:
     url = base_url.rstrip("/") + "/" + ("?mock=1" if mock else "")
     print(f"[selfcheck] 打开 {url}")
 
-    # 记录真实 API 原始序列，结束后恢复（mock 模式不影响服务端状态）
+    # 记录真实 API 原始序列 / 教程状态，结束后恢复（mock 模式不影响服务端状态）
     original_sequence: list[int] | None = None
+    original_tutorial: dict | None = None
+    if not mock:
+        try:
+            original_tutorial = http_json(base_url.rstrip("/") + "/api/tutorial") or {}
+            if not original_tutorial.get("dismissed"):
+                # 临时标记已看过引导，避免整页刷新时 overlay 遮挡自检点击；结束后还原
+                http_post(
+                    base_url.rstrip("/") + "/api/tutorial",
+                    {"completed": original_tutorial.get("completed") or [], "dismissed": True},
+                )
+                print("[selfcheck] 已临时 dismissed 新手引导（结束还原）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[selfcheck] 读取/临时关闭 tutorial 失败（忽略）：{exc}")
     if not mock:
         try:
             original_sequence = [int(team["id"]) for team in (http_json(base_url.rstrip("/") + "/api/sequence").get("draft") or [])]
@@ -446,9 +461,13 @@ def run_checks(base_url: str, mock: bool) -> int:
 
         def dismiss_overlay(allow_shot: bool = False):
             try:
-                page.wait_for_selector(".tut-overlay", state="visible", timeout=1800)
+                page.wait_for_selector(".tut-overlay", state="visible", timeout=1500)
             except Exception:  # noqa: BLE001
-                return
+                # 引导可能在数据加载后延迟出现，再等一次
+                try:
+                    page.wait_for_selector(".tut-overlay", state="visible", timeout=3500)
+                except Exception:  # noqa: BLE001
+                    return
             if allow_shot and not state["overlay_shot"]:
                 page.wait_for_timeout(250)
                 path = out_dir / "00_tutorial_overlay.png"
@@ -598,6 +617,60 @@ def run_checks(base_url: str, mock: bool) -> int:
                 except Exception as exc:  # noqa: BLE001
                     checker.failures.append(f"加入序列失败：{exc}")
 
+            # ---------------- 16/17 结算形式：积分结算 vs 普通结算 ----------------
+            load("/chapters/score--61", ".stage-row")
+            score_badges = page.locator(".settle-badge.score").count()
+            score_text_61 = page.locator("#view").inner_text()
+            score_titles_61 = page.evaluate(
+                "() => [...document.querySelectorAll('.settle-badge.score')].map(e => e.getAttribute('title') || '').join(' | ')"
+            )
+            if score_badges > 0:
+                checker.passed.append(f"score--61 关卡行出现 {score_badges} 个「积分结算」徽标")
+            else:
+                checker.failures.append("score--61 未出现「积分结算」徽标")
+            if "禁止喂食EX" in score_text_61:
+                checker.passed.append("score--61 页面含「禁止喂食EX」关卡")
+            else:
+                checker.failures.append("score--61 页面缺少「禁止喂食EX」")
+            if "模式" in score_titles_61 and "项参数" in score_titles_61 and "积分榜" in score_titles_61:
+                checker.passed.append("积分结算 tooltip 含 模式/项参数/积分榜")
+            else:
+                checker.failures.append(f"积分结算 tooltip 信息不完整：{score_titles_61[:200]}")
+            EVIDENCE["settlement_score61"] = {"badges": score_badges, "titles": score_titles_61[:400]}
+            checker.shot("16_score_settlement.png", ".stage-list")
+
+            # 打开第一个积分关卡 → 队伍页 header 结算形式
+            page.locator(".stage-row").first.click()
+            checker.wait(".settle-line", timeout=25000)
+            page.wait_for_timeout(900)
+            settle_line_text = page.locator(".settle-line").inner_text()
+            if "积分结算" in settle_line_text and "event_score" in settle_line_text:
+                checker.passed.append(f"关卡队伍页结算形式行：{settle_line_text.replace(chr(10), ' ')[:120]}")
+            else:
+                checker.failures.append(f"关卡队伍页结算形式行异常：{settle_line_text[:160]}")
+            EVIDENCE["settlement_stage_line"] = settle_line_text.replace("\n", " ")
+            checker.shot("17_score_teams.png", ".settle-line")
+
+            # score--40401 贝蒂数：tooltip 含积分榜 + 贝蒂数
+            load("/chapters/score--40401", ".stage-row")
+            betty_titles = page.evaluate(
+                "() => [...document.querySelectorAll('.settle-badge.score')].map(e => e.getAttribute('title') || '').join(' | ')"
+            )
+            if "积分榜" in betty_titles and "贝蒂数" in betty_titles:
+                checker.passed.append("score--40401 结算信息含积分榜 + 贝蒂数")
+            else:
+                checker.failures.append(f"score--40401 结算信息缺少积分榜/贝蒂数：{betty_titles[:200]}")
+            EVIDENCE["settlement_betty"] = betty_titles[:400]
+
+            # main-1 普通关卡 → 普通结算
+            load("/chapters/main-1", ".stage-row")
+            normal_badges = page.locator(".settle-badge.normal").count()
+            main_text = page.locator("#view").inner_text()
+            if normal_badges > 0 and "普通结算" in main_text:
+                checker.passed.append(f"main-1 普通关卡显示「普通结算」({normal_badges} 个)")
+            else:
+                checker.failures.append("main-1 普通关卡缺少「普通结算」文案")
+
             # ---------------- 05 怪种图鉴（真实头像 / 剪影兜底） ----------------
             load("/species", ".species-card")
             checker.assert_count(".species-card", 10)
@@ -722,7 +795,19 @@ def run_checks(base_url: str, mock: bool) -> int:
             # ---------------- 11 使用教程 ----------------
             load("/tutorial", ".faq-item")
             checker.assert_count(".faq-item", 7)
+            # 展开新增 FAQ「积分关卡是怎么判定的？」再检查正文
+            faq_item = page.locator(".faq-item", has_text="积分关卡是怎么判定").first
+            if faq_item.count() > 0:
+                faq_item.locator(".faq-q").click()
+                page.wait_for_timeout(450)
+                checker.passed.append("教程 FAQ 新增「积分关卡是怎么判定的？」")
+            else:
+                checker.failures.append("教程缺少「积分关卡是怎么判定的？」FAQ")
             tutorial_text_all = page.locator(".tut-content").inner_text()
+            if "event_score" in tutorial_text_all and "score_prize" in tutorial_text_all and "rank" in tutorial_text_all:
+                checker.passed.append("教程结算判定 FAQ 含 event_score / score_prize / rank")
+            else:
+                checker.failures.append("教程结算判定 FAQ 缺少 event_score/score_prize/rank")
             if "dataMiner/derived/targetforge/creds_latest.json" not in tutorial_text_all:
                 checker.passed.append("教程不再硬编码 creds 完整路径")
             else:
@@ -732,6 +817,11 @@ def run_checks(base_url: str, mock: bool) -> int:
             else:
                 checker.failures.append("教程缺少应用数据目录/TARGETFORGE_DATA_DIR 说明")
             checker.shot("11_tutorial.png", ".tut-content")
+            # 额外截图：滚到 FAQ 并展开「积分关卡是怎么判定？」（结算判定说明）
+            if faq_item.count() > 0:
+                faq_item.scroll_into_view_if_needed()
+                page.wait_for_timeout(500)
+                checker.shot("18_tutorial_settlement.png", ".faq-item.open", scroll_top=False, settle=300)
 
             # ---------------- 14 无固定关卡章节（badge 数据 + 服务端效能筛选） ----------------
             load("/chapters/orphan", ".team-card")
@@ -797,6 +887,18 @@ def run_checks(base_url: str, mock: bool) -> int:
             )
             context.close()
             browser.close()
+            # 恢复原始 tutorial 状态（异常退出也尽量还原）
+            if original_tutorial is not None:
+                try:
+                    http_post(
+                        base_url.rstrip("/") + "/api/tutorial",
+                        {
+                            "completed": original_tutorial.get("completed") or [],
+                            "dismissed": bool(original_tutorial.get("dismissed")),
+                        },
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
     # 后端 12 个灰域区域都能返回队伍（真实 API 模式）
     if not mock:
@@ -863,7 +965,7 @@ def run_checks(base_url: str, mock: bool) -> int:
         print("\n关键证据 Evidence：")
         print(json.dumps(EVIDENCE, ensure_ascii=False, indent=2)[:4000])
 
-    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 16
+    ok = not console_errors and not page_errors and not checker.failures and len(SHOTS) >= 18
     print("\n" + ("PASS - 前端自检通过（console 无 error）" if ok else "FAIL - 存在错误，请查看上面的日志"))
     return 0 if ok else 1
 

@@ -4,15 +4,18 @@
 
     python -m unittest targetforge.tests.test_catalog -v
 
-覆盖任务验收点（task-11）：
+覆盖任务验收点（task-12）：
 * 章节 7 组（main/event/score/tutorial/simulation/grayzone/orphan）；活动/往期复刻/
   特殊作战合并进 event；积分关卡按 **mission.event_score**（mission 级）拆章：
   混合活动（思域迷航）拆成 event+score 两章，全积分 campaign 只有 score 章；
+* **stage.settlement**：event_score {mode,params} / score_prize {raw,tiers} /
+  rank {id,name,title,type,score_rewards}（rank type=10 优先 type=6）；
 * 灰域 14 个区域（含 庇护所旧址 / 坍缩狭缝）；
 * 物种非互斥 flag：normal/grayzone/orphan 过滤数 = 244/66/211（±2）；
 * 效能 power / power_known + power_min/power_max/power_known/sort 筛选排序；
 * 队伍/物种列表分页；species() 无参仍返回全量 teams（app.py 兼容）；
 * 小怪图标：icon 字段（species / team_summary.species / detail members）+ 覆盖率；
+* 分析工具 tools/analyze_score_stages.py 关键数字；
 * 规模/结构/无技能字段/spot 缺失 mission（404101）/JSON 严格可序列化/性能。
 """
 from __future__ import annotations
@@ -64,7 +67,7 @@ CHAPTER_KEYS = {"id", "category", "kind", "title", "subtitle", "stage_count",
                 "team_count", "species_count", "difficulty_min", "difficulty_max",
                 "tags"}
 STAGE_LIST_KEYS = {"id", "title", "code", "difficulty", "recommend_level",
-                   "team_count", "species_count", "tags", "order"}
+                   "team_count", "species_count", "tags", "order", "settlement"}
 TEAM_SUMMARY_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
                      "tags", "species", "members", "gray_zone", "orphan", "stage"}
 TEAM_DETAIL_KEYS = {"id", "power", "power_known", "units", "hp_total", "faction",
@@ -122,6 +125,10 @@ class CatalogDataTest(unittest.TestCase):
         tables = self.meta["sources"]["tables"]
         self.assertEqual(tables["enemy_team"], 16944)
         self.assertEqual(tables["enemy_in_team"], 136198)
+        self.assertEqual(tables["rank"], 118)
+        settlement_meta = self.meta["sources"]["settlement"]
+        self.assertEqual(settlement_meta["score_stages"], EXPECT_SCORE_STAGES)
+        self.assertEqual(settlement_meta["rank_matched_stages"], 25)
         # 图标覆盖率报告（sources.icons）
         icons = self.meta["sources"]["icons"]
         for key in ("files", "codes_needed", "codes_covered",
@@ -284,6 +291,61 @@ class CatalogDataTest(unittest.TestCase):
         self.assertIn(11451, event_stage_ids)       # 同频干扰EX（无 event_score）
         self.assertNotIn(11451, score_stage_ids)
         self.assertIn(10365, score_stage_ids)       # 终焉花海EX（有 event_score）
+
+    def test_stage_settlement_chain(self):
+        """stage.settlement：event_score / score_prize / rank 结构化（v1.3）。"""
+
+        def settlement(mission_id):
+            detail = self.catalog.stage(mission_id)
+            self.assertIsNotNone(detail, f"stage {mission_id} 不存在")
+            value = detail["stage"]["settlement"]
+            self.assertEqual(set(value), {"type", "event_score", "score_prize", "rank"})
+            return value
+
+        # 思域迷航：11445 禁止喂食 / 11458 禁止喂食EX = 积分结算，mode=1 + score_prize
+        for mission_id in (11445, 11458):
+            item = settlement(mission_id)
+            self.assertEqual(item["type"], "score")
+            self.assertEqual(item["event_score"]["mode"], "1")
+            self.assertIsInstance(item["event_score"]["params"], int)
+            self.assertGreater(item["event_score"]["params"], 0)
+        prize = settlement(11458)["score_prize"]
+        self.assertIsNotNone(prize)
+        self.assertGreaterEqual(prize["tiers"], 1)
+        self.assertTrue(prize["raw"])
+        # 普通 EX（同频干扰EX）没有 event_score → normal 结算
+        normal = settlement(11451)
+        self.assertEqual(normal["type"], "normal")
+        self.assertIsNone(normal["event_score"])
+        self.assertIsNone(normal["score_prize"])
+        self.assertIsNone(normal["rank"])
+        # 贝蒂数 11002/11005 的积分榜 = rank 311「贝蒂数常驻」（type=10 优先 type=6）
+        for mission_id in (11002, 11005):
+            item = settlement(mission_id)
+            self.assertEqual(item["type"], "score")
+            self.assertEqual(item["rank"]["id"], 311)
+            self.assertEqual(item["rank"]["name"], "贝蒂数常驻")
+            self.assertIn("贝蒂数", item["rank"]["title"])
+            self.assertEqual(item["rank"]["type"], 10)
+            self.assertEqual(set(item["rank"]),
+                             {"id", "name", "title", "type", "score_rewards"})
+        # 终焉花海+ 11320 = rank 306；铁雨礼赞 11988 同时有 type=6/10 → 取 type=10 的 316
+        self.assertEqual(settlement(11320)["rank"]["id"], 306)
+        self.assertEqual(settlement(11988)["rank"]["id"], 316)
+        self.assertEqual(settlement(11988)["rank"]["type"], 10)
+        # 未知 mission（404101）→ normal
+        self.assertEqual(settlement(404101)["type"], "normal")
+        # chapter 详情的 stages 每项都带 settlement；score 章全 score / event 章全 normal
+        for chapter in self.groups["score"]["chapters"]:
+            for stage in self.catalog.chapter(chapter["id"])["stages"]:
+                self.assertEqual(stage["settlement"]["type"], "score",
+                                 f"{chapter['id']} stage {stage['id']}")
+        for chapter in self.groups["event"]["chapters"]:
+            for stage in self.catalog.chapter(chapter["id"])["stages"]:
+                self.assertEqual(stage["settlement"]["type"], "normal",
+                                 f"{chapter['id']} stage {stage['id']}")
+        main_stage = self.catalog.chapter("main-1")["stages"][0]
+        self.assertEqual(main_stage["settlement"]["type"], "normal")
 
     # -- 灰域 14 区域 -------------------------------------------------
     def test_grayzone_areas(self):
@@ -629,6 +691,48 @@ class AppIntegrationTest(unittest.TestCase):
         # 图标文件通过 app 的 ICON_DIR 能取到
         icon = self.catalog.species(5)["species"]["icon"]
         self.assertTrue((app.ICON_DIR / icon).is_file())
+
+
+class ScoreAnalysisToolTest(unittest.TestCase):
+    """tools/analyze_score_stages.py：结算链分析器自检（真 STC）。"""
+
+    def test_build_report(self):
+        from targetforge.tools import analyze_score_stages
+
+        report = analyze_score_stages.build_report()
+        self.assertTrue(report["ok"], report.get("mismatches"))
+        checks = report["checks"]
+        self.assertEqual(checks["event_score_total"], 102)
+        self.assertEqual(checks["event_score_non_gray"], 58)
+        self.assertEqual(checks["event_score_gray"], 44)
+        self.assertEqual(checks["score_missions_with_teams"], 53)
+        self.assertEqual(checks["score_campaigns"], 25)
+        self.assertEqual(checks["score_prize_total"], 76)
+        self.assertEqual(checks["score_prize_without_event_score"], 0)
+        self.assertEqual(checks["rank_matched_score_missions"], 25)
+        self.assertEqual(checks["rank_type10_rows"], 16)
+        self.assertEqual(checks["rank_type6_rows"], 2)
+        # 思域迷航(-61) 的积分关卡 = 11445 / 11458
+        campaign = next(row for row in report["campaigns"]
+                        if row["campaign"] == -61)
+        self.assertEqual({mission["id"] for mission in campaign["missions"]},
+                         {11445, 11458})
+        self.assertEqual(campaign["missions"][0]["event_score"]["mode"], "1")
+
+    def test_json_output(self):
+        import contextlib
+        import io
+
+        from targetforge.tools import analyze_score_stages
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = analyze_score_stages.main(["--json"])
+        self.assertEqual(code, 0)
+        payload = json.loads(buffer.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["checks"]["score_missions_with_teams"], 53)
+        self.assertEqual(payload["rank"]["type10_rows"], 16)
 
 
 if __name__ == "__main__":

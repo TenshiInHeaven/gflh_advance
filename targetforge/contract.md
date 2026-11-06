@@ -168,7 +168,17 @@ class Catalog:
  "stage": {"chapter_id":"main-1","title":"第1章","stage_title":"演习训练","code":"1-1"} | null}
 
 // GET /api/stages/{id}
-{"stage":{...}, "teams":[team_summary,...]}
+{"stage":{..., "settlement": {
+   "type":"score|normal",
+   "event_score":{"mode":"1","params":24}|null,      // 积分结算配置（非空即积分关卡）
+   "score_prize":{"raw":"1-0|110054:1","tiers":1}|null, // 积分奖励
+   "rank":{"id":306,"name":"终焉花海PLUS常驻","title":"<终焉花海+>常驻积分榜",
+           "type":10,"score_rewards":""}|null       // 常驻积分榜（rank 表）
+ }}, "teams":[team_summary,...]}
+// 积分关卡判定依据（不是名字带 +）：mission.event_score 结算配置；score_prize 为积分奖励；
+// rank 表 type=10 行是「<活动名>常驻积分榜」，sub_type 直接列 mission id（type=6 为活动积分榜）。
+// 章节详情 /api/chapters/{id} 的每个 stage 也带同样 settlement 字段。
+// 分析工具：python targetforge/tools/analyze_score_stages.py [--json]
 
 // GET /api/teams/{id}（详情）
 {"id":6549244,"power":113600,"power_known":true,"units":9,"hp_total":164238,"faction":"铁血",

@@ -159,7 +159,20 @@ export const FAQ_ITEMS = [
       <p>凭证只保存在本机<b>应用数据目录</b>（默认 <span class="tut-code">&lt;GF Forge&gt;/dataMiner/derived/targetforge</span>，可用环境变量 <span class="tut-code">TARGETFORGE_DATA_DIR</span> 覆盖）下的 <span class="tut-code">creds_latest.json</span>，不会上传到任何地方。请<b>不要提交到 git、不要外传</b>。</p>
       <p>应用只绑定 127.0.0.1，不访问外网；只有你点「开始抓取 / 执行注入 / 重启游戏」时才会操作本机代理或游戏进程。风险提示：修改游戏数据属于社区工具行为，请自行评估风险，仅用于单机研究 / 演示。</p>
     `,
+  },  {
+    id: "score-settlement",
+    q: "积分关卡是怎么判定的？名字带 + 就是积分关吗？",
+    a: `
+      <p><b>不是按名字或加号判断的。</b>应用读取 STC 里 mission 的结算配置：</p>
+      <ul>
+        <li><span class="tut-code">mission.event_score</span>：该关卡是否走「积分结算」（含模式与参数数量，如模式 1 · 24 项参数）；</li>
+        <li><span class="tut-code">score_prize</span>：积分结算完成后发放的积分奖励（有/无）；</li>
+        <li><span class="tut-code">rank</span>：该关卡关联的常驻积分榜（如「&lt;贝蒂数&gt;常驻积分榜」）。</li>
+      </ul>
+      <p>配置了 <span class="tut-code">event_score</span> 的关卡会在章节详情里显示金色「积分结算」徽标，关卡队伍页顶部显示「结算形式」详情；没有该配置的普通 EX 关卡就是<b>普通结算</b>。混合活动里如果部分关卡带积分配置，会被拆出独立的「XX · 积分关卡」章节，所以不要只看名字里有没有「+」。</p>
+    `,
   },
+
 ];
 
 export const FLOW_STEPS = [

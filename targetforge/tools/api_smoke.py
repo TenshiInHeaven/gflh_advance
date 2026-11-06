@@ -1,4 +1,4 @@
-"""真实 catalog 的 API 冒烟（v1.2，Lead 验收用，不碰游戏/网络注入）。
+"""真实 catalog 的 API 冒烟（v1.3，Lead 验收用，不碰游戏/网络注入）。
 
 跑法（catalog.json + icons 已生成）：
     python targetforge/tools/api_smoke.py
@@ -83,7 +83,7 @@ def wait_ready(base: str, timeout: float = 240.0) -> dict:
 
 def run_checks(base: str, health: dict) -> None:
     check("health 200", bool(health.get("ok")), "")
-    check("version 1.2.x", str(health.get("version", "")).startswith("1.2"), str(health.get("version")))
+    check("version 1.3.x", str(health.get("version", "")).startswith("1.3"), str(health.get("version")))
     check("health.data_dir", bool(health.get("data_dir")), "")
     status, meta = get(base, "/api/meta")
     counts = (meta or {}).get("counts") or {}

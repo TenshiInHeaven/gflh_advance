@@ -38,6 +38,20 @@ python -m targetforge --rebuild-catalog   # 强制重建数据缓存
 数据规模（当前客户端）：7 组 121 章（活动 73 + 积分关卡 25） · 2345 关（灰域 1288 节点折叠为 14 个区域，其中庇护所旧址/坍缩狭缝暂无可收藏队伍）·
 13700 支可收藏队伍 · 264 个可收藏怪种（怪种头像 264/264，代码级真实头像 256/282）· 灰域 3352 队 / 无固定关卡 4381 队。
 
+### 积分关卡是怎么判定的？（结算形式）
+
+不是看活动名有没有 `+`，而是读 STC 的**结算配置**：
+
+- `mission.event_score` 非空 → 该关卡带积分结算配置（格式 `mode|参数,...`，mode 1/0，参数量 21~30 个）；界面「关卡详情」会显示
+  「积分结算 · 模式 X · N 项参数」。
+- `mission.score_prize` 非空 → 有积分奖励结算（`1-0|物品:数量` / 多档位奖励），界面显示「积分奖励 有/无」。
+- `rank` 表 `type=10` 行是「<活动名>常驻积分榜」，`sub_type` 直接列出对应 mission id；`type=6` 为活动积分榜（含 score_rewards）。
+  界面显示「积分榜 <名称>」。
+- 混合活动会拆出独立的「XX · 积分关卡」章节（例如 思域迷航 · 积分关卡 = 禁止喂食 / 禁止喂食EX）；普通 EX 没有
+  `event_score`，所以留在活动组（如 同频干扰EX）。
+
+可用 `python targetforge/tools/analyze_score_stages.py` 复跑分析（输出 event_score 分布 / 奖励覆盖 / 积分榜映射 / 反例对照）。
+
 小怪头像是从本机游戏资源导出的（`pic_<Code>_SS` 纹理，透明底 160px），生成命令：
 
 ```powershell
@@ -92,9 +106,11 @@ targetforge/
 ## 验证
 
 ```powershell
-python -m unittest discover -s targetforge/tests -t .    # 100+ 单测
-python targetforge/tools/api_smoke.py                    # 真实 catalog 的 API 冒烟（28 项）
+python -m unittest discover -s targetforge/tests -t .    # 120+ 单测
+python targetforge/tools/api_smoke.py                    # 真实 catalog 的 API 冒烟
 python targetforge/tools/ui_selfcheck.py --url http://127.0.0.1:8765   # Playwright 页面自检 + 截图
+# 积分关卡结算依据分析（event_score / score_prize / rank 积分榜）
+python targetforge/tools/analyze_score_stages.py
 ```
 
 ## 安全 / 注意
