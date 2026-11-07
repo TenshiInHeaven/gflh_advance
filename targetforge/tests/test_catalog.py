@@ -644,6 +644,7 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(set(node), {"mission_id", "title", "location",
                                      "region_id", "region_title", "difficulty",
                                      "team_count", "species_count",
+                                     "boss_team_count", "has_boss",
                                      "top_species", "tags"})
         self.assertEqual(node["region_id"], "crystal")
         self.assertEqual(node["region_title"], "结晶带")

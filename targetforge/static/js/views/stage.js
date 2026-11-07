@@ -333,7 +333,7 @@ function renderPage() {
     const remain = Math.max(0, spawnAll.length - shown.length);
     const spawnTitle = `可能刷怪 <b>${filtering ? spawnAll.length : spawnTotal}</b> 支${filtering && spawnAll.length !== spawnTotal ? `（共 ${spawnTotal}）` : ""}${manual && possibleCount ? ` · 全部 ${possibleCount}${inStageCount ? `（含上方 ${inStageCount}）` : ""}` : ""}`;
     const spawnHint = manual
-      ? "固定怪组表 + 刷怪表（无烟花/烟花强化）里、不在上方场上的怪组；紧凑卡片，点详情看编成"
+      ? "固定怪组表 + 刷怪表（无烟花/烟花强化）里、不在上方场上的怪组；与上方卡片同尺寸，点详情看编成"
       : "机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射（推断）";
     const spawnFoot = manual
       ? "以上为固定怪组表 + 刷怪表中的怪组（卡面带 固定/无烟花/烟花强化 小标签），可加入序列。"
@@ -359,7 +359,7 @@ function renderPage() {
         ${
           spawnExpanded
             ? `<div class="reserve-grid-wrap">
-                 <div class="team-grid compact reserve-grid">${shown.map((team) => teamCardHtml(team, { compact: true })).join("")}</div>
+                 <div class="team-grid reserve-grid">${shown.map((team) => teamCardHtml(team)).join("")}</div>
                  <div class="reserve-foot">
                    <span class="reserve-foot-hint">${spawnFoot}</span>
                    ${

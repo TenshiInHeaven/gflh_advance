@@ -18,6 +18,7 @@ const SORT_OPTIONS = [
   ["id_asc", "编号 ↑"],
   ["id_desc", "编号 ↓"],
   ["teams_desc", "队伍数 ↓"],
+  ["boss_desc", "含 BOSS 优先"],
   ["difficulty_desc", "难度 ↓"],
 ];
 const state = {
@@ -43,6 +44,8 @@ function normalizeNode(item) {
     difficulty: Number(item.difficulty) || 0,
     team_count: Number(item.team_count) || 0,
     species_count: Number(item.species_count) || 0,
+    boss_team_count: Number(item.boss_team_count) || 0,
+    has_boss: Boolean(item.has_boss),
     topSpecies: Array.isArray(item.top_species) ? item.top_species : Array.isArray(item.species) ? item.species : [],
     tags: Array.isArray(item.tags) ? item.tags : [],
   };
@@ -52,7 +55,7 @@ function nodeRowHtml(node) {
   const species = node.topSpecies.slice(0, 4);
   return `<button class="node-row" type="button" data-node-id="${esc(node.id)}">
     <span class="node-main">
-      <span class="node-title">${esc(node.title || `#${node.id}`)}</span>
+      <span class="node-title">${esc(node.title || `#${node.id}`)}${node.has_boss ? `<span class="tag boss" title="节点内 BOSS 怪组数">${icon("alert", 9)} BOSS${node.boss_team_count > 1 ? `×${node.boss_team_count}` : ""}</span>` : ""}</span>
       <span class="node-loc">${icon("map", 10)} ${esc(node.location || "灰域节点")}</span>
       ${node.tags.length ? `<span class="node-tags">${node.tags.slice(0, 3).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")}</span>` : ""}
     </span>

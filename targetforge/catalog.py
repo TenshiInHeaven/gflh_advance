@@ -1503,6 +1503,8 @@ def _build_payload() -> dict:
             "species_count": len(area_species),
         })
     # 节点（= 有可收藏队伍的 mission），按区域归组；top_species 最多 4 个
+    boss_team_ids = {record["id"] for record in team_records
+                     if "BOSS" in (record.get("tags") or [])}
     nodes: list[dict] = []
     for region_id in GRAY_REGION_ORDER:
         for mission_id in sorted(region_stage_ids.get(region_id, [])):
@@ -1511,6 +1513,7 @@ def _build_payload() -> dict:
             title = _mission_title(mission_id, mission, text)
             location = _gray_area(title) or "未分类"
             team_ids = mission_teams.get(mission_id, set())
+            boss_count = sum(1 for team_id in team_ids if team_id in boss_team_ids)
             codex_counts: Counter = Counter()
             for team_id in team_ids:
                 for codex_no in team_species.get(team_id, set()):
@@ -1526,6 +1529,8 @@ def _build_payload() -> dict:
                 "difficulty": _int(stage.get("difficulty")),
                 "team_count": len(team_ids),
                 "species_count": len(codex_counts),
+                "boss_team_count": boss_count,
+                "has_boss": boss_count > 0,
                 "top_species": top_species,
                 "tags": list(stage.get("tags") or []),
             })
@@ -2257,6 +2262,12 @@ class Catalog:
             selected.append(node)
         if sort == "id_desc":
             selected.sort(key=lambda node: -_int(node.get("mission_id")))
+        elif sort in ("boss_desc", "boss_first"):
+            selected.sort(key=lambda node: (
+                -1 if node.get("has_boss") else 0,
+                -_int(node.get("difficulty")),
+                _int(node.get("mission_id")),
+            ))
         elif sort == "difficulty_asc":
             selected.sort(key=lambda node: (_int(node.get("difficulty")),
                                             _int(node.get("mission_id"))))
@@ -2295,6 +2306,8 @@ class Catalog:
                 "difficulty": _int(node.get("difficulty")),
                 "team_count": _int(node.get("team_count")),
                 "species_count": _int(node.get("species_count")),
+                "boss_team_count": _int(node.get("boss_team_count")),
+                "has_boss": bool(node.get("has_boss")),
                 "top_species": top_species,
                 "tags": list(node.get("tags") or []),
             })

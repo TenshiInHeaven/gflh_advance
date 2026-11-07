@@ -4642,3 +4642,19 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
   font-size: 10.5px;
   line-height: 1.6;
 }
+/* 灰域节点 BOSS 标记 */
+.tag.boss {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 17px;
+  margin-left: 6px;
+  padding: 0 6px;
+  color: #ffd27a;
+  font-size: 9px;
+  letter-spacing: .3px;
+  border: 1px solid rgba(242, 193, 78, .45);
+  border-radius: 2px;
+  background: rgba(242, 193, 78, .12);
+  vertical-align: 1px;
+}
