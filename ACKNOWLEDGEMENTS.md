@@ -42,7 +42,7 @@ TargetForge 以 **MIT License** 发布。MIT 允许使用、修改与再分发�
   [腾讯表格合集](https://docs.qq.com/sheet/DYWFRU1dmRnJmY0JV?nlc=1&tab=BB08J2)
   表中提供了各区域/回合的刷怪队伍编号与基础效能，本项目据此为这些积分关卡
   建立显式刷怪表（`targetforge/manual_spawns.json`），替代不可靠的 ID 前缀推断。
-  感谢授权引用；数据版权归原整理者。
+  数据版权归原整理者。
 
 ## 游戏数据与素材
 
