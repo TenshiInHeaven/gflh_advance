@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { store, addTeam } from "../store.js";
 import { icon, openDrawer, toast, toastErr, toastOk, setBusy, errorState, skeletonRows, speciesIconHtml } from "../ui.js";
-import { esc, fmtNum, fmtFloat, fmtForceField, factionColor, factionClass, navigate, powerDisplay, isSupportTeam, isReserveTeam } from "../util.js";
+import { esc, fmtNum, fmtFloat, factionColor, factionClass, navigate, powerDisplay, isSupportTeam, isReserveTeam } from "../util.js";
 
 const unitName = (member) => member.name || member.code || "未知单位";
 
@@ -55,7 +55,6 @@ export function teamDetailBodyHtml(detail) {
             <th class="num">等级</th>
             <th class="num">编制</th>
             <th class="num">数量</th>
-            <th class="num">防御修正</th>
             <th class="num">坐标</th>
             <th class="num">HP</th>
             <th class="num">火力</th>
@@ -66,7 +65,9 @@ export function teamDetailBodyHtml(detail) {
             <th class="num">射程</th>
             <th class="num">移速</th>
             <th class="num">护盾</th>
-            <th class="num">力场</th>
+            <th class="num">满力场</th>
+            <th class="num">初始力场</th>
+            <th class="num">初始减伤</th>
           </tr>
         </thead>
         <tbody>
@@ -76,13 +77,24 @@ export function teamDetailBodyHtml(detail) {
                   .map((member) => {
                     const stats = member.stats || {};
                     const defPercent = Number(member.def_percent ?? 0);
+                    const ffMax = Number(stats.def);
+                    const ffKnown = Number.isFinite(ffMax) && ffMax > 0 && ffMax < 99999;
+                    const ffInitial = ffKnown
+                      ? ffMax * Math.max(0, Math.min(100, defPercent)) / 100
+                      : null;
+                    const ffReduction = ffKnown
+                      ? Math.max(0, Math.min(100, ffInitial / ffMax * 100))
+                      : null;
+                    const ffMaxText = ffKnown
+                      ? fmtNum(ffMax)
+                      : (Number.isFinite(ffMax) && ffMax >= 99999 ? "无" : "—");
+                    const ffTitle = "满力场 = def；初始力场 = 满力场 × 初始力场%；初始减伤 = 初始力场 / 满力场（满力场时 100%）";
                     return `
               <tr>
                 <td class="name"><span class="unit-cell">${speciesIconHtml(member, { size: 24, variant: "mini", fallbackFaction: detail.faction })}<span class="unit-name">${esc(unitName(member))}</span><span class="unit-code">${esc(member.code || "")}</span></span></td>
                 <td class="num">${member.level ?? "—"}</td>
                 <td class="num">${member.number ?? "—"}</td>
                 <td class="num">${member.count ?? "—"}</td>
-                <td class="num ${defPercent > 0 ? "stat-green" : defPercent < 0 ? "stat-red" : ""}">${defPercent > 0 ? "+" : ""}${fmtFloat(defPercent, 0)}%</td>
                 <td class="num">${fmtFloat(member.x, 1)}, ${fmtFloat(member.y, 1)}</td>
                 ${statCell(stats.maxlife, { digits: 0, cls: "stat-hi" })}
                 ${statCell(stats.pow, { digits: 1, cls: "stat-red" })}
@@ -93,16 +105,18 @@ export function teamDetailBodyHtml(detail) {
                 ${statCell(stats.range, { digits: 0 })}
                 ${statCell(stats.speed, { digits: 0 })}
                 ${statCell(stats.shield, { digits: 0, cls: "stat-cyan" })}
-                <td class="num stat-green" title="${Number(stats.def) >= 99999 ? "99999 = 无防护（STC 哨兵值）" : "力场 def"}">${fmtForceField(stats.def)}</td>
+                <td class="num stat-green" title="${ffTitle}">${ffMaxText}</td>
+                <td class="num stat-green" title="${ffTitle}">${ffKnown ? fmtNum(ffInitial) : "—"}</td>
+                <td class="num stat-green" title="${ffTitle}">${ffKnown ? `${fmtFloat(ffReduction, 0)}%` : "—"}</td>
               </tr>`;
                   })
                   .join("")
-              : `<tr><td colspan="16" style="text-align:center;padding:22px;color:var(--text-mute)">该队伍没有可展示的编制数据</td></tr>`
+              : `<tr><td colspan="17" style="text-align:center;padding:22px;color:var(--text-mute)">该队伍没有可展示的编制数据</td></tr>`
           }
         </tbody>
       </table>
     </div>
-    <div class="param-note">数值为按队伍等级缩放后的展示口径；「力场」即 def（伤害减免值）。</div>
+    <div class="param-note">数值为按队伍等级缩放后的展示口径；力场三列：满力场 = def，初始力场 = 满力场 × 初始力场%，初始减伤 = 初始力场 / 满力场（满力场时 100%）。</div>
 
     <div class="subhead">${icon("map", 12)} 本怪组出现位置 <span class="badge mono">${appearances.length}${appearances.length >= 24 ? "+" : ""}</span><span class="subhead-hint">同一怪组可能在多个关卡/活动中以敌方或支援身份出现</span></div>
     <div class="appear-list">
