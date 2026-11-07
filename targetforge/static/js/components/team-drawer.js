@@ -162,7 +162,14 @@ export function teamDetailHeadHtml(detail) {
   const reserve = isReserveTeam(detail);
   const flags = [];
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
-  if (reserve) flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+  if (reserve) {
+    const manual = detail.reserve_source === "manual";
+    if (manual) {
+      flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${detail.appeared === false ? "未实际出现怪组" : esc(detail.actual_kind || "实际出现")}</span>`);
+    } else {
+      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+    }
+  }
   if (detail.gray_zone) flags.push('<span class="badge cyan">灰域队伍</span>');
   if (detail.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
   return `

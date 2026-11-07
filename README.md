@@ -196,7 +196,7 @@ gflh_advance/
   targetforge/                 应用本体
     app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job / 头像接口 / 游戏目录设置
     gamepath.py                游戏客户端检测 / 校验 / 文件夹选择 / local_paths
-    manual_spawns.json         社区显式刷怪表（铁雨礼赞；来源/作者/区域/回合/效能）
+    manual_spawns.json         显式固定/刷怪表（铁雨礼赞；实际怪组/效能，未列出的标未实际出现）
     catalog.py                 STC → 章节 / 关卡 / 怪种 / 怪组数据层（缓存 + 查询 + 效能/图标）
     gflh.py                    登录抓取（GFLProxy）/ 序列规划 / 注入（addCollect·delCollect）/ 游戏控制
     datapaths.py               数据目录唯一来源（支持 TARGETFORGE_DATA_DIR）
@@ -227,8 +227,8 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.9.4**（当前发布）：铁雨礼赞积分关卡改用**社区显式刷怪表**（15 支实际队伍 + 基础效能，来源：秋水Ameth），
-不再展示被 80 上限截断/无关的推断候选；本机 API token、pick 限流、500 错误不回显 traceback 也在本版。
+**v1.9.5**（当前发布）：铁雨礼赞列出全部 **120 个可能怪组**（50 个固定/刷怪表中的实际怪组 + 70 个表中没有的
+「未实际出现怪组」），不再只显示 15 个，也不再使用「社区表」标签；页面直接标实际怪组类型/未实际出现状态。
 完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
 安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
 

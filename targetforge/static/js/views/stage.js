@@ -141,17 +141,19 @@ function renderPage() {
   const supportCount = loaded.supportCount ?? 0;
   const reserveCount = loaded.reserveCount ?? 0;
   const manualReserve = loaded.manualReserve;
+  const possibleCount = Number(loaded.reserveMeta?.possible_count || 0);
+  const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
   const reserveChip = manualReserve
-    ? `<span class="team-side-chip reserve" title="来源：${esc(loaded.reserveMeta.author || "社区")} 的社区刷怪表">${icon("list", 10)} 社区刷怪 <b>${reserveCount}</b></span>`
+    ? `<span class="team-side-chip reserve" title="固定怪组表 + 刷怪表；表中没有的标为未实际出现怪组">${icon("list", 10)} 固定/刷怪 <b>${possibleCount || reserveCount}</b></span>`
     : `<span class="team-side-chip reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 10)} 可能刷新 <b>${reserveCount}</b></span>`;
   const factions = [...new Set(teams.map((team) => team.faction).filter(Boolean))];
   const sideChips = `
     <span class="team-side-chip enemy">敌方 <b>${enemyCount}</b></span>
     ${supportCount ? `<span class="team-side-chip support">${icon("shield", 10)} 支援 <b>${supportCount}</b></span>` : ""}
-    ${reserveCount ? reserveChip : ""}
+    ${manualReserve || reserveCount ? reserveChip : ""}
   `;
   const reserveMergeHint = manualReserve
-    ? "（支援 / 社区刷怪表已并入下方列表）"
+    ? "（固定/刷怪表已并入下方列表；表中没有的标为未实际出现怪组）"
     : "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）";
 
   rootEl.innerHTML = `
@@ -214,7 +216,7 @@ function renderPage() {
     const supportInPage = pageItems.filter((team) => isSupportTeam(team)).length;
     const reserveInPage = pageItems.filter((team) => isReserveTeam(team)).length;
     rootEl.querySelector("[data-team-meta]").innerHTML =
-      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>` : ""}${reserveInPage ? `${supportInPage ? " · " : "（"}${loaded.manualReserve ? "社区刷怪" : "可能刷新"} <b>${reserveInPage}</b>` : ""}${supportInPage || reserveInPage ? "）" : ""} · 每页 ${state.pageSize}`;
+      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>` : ""}${reserveInPage ? `${supportInPage ? " · " : "（"}${loaded.manualReserve ? "固定/刷怪" : "可能刷新"} <b>${reserveInPage}</b>` : ""}${supportInPage || reserveInPage ? "）" : ""} · 每页 ${state.pageSize}`;
     const pfMeta = rootEl.querySelector("[data-pf-meta]");
     if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, teams.length, total);
 
@@ -263,17 +265,18 @@ function renderPage() {
     const shown = expanded ? reserves.slice(0, state.reserveVisible) : [];
     const remain = Math.max(0, filteredCount - shown.length);
     const manual = Boolean(loaded.manualReserve);
-    const sourceTitle = loaded.reserveMeta?.title || "社区刷怪表";
-    const sourceAuthor = loaded.reserveMeta?.author || "社区";
+    const possibleCount = Number(loaded.reserveMeta?.possible_count || 0);
+    const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
+    const notAppearedCount = Number(loaded.reserveMeta?.not_appeared_count || 0);
     const stripTitle = manual
-      ? `刷怪表 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}`
+      ? `固定/刷怪 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}${possibleCount ? ` · 全部 ${possibleCount}${inStageCount ? `（含上方 ${inStageCount}）` : ""}` : ""}`
       : `可能刷新 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}`;
     const stripHint = manual
-      ? `来源：${sourceAuthor} · ${sourceTitle}（社区整理，非客户端官方映射）`
+      ? `固定怪组表 + 刷怪表（无烟花/烟花强化）；表中没有的标为「未实际出现怪组」${notAppearedCount ? `（${notAppearedCount} 支）` : ""}`
       : "机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射";
-    const stripFlag = manual ? "社区表" : "推断";
+    const stripFlag = manual ? "固定/刷怪" : "推断";
     const stripFoot = manual
-      ? `以上来自社区刷怪表，不是推断；同样可加入序列，卡面带「社区刷怪表」徽标。`
+      ? `包含固定怪组与刷怪表；表中没有的队伍标为「未实际出现怪组」，仍可查看/加入序列。`
       : `以上为推断候选，不是确定出场；同样可加入序列，卡面带「机场可能刷新（推断）」徽标。`;
     reserveAreaEl.innerHTML = `
       <section class="reserve-strip" data-reserve-strip>

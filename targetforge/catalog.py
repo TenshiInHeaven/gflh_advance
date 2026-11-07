@@ -131,7 +131,7 @@ RESERVE_PREFIX_LENGTHS: tuple[int, ...] = (3, 4, 5, 6)
 RESERVE_NEIGHBOR_WINDOW = 20
 RESERVE_NEIGHBOR_CAP = 20
 
-#: 社区显式刷怪表（来源/作者/效能）；按 stage id 覆盖推断候选。见 manual_spawns.json。
+#: 显式固定/刷怪表（实际怪组/效能）；按 stage id 覆盖推断候选。见 manual_spawns.json。
 MANUAL_SPAWNS_FILE = Path(__file__).with_name("manual_spawns.json")
 
 
@@ -938,7 +938,7 @@ def _build_payload() -> dict:
     for ids in reserve_team_missions.values():
         ids.sort()
 
-    # ---- 社区显式刷怪表：覆盖推断候选（目前：铁雨礼赞，来源见文件注释） ----
+    # ---- 显式怪组表：固定/刷怪表 + 表中没有的「未实际出现怪组」 ----
     manual_effects: dict[int, int] = {}
     manual_spawns = _load_manual_spawns()
     for mission_id, info in manual_spawns.items():
@@ -946,20 +946,34 @@ def _build_payload() -> dict:
                    if isinstance(entry, dict) and _int(entry.get("team")) > 0]
         if not entries:
             continue
-        team_ids = [_int(entry.get("team")) for entry in entries]
-        stage_reserve_teams[mission_id] = team_ids
+        actual_ids = sorted({_int(entry.get("team")) for entry in entries})
+        prefix = str(info.get("pool_prefix") or "")
+        possible_ids = sorted(team_id for team_id in collectable
+                              if prefix and str(team_id).startswith(prefix))
+        stage_team_ids = set(mission_teams.get(mission_id, set()))
+        actual_visible = [team_id for team_id in actual_ids
+                          if team_id not in stage_team_ids]
+        not_appeared = [team_id for team_id in possible_ids
+                        if team_id not in set(actual_ids)
+                        and team_id not in stage_team_ids]
+        reserve_ids = actual_visible + not_appeared
+        stage_reserve_teams[mission_id] = reserve_ids
         stage_reserve_meta[mission_id] = {
             "method": "manual",
-            "prefix": "",
-            "prefix_length": 0,
-            "refs": len(team_ids),
-            "count": len(team_ids),
+            "prefix": prefix,
+            "prefix_length": len(prefix),
+            "refs": len(actual_ids),
+            "count": len(reserve_ids),
             "title": str(info.get("title") or ""),
             "author": str(info.get("author") or ""),
             "source_url": str(info.get("source_url") or ""),
             "entries": entries,
+            "actual_count": len(actual_ids),
+            "not_appeared_count": len(not_appeared),
+            "possible_count": len(possible_ids),
+            "in_stage_count": len(actual_ids) - len(actual_visible),
         }
-        for team_id in team_ids:
+        for team_id in reserve_ids:
             missions_list = reserve_team_missions.setdefault(team_id, [])
             if mission_id not in missions_list:
                 missions_list.append(mission_id)
@@ -2063,6 +2077,10 @@ class Catalog:
             item["reserve_reason"] = (reserve_meta.get("title")
                                       if manual else RESERVE_REASON)
             entry = manual_entries.get(team_id)
+            if manual:
+                item["appeared"] = entry is not None
+                item["appearance"] = "实际出现" if entry else "未实际出现怪组"
+                item["actual_kind"] = (entry or {}).get("kind") or ""
             if entry:
                 item["reserve_area"] = entry.get("area") or ""
                 item["reserve_turns"] = entry.get("turns") or ""

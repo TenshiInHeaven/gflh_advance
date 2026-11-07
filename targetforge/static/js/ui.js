@@ -732,16 +732,26 @@ export function teamCardHtml(team, options = {}) {
   const reserve = isReserveTeam(team);
   const manualReserve = reserve && (team.manual === true || team.reserve_source === "manual");
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
-  if (reserve) flags.push(manualReserve
-    ? `<span class="badge reserve" title="来源：社区刷怪表（${esc(team.reserve_reason || "非客户端官方映射")}）">${icon("list", 9)} 社区刷怪表</span>`
-    : `<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+  if (reserve) {
+    if (manualReserve) {
+      if (team.appeared === false) {
+        flags.push(`<span class="badge reserve" title="表中没有该队伍，未实际出现">${icon("list", 9)} 未实际出现怪组</span>`);
+      } else {
+        flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${esc(team.actual_kind || "实际出现")}</span>`);
+      }
+    } else {
+      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+    }
+  }
   const disp = powerDisplay(team.power, team.power_known);
   const stageLine = team.stage
-    ? `${support ? "支援 · " : reserve ? (manualReserve ? "社区刷怪 · " : "可能刷新 · ") : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
+    ? `${support ? "支援 · " : reserve ? (manualReserve ? `${team.appeared === false ? "未实际出现" : (team.actual_kind || "固定/刷怪")} · ` : "可能刷新 · ") : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
     : support
       ? "支援队伍"
       : reserve
-        ? (manualReserve ? "社区刷怪表" : "机场可能刷新（推断）")
+        ? (manualReserve
+            ? (team.appeared === false ? "未实际出现怪组" : (team.actual_kind || "固定/刷怪"))
+            : "机场可能刷新（推断）")
         : team.gray_zone
           ? "灰域探查"
           : team.orphan
