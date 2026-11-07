@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.9.8"
+VERSION = "1.9.9"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

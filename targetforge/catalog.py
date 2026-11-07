@@ -885,9 +885,10 @@ def _build_payload() -> dict:
     #    取**最短**且覆盖 >=3 个引用队伍的前缀；**积分关卡**阈值降到 >=2，且同长度取
     #    全部合格前缀的**并集**（引用跨多个 id 族时不漏族）；普通关卡仍只取覆盖最多的
     #    单前缀（同长度取覆盖最多、再按前缀字典序）；
-    # 2) 候选 = 同前缀、有槽位、可收藏、未被引用的队伍（id 升序；普通关 <=80，积分关不设限）；
-    # 3) 积分关卡前缀法失败时，先继承同 campaign 兄弟关已确认的 id 族（只继承与本关
-    #    引用同族的前缀），仍不行才 fallback：引用 id ±20 邻近窗口（普通关 <=20）。
+    # 2) 候选 = 合格前缀族并集、有槽位、可收藏、未被引用的队伍
+    #    （id 升序；普通关 <=80，积分关不设限）；
+    # 3) 前缀法失败时，积分关卡先继承同 campaign 兄弟关已确认的 id 族；
+    #    普通关卡没有继承，仍不行才 fallback：引用 id ±20 邻近窗口（普通关 <=20）。
     prefix_lists: dict[int, dict[str, list[int]]] = {
         length: defaultdict(list) for length in RESERVE_PREFIX_LENGTHS
     }
@@ -958,7 +959,7 @@ def _build_payload() -> dict:
         if ref_ids:
             is_score = mission_id in score_mission_ids
             chosen_length, options = _prefix_options(
-                ref_ids, min_refs=2 if is_score else 3, union=is_score)
+                ref_ids, min_refs=2 if is_score else 3, union=True)
             chosen = [(chosen_length, prefix) for _count, prefix in options]
             chosen_count = sum(count for count, _prefix in options)
             if chosen:
