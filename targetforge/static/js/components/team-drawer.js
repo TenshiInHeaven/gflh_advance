@@ -125,7 +125,7 @@ export function teamDetailBodyHtml(detail) {
                 return `
           <button class="appear-item" type="button" data-stage-detail="${esc(item.mission_id)}">
             <span class="ai-code">${esc(item.code || item.mission_id)}</span>
-            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")} <span class="tag ${role}">${role === "support" ? "支援" : role === "reserve" ? "可能刷新" : "敌方"}</span></span>
+            <span class="ai-title">${esc(item.chapter_title || "")} · ${esc(item.stage_title || "")} <span class="tag ${role}">${role === "support" ? "支援" : role === "reserve" ? "可能刷怪" : "敌方"}</span></span>
             <span class="ai-diff">${item.difficulty ? `难度 ${fmtNum(item.difficulty)}` : ""}</span>
             ${icon("chevronRight", 12)}
           </button>`;
@@ -165,9 +165,9 @@ export function teamDetailHeadHtml(detail) {
   if (reserve) {
     const manual = detail.reserve_source === "manual";
     if (manual) {
-      flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${detail.appeared === false ? "未实际出现怪组" : esc(detail.actual_kind || "实际出现")}</span>`);
+      flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${detail.appeared === false ? "实际未出现" : esc(detail.actual_kind || "可能刷怪")}</span>`);
     } else {
-      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 可能刷怪（推断）</span>`);
     }
   }
   if (detail.gray_zone) flags.push('<span class="badge cyan">灰域队伍</span>');

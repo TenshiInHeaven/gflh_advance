@@ -73,34 +73,34 @@ let bfUid = 0;
 export function butterflySvg({ size = 64, className = "", opacity = 1, simple = false, style = "" } = {}) {
   const px = typeof size === "number" ? `${size}px` : size;
   const uid = `morpho${++bfUid}`;
-  const foreLeft = "M95 84 C86 58 66 30 42 16 C30 9 16 12 14 24 C12 40 24 62 42 77 C58 91 78 101 91 103 C95 104 96 94 95 84 Z";
-  const foreRight = "M105 84 C114 58 134 30 158 16 C170 9 184 12 186 24 C188 40 176 62 158 77 C142 91 122 101 109 103 C105 104 104 94 105 84 Z";
-  const hindLeft = "M95 106 C78 110 52 124 38 142 C27 156 32 168 46 169 C64 170 84 154 92 134 C97 122 98 112 95 106 Z";
-  const hindRight = "M105 106 C122 110 148 124 162 142 C173 156 168 168 154 169 C136 170 116 154 108 134 C103 122 102 112 105 106 Z";
+  const foreLeft = "M97 80 C82 54 52 36 28 42 C13 46 9 60 18 73 C31 92 58 106 80 108 C91 109 98 96 97 80 Z";
+  const foreRight = "M103 80 C118 54 148 36 172 42 C187 46 191 60 182 73 C169 92 142 106 120 108 C109 109 102 96 103 80 Z";
+  const hindLeft = "M95 104 C74 106 50 116 38 132 C28 145 34 159 50 160 C70 161 88 146 94 126 C97 116 98 108 95 104 Z";
+  const hindRight = "M105 104 C126 106 150 116 162 132 C172 145 166 159 150 160 C130 161 112 146 106 126 C103 116 102 108 105 104 Z";
   const detail = simple ? "" : `
     <g class="bf-detail">
-      <path class="bf-vein" d="M95 86 C78 72 56 52 36 36"/>
-      <path class="bf-vein" d="M95 90 C80 80 62 64 46 52"/>
-      <path class="bf-vein" d="M94 94 C82 88 66 78 52 68"/>
-      <path class="bf-vein" d="M95 106 C80 116 62 130 48 146"/>
-      <path class="bf-vein" d="M97 110 C86 124 74 142 66 156"/>
-      <path class="bf-vein" d="M105 86 C122 72 144 52 164 36"/>
-      <path class="bf-vein" d="M105 90 C120 80 138 64 154 52"/>
-      <path class="bf-vein" d="M106 94 C118 88 134 78 148 68"/>
-      <path class="bf-vein" d="M105 106 C120 116 138 130 152 146"/>
-      <path class="bf-vein" d="M103 110 C114 124 126 142 134 156"/>
-      <path class="bf-sheen" d="M93 84 C80 64 62 46 44 34 C58 44 76 62 90 92 Z"/>
-      <path class="bf-iridescence" d="M92 82 C82 62 62 38 36 22 C56 34 82 60 94 90 Z"/>
-      <path class="bf-iridescence" d="M108 82 C118 62 138 38 164 22 C144 34 118 60 106 90 Z"/>
-      <path class="bf-sheen" d="M107 84 C120 64 138 46 156 34 C142 44 124 62 110 92 Z"/>
-      <path class="bf-sheen" d="M95 108 C84 118 68 132 54 144 C66 128 82 114 96 106 Z"/>
-      <path class="bf-sheen" d="M105 108 C116 118 132 132 146 144 C134 128 118 114 104 106 Z"/>
-      <ellipse class="bf-spot" cx="26" cy="31" rx="3.6" ry="2.3" transform="rotate(-28 33 36)"/>
-      <ellipse class="bf-spot" cx="23" cy="44" rx="2.4" ry="1.6" transform="rotate(-20 27 47)"/>
-      <ellipse class="bf-spot" cx="41" cy="53" rx="2.1" ry="1.5" transform="rotate(-10 41 53)"/>
-      <ellipse class="bf-spot" cx="174" cy="31" rx="3.6" ry="2.3" transform="rotate(28 167 36)"/>
-      <ellipse class="bf-spot" cx="177" cy="44" rx="2.4" ry="1.6" transform="rotate(20 173 47)"/>
-      <ellipse class="bf-spot" cx="159" cy="53" rx="2.1" ry="1.5" transform="rotate(10 159 53)"/>
+      <path class="bf-vein" d="M96 84 C74 68 50 54 30 50"/>
+      <path class="bf-vein" d="M95 88 C76 78 56 68 38 62"/>
+      <path class="bf-vein" d="M95 93 C78 88 60 82 44 76"/>
+      <path class="bf-vein" d="M95 106 C78 114 60 126 46 142"/>
+      <path class="bf-vein" d="M96 110 C86 122 74 138 64 152"/>
+      <path class="bf-vein" d="M104 84 C126 68 150 54 170 50"/>
+      <path class="bf-vein" d="M105 88 C124 78 144 68 162 62"/>
+      <path class="bf-vein" d="M105 93 C122 88 140 82 156 76"/>
+      <path class="bf-vein" d="M105 106 C122 114 140 126 154 142"/>
+      <path class="bf-vein" d="M104 110 C114 122 126 138 136 152"/>
+      <path class="bf-sheen" d="M92 80 C74 60 50 45 31 44 C48 53 70 69 87 92 Z"/>
+      <path class="bf-iridescence" d="M91 78 C74 57 48 40 27 42 C47 49 73 67 89 90 Z"/>
+      <path class="bf-iridescence" d="M109 78 C126 57 152 40 173 42 C153 49 127 67 111 90 Z"/>
+      <path class="bf-sheen" d="M108 80 C126 60 150 45 169 44 C152 53 130 69 113 92 Z"/>
+      <path class="bf-sheen" d="M94 106 C82 116 66 128 52 140 C64 126 80 112 95 104 Z"/>
+      <path class="bf-sheen" d="M106 106 C118 116 134 128 148 140 C136 126 120 112 105 104 Z"/>
+      <ellipse class="bf-spot" cx="30" cy="56" rx="3.4" ry="2.2" transform="rotate(-24 30 56)"/>
+      <ellipse class="bf-spot" cx="38" cy="68" rx="2.3" ry="1.5" transform="rotate(-18 38 68)"/>
+      <ellipse class="bf-spot" cx="54" cy="82" rx="2" ry="1.4" transform="rotate(-8 54 82)"/>
+      <ellipse class="bf-spot" cx="170" cy="56" rx="3.4" ry="2.2" transform="rotate(24 170 56)"/>
+      <ellipse class="bf-spot" cx="162" cy="68" rx="2.3" ry="1.5" transform="rotate(18 162 68)"/>
+      <ellipse class="bf-spot" cx="146" cy="82" rx="2" ry="1.4" transform="rotate(8 146 82)"/>
     </g>`;
   return `<svg class="butterfly${simple ? " is-simple" : ""} ${className}" width="${px}" height="${px}" viewBox="0 0 200 190" fill="none" aria-hidden="true" style="--bf-op:${opacity};${style}">
     <defs>
@@ -138,22 +138,22 @@ export function butterflySvg({ size = 64, className = "", opacity = 1, simple = 
       <path class="bf-fore" d="${foreLeft}" fill="url(#${uid}-wing)"/>
       <path class="bf-fore" d="${foreRight}" fill="url(#${uid}-wing)"/>
       <!-- 前翅黑色翅尖 -->
-      <path class="bf-tip-dark" d="M14 24 C12 40 24 62 42 77 C33 58 29 40 32 25 C27 18 17 17 14 24 Z"/>
-      <path class="bf-tip-dark" d="M186 24 C188 40 176 62 158 77 C167 58 171 40 168 25 C173 18 183 17 186 24 Z"/>
+      <path class="bf-tip-dark" d="M28 42 C13 46 9 60 18 73 C25 83 36 92 48 99 C36 85 28 68 30 54 C31 48 30 44 28 42 Z"/>
+      <path class="bf-tip-dark" d="M172 42 C187 46 191 60 182 73 C175 83 164 92 152 99 C164 85 172 68 170 54 C169 48 170 44 172 42 Z"/>
       ${detail}
     </g>
     <!-- 触角 -->
-    <path class="bf-antenna" d="M97 74 C92 58 84 48 76 42"/>
-    <path class="bf-antenna" d="M103 74 C108 58 116 48 124 42"/>
-    <circle class="bf-antenna-tip" cx="76" cy="42" r="2.4"/>
-    <circle class="bf-antenna-tip" cx="124" cy="42" r="2.4"/>
+    <path class="bf-antenna" d="M97 72 C91 58 83 48 74 42"/>
+    <path class="bf-antenna" d="M103 72 C109 58 117 48 126 42"/>
+    <circle class="bf-antenna-tip" cx="74" cy="42" r="2.2"/>
+    <circle class="bf-antenna-tip" cx="126" cy="42" r="2.2"/>
     <!-- 身体 -->
-    <ellipse class="bf-thorax" cx="100" cy="94" rx="7.2" ry="15" fill="url(#${uid}-body)"/>
-    <path class="bf-abdomen" d="M100 104 C106 113 106 136 100 153 C94 136 94 113 100 104 Z" fill="url(#${uid}-body)"/>
-    <path class="bf-body-line" d="M95.5 100 C99 104 101 104 104.5 100"/>
-    <path class="bf-body-line" d="M96.5 108 C99.4 111 100.6 111 103.5 108"/>
-    <path class="bf-body-line" d="M96.8 116 C99.4 119 100.6 119 103.2 116"/>
-    <circle class="bf-head" cx="100" cy="78" r="5.2" fill="url(#${uid}-body)"/>
+    <ellipse class="bf-thorax" cx="100" cy="88" rx="4.8" ry="12" fill="url(#${uid}-body)"/>
+    <path class="bf-abdomen" d="M100 98 C104 106 104 128 100 146 C96 128 96 106 100 98 Z" fill="url(#${uid}-body)"/>
+    <path class="bf-body-line" d="M96 92 C99 95 101 95 104 92"/>
+    <path class="bf-body-line" d="M96.5 100 C99.4 103 100.6 103 103.5 100"/>
+    <path class="bf-body-line" d="M97 108 C99.4 111 100.6 111 103 108"/>
+    <circle class="bf-head" cx="100" cy="74" r="4.2" fill="url(#${uid}-body)"/>
   </svg>`;
 }
 
@@ -732,26 +732,29 @@ export function teamCardHtml(team, options = {}) {
   const reserve = isReserveTeam(team);
   const manualReserve = reserve && (team.manual === true || team.reserve_source === "manual");
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
+  if (!reserve && !support && team.appearance === "场上已存在") {
+    flags.push(`<span class="badge green" title="固定怪组表 / 刷怪表：本关场上已存在">${icon("list", 9)} ${esc(team.actual_kind || "场上已存在")}</span>`);
+  }
   if (reserve) {
     if (manualReserve) {
       if (team.appeared === false) {
-        flags.push(`<span class="badge reserve" title="表中没有该队伍，未实际出现">${icon("list", 9)} 未实际出现怪组</span>`);
+        flags.push(`<span class="badge reserve" title="同系列可收藏，固定/刷怪表中没有">${icon("list", 9)} 实际未出现</span>`);
       } else {
-        flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${esc(team.actual_kind || "实际出现")}</span>`);
+        flags.push(`<span class="badge reserve" title="固定怪组表 / 刷怪表（可能刷怪）">${icon("list", 9)} ${esc(team.actual_kind || "可能刷怪")}</span>`);
       }
     } else {
-      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+      flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 可能刷怪（推断）</span>`);
     }
   }
   const disp = powerDisplay(team.power, team.power_known);
   const stageLine = team.stage
-    ? `${support ? "支援 · " : reserve ? (manualReserve ? `${team.appeared === false ? "未实际出现" : (team.actual_kind || "固定/刷怪")} · ` : "可能刷新 · ") : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
+    ? `${support ? "支援 · " : reserve ? (manualReserve ? `${team.appeared === false ? "实际未出现" : (team.actual_kind || "可能刷怪")} · ` : "可能刷怪 · ") : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
     : support
       ? "支援队伍"
       : reserve
         ? (manualReserve
-            ? (team.appeared === false ? "未实际出现怪组" : (team.actual_kind || "固定/刷怪"))
-            : "机场可能刷新（推断）")
+            ? (team.appeared === false ? "实际未出现" : (team.actual_kind || "可能刷怪"))
+            : "可能刷怪（推断）")
         : team.gray_zone
           ? "灰域探查"
           : team.orphan

@@ -54,12 +54,17 @@ v1.2 变化（用户实测反馈）
    与 ``roles``（enemy/support）；只有敌方+支援都无链接的可收藏队伍才进 orphan
    （orphan 从 4381 降到 3802）。stage 的 ``team_count``/敌方 ``teams`` 列表不变。
 
-8. **机场/后续刷新候选（v1.5）**：STC **没有显式 mission→机场刷新池映射**；按同系列
-   team id 族推断 ``reserve_teams``：取该 stage 已引用队伍（enemy∪ally∪boss，排除 id<=1000）
-   中出现最多的 ``str(id)[:4]`` 前缀（≥3 个引用），候选 = 同前缀、有槽位、可收藏、未被
-   引用的队伍（id 升序，≤80；80 只是项目为避免列表过长的自设上限，不是游戏规则）。
-   若 ``targetforge/manual_spawns.json`` 有该关卡，则用社区显式刷怪表覆盖推断
-   （``reserve_meta.method=manual``，带来源/作者/区域/回合，不受 80 上限影响）。
+8. **机场/后续刷新候选（v1.5 / v1.9.6 增强）**：STC **没有显式 mission→机场刷新池映射**；
+   按同系列 team id 族推断 ``reserve_teams``：对该 stage 已引用队伍（enemy∪ally∪boss，
+   排除 id<=1000）在 3~6 位前缀上取**最短**可用长度；普通关卡取覆盖最多（≥3 个引用）的
+   单前缀，**积分关卡**阈值降到 ≥2 且取同长度全部合格前缀的**并集**（引用跨多个 id 族
+   时不漏族，如 10158 虚数迷宫+ 跨 222/232/233/234/237）；候选 = 同前缀、有槽位、可收藏、
+   未被引用的队伍（id 升序；**普通关卡** ≤80 只是项目为避免列表过长的自设上限，积分关卡不设上限）。
+   积分关卡前缀法仍失败时，先**继承同 campaign 兄弟关**已确认的 id 族（只继承与本关引用
+   同族的前缀，``reserve_meta.inherited=true``），再退 ±20 邻近窗口。
+   若 ``targetforge/manual_spawns.json`` 有该关卡，则用显式固定/刷怪表覆盖推断
+   （``reserve_meta.method=manual``，``pool_prefix`` 支持单前缀/逗号/数组多前缀；列出该系列
+   全部可能怪组并按 可能刷怪/实际未出现 分类，不受 80 上限影响）。
    stage 详情带 ``reserve_teams``（team_summary +
    ``role:"reserve"`` / ``inferred:true`` / ``reserve_reason``）与 ``reserve_team_count``；
    章节 stage 行只带 ``reserve_team_count``。这是**推断**：不计入 team_count/
@@ -120,7 +125,7 @@ TEXT_FILE = ROOT / "dataMiner" / "derived" / "client_text.json"
 MODEL_FILE = ROOT / "dataMiner" / "derived" / "enemy_full_model.csv"
 
 #: JSON schema 版本（结构变更时 +1）
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 #: 机场/后续刷新候选（reserve）的说明：STC 没有显式 mission→刷新池映射，只能按 id 族推断
 RESERVE_REASON = "同系列未入场怪组（机场/后期刷新候选，STC 无显式映射）"
@@ -149,6 +154,18 @@ def _load_manual_spawns() -> dict[int, dict]:
         if isinstance(value, dict) and isinstance(value.get("entries"), list):
             result[mission_id] = value
     return result
+
+
+def _pool_prefixes(info: dict) -> list[str]:
+    """``pool_prefix`` 归一化：支持单前缀字符串、逗号分隔或数组（多 id 族关卡）。"""
+    raw = (info or {}).get("pool_prefix")
+    items = raw if isinstance(raw, (list, tuple)) else str(raw or "").split(",")
+    prefixes: list[str] = []
+    for item in items:
+        prefix = str(item or "").strip()
+        if prefix and prefix not in prefixes:
+            prefixes.append(prefix)
+    return prefixes
 
 #: 灰域真实区域层级：difficulty_group 1..4 有客户端名称（沙尘带/风暴带/硅状带/结晶带），
 #: 组 5/6 与未映射节点归「特殊区域」；「装甲突击」（标题前缀）是爬塔模式，单独成区。
@@ -865,9 +882,12 @@ def _build_payload() -> dict:
     # ---- 机场/后续刷新候选（reserve，推断） ----------------------------
     # STC 没有显式 mission→机场刷新池映射，只能按 team id 族推断：
     # 1) 对已引用队伍（enemy ∪ ally ∪ boss，排除 id<=1000）从 3/4/5/6 位前缀依次尝试，
-    #    取**最短**且覆盖 >=3 个引用队伍的前缀（同长度取覆盖最多、再按前缀字典序）；
-    # 2) 候选 = 同前缀、有槽位、可收藏、未被引用的队伍（id 升序，<=80）；
-    # 3) 前缀法没有候选时 fallback：引用 id ±20 邻近窗口内未引用可收藏队伍（<=20）。
+    #    取**最短**且覆盖 >=3 个引用队伍的前缀；**积分关卡**阈值降到 >=2，且同长度取
+    #    全部合格前缀的**并集**（引用跨多个 id 族时不漏族）；普通关卡仍只取覆盖最多的
+    #    单前缀（同长度取覆盖最多、再按前缀字典序）；
+    # 2) 候选 = 同前缀、有槽位、可收藏、未被引用的队伍（id 升序；普通关 <=80，积分关不设限）；
+    # 3) 积分关卡前缀法失败时，先继承同 campaign 兄弟关已确认的 id 族（只继承与本关
+    #    引用同族的前缀），仍不行才 fallback：引用 id ±20 邻近窗口（普通关 <=20）。
     prefix_lists: dict[int, dict[str, list[int]]] = {
         length: defaultdict(list) for length in RESERVE_PREFIX_LENGTHS
     }
@@ -883,33 +903,115 @@ def _build_payload() -> dict:
             ids.sort()
     stage_reserve_teams: dict[int, list[int]] = {}
     stage_reserve_meta: dict[int, dict] = {}
-    for mission_id in mission_teams:
+
+    def _referenced_ids(mission_id: int) -> tuple[set[int], list[int]]:
         referenced = set(mission_teams.get(mission_id, set()))
         referenced |= set(support_mission_teams.get(mission_id, set()))
-        ref_ids = [team_id for team_id in referenced if team_id > 1000]
+        return referenced, [team_id for team_id in referenced if team_id > 1000]
+
+    def _prefix_options(ref_ids: list[int], *, min_refs: int,
+                        union: bool) -> tuple[int, list[tuple[int, str]]]:
+        """最短可用前缀长度上的合格前缀（count, prefix）列表。
+
+        union=True 时返回该长度**全部**合格前缀（多 id 族并集，积分关卡用）；
+        union=False 只保留覆盖最多的一个（普通关卡，控制列表体积）。
+        """
+        for length in RESERVE_PREFIX_LENGTHS:
+            tally: Counter = Counter(
+                str(team_id)[:length] for team_id in ref_ids
+                if len(str(team_id)) >= length
+            )
+            options = [(count, prefix) for prefix, count in tally.items()
+                       if count >= min_refs]
+            if not options:
+                continue
+            options.sort(key=lambda item: (-item[0], item[1]))
+            return length, options if union else options[:1]
+        return 0, []
+
+    def _pool_of(chosen: list[tuple[int, str]]) -> set[int]:
+        pool: set[int] = set()
+        for length, prefix in chosen:
+            pool.update(prefix_lists[length].get(prefix, []))
+        return pool
+
+    def _record(mission_id: int, candidates: list[int], *,
+                chosen: list[tuple[int, str]], refs: int,
+                method: str, inherited: bool = False) -> None:
+        stage_reserve_teams[mission_id] = candidates
+        stage_reserve_meta[mission_id] = {
+            "prefix": ",".join(prefix for _length, prefix in chosen),
+            "prefixes": [prefix for _length, prefix in chosen],
+            "prefix_length": chosen[0][0] if chosen else 0,
+            "refs": refs,
+            "method": method,
+            "count": len(candidates),
+            **({"inherited": True} if inherited else {}),
+        }
+
+    deferred: list[int] = []
+    for mission_id in mission_teams:
+        referenced, ref_ids = _referenced_ids(mission_id)
         candidates: list[int] = []
-        chosen_prefix = ""
-        chosen_length = 0
+        chosen: list[tuple[int, str]] = []
         chosen_count = 0
         if ref_ids:
-            for length in RESERVE_PREFIX_LENGTHS:
-                tally: Counter = Counter(
-                    str(team_id)[:length] for team_id in ref_ids
-                    if len(str(team_id)) >= length
-                )
-                options = [(count, prefix) for prefix, count in tally.items()
-                           if count >= 3]
-                if not options:
-                    continue
-                count, prefix = sorted(options, key=lambda item: (-item[0], item[1]))[0]
-                chosen_prefix = prefix
-                chosen_length = length
-                chosen_count = count
-                candidates = [team_id for team_id in prefix_lists[length][prefix]
-                              if team_id not in referenced][:RESERVE_CAP]
-                break
-        method = "prefix"
-        if not candidates and ref_ids:
+            is_score = mission_id in score_mission_ids
+            chosen_length, options = _prefix_options(
+                ref_ids, min_refs=2 if is_score else 3, union=is_score)
+            chosen = [(chosen_length, prefix) for _count, prefix in options]
+            chosen_count = sum(count for count, _prefix in options)
+            if chosen:
+                candidates = sorted(team_id for team_id in _pool_of(chosen)
+                                    if team_id not in referenced)
+                # 积分关卡容易有大量机场/后续刷新队伍；不设 80 上限，避免把真实候选截掉。
+                # 普通关卡仍用上限控制缓存/页面体积。
+                if not is_score:
+                    candidates = candidates[:RESERVE_CAP]
+        if candidates:
+            _record(mission_id, candidates, chosen=chosen,
+                    refs=chosen_count, method="prefix")
+        else:
+            deferred.append(mission_id)
+
+    # ---- 同 campaign 前缀继承（仅积分关卡） ----------------------------
+    # 引用太少触发不了前缀法的积分关卡（如 10520/10521 只有 2 支 941xxx、11101 只有
+    # 1 支 652xxx），复用同活动兄弟关已确认的 id 族；只继承与本关引用同族的前缀，
+    # 避免 ±20 邻近窗口漏掉大半池子（941 池 160 支窗口只捞 14/20 支）。
+    campaign_prefixes: dict[int, set[tuple[int, str]]] = defaultdict(set)
+    for mission_id, meta in stage_reserve_meta.items():
+        if mission_id not in score_mission_ids:
+            continue
+        campaign = _int((missions.get(mission_id) or {}).get("campaign"))
+        length = _int(meta.get("prefix_length"))
+        if not campaign or not length:
+            continue
+        for prefix in meta.get("prefixes") or []:
+            if prefix:
+                campaign_prefixes[campaign].add((length, prefix))
+    neighbor_fallback: list[int] = []
+    for mission_id in deferred:
+        referenced, ref_ids = _referenced_ids(mission_id)
+        inherited: list[tuple[int, str]] = []
+        if mission_id in score_mission_ids and ref_ids:
+            campaign = _int((missions.get(mission_id) or {}).get("campaign"))
+            inherited = [(length, prefix)
+                         for length, prefix in sorted(campaign_prefixes.get(campaign, set()))
+                         if any(str(ref_id).startswith(prefix) for ref_id in ref_ids)]
+        candidates: list[int] = []
+        if inherited:
+            candidates = sorted(team_id for team_id in _pool_of(inherited)
+                                if team_id not in referenced)
+        if candidates:
+            _record(mission_id, candidates, chosen=inherited,
+                    refs=0, method="prefix", inherited=True)
+        else:
+            neighbor_fallback.append(mission_id)
+
+    for mission_id in neighbor_fallback:
+        referenced, ref_ids = _referenced_ids(mission_id)
+        candidates = []
+        if ref_ids:
             # fallback：引用 id 邻近窗口（±20）
             nearest_distance: dict[int, int] = {}
             for team_id in collectable:
@@ -920,17 +1022,12 @@ def _build_payload() -> dict:
                     nearest_distance[team_id] = distance
             candidates = [team_id for team_id, _distance in
                           sorted(nearest_distance.items(),
-                                 key=lambda item: (item[1], item[0]))][:RESERVE_NEIGHBOR_CAP]
-            method = "neighbor"
+                                 key=lambda item: (item[1], item[0]))]
+            if mission_id not in score_mission_ids:
+                candidates = candidates[:RESERVE_NEIGHBOR_CAP]
         if candidates:
-            stage_reserve_teams[mission_id] = candidates
-            stage_reserve_meta[mission_id] = {
-                "prefix": chosen_prefix,
-                "prefix_length": chosen_length,
-                "refs": chosen_count,
-                "method": method,
-                "count": len(candidates),
-            }
+            _record(mission_id, candidates, chosen=[],
+                    refs=0, method="neighbor")
     reserve_team_missions: dict[int, list[int]] = defaultdict(list)
     for mission_id, team_ids in stage_reserve_teams.items():
         for team_id in team_ids:
@@ -947,9 +1044,11 @@ def _build_payload() -> dict:
         if not entries:
             continue
         actual_ids = sorted({_int(entry.get("team")) for entry in entries})
-        prefix = str(info.get("pool_prefix") or "")
+        pool_prefixes = _pool_prefixes(info)
         possible_ids = sorted(team_id for team_id in collectable
-                              if prefix and str(team_id).startswith(prefix))
+                              if pool_prefixes
+                              and any(str(team_id).startswith(prefix)
+                                      for prefix in pool_prefixes))
         stage_team_ids = set(mission_teams.get(mission_id, set()))
         actual_visible = [team_id for team_id in actual_ids
                           if team_id not in stage_team_ids]
@@ -960,8 +1059,10 @@ def _build_payload() -> dict:
         stage_reserve_teams[mission_id] = reserve_ids
         stage_reserve_meta[mission_id] = {
             "method": "manual",
-            "prefix": prefix,
-            "prefix_length": len(prefix),
+            "prefix": ",".join(pool_prefixes),
+            "prefixes": pool_prefixes,
+            "prefix_length": min((len(prefix) for prefix in pool_prefixes),
+                                 default=0),
             "refs": len(actual_ids),
             "count": len(reserve_ids),
             "title": str(info.get("title") or ""),
@@ -969,6 +1070,7 @@ def _build_payload() -> dict:
             "source_url": str(info.get("source_url") or ""),
             "entries": entries,
             "actual_count": len(actual_ids),
+            "spawn_count": len(actual_visible),
             "not_appeared_count": len(not_appeared),
             "possible_count": len(possible_ids),
             "in_stage_count": len(actual_ids) - len(actual_visible),
@@ -1736,6 +1838,8 @@ def _build_payload() -> dict:
                                    if meta.get("method") == "neighbor"),
             "manual_stages": sum(1 for meta in stage_reserve_meta.values()
                                  if meta.get("method") == "manual"),
+            "inherited_stages": sum(1 for meta in stage_reserve_meta.values()
+                                    if meta.get("inherited")),
             "reason": RESERVE_REASON,
         },
         "client_text": _source_file_info(TEXT_FILE),
@@ -2079,19 +2183,29 @@ class Catalog:
             entry = manual_entries.get(team_id)
             if manual:
                 item["appeared"] = entry is not None
-                item["appearance"] = "实际出现" if entry else "未实际出现怪组"
+                item["appearance"] = "可能刷怪" if entry else "实际未出现"
                 item["actual_kind"] = (entry or {}).get("kind") or ""
             if entry:
                 item["reserve_area"] = entry.get("area") or ""
                 item["reserve_turns"] = entry.get("turns") or ""
                 item["reserve_logic"] = entry.get("logic") or ""
             reserve_items.append(item)
+        # 场上已存在（enemy on map）；manual 关卡标注是否在固定/刷怪表内
+        teams_items: list[dict] = []
+        for team_id in self._stage_teams.get(mission_id, []):
+            summary = self._team_summary(team_id)
+            if summary is None:
+                continue
+            item = dict(summary)
+            if manual:
+                entry = manual_entries.get(_int(team_id))
+                if entry is not None:
+                    item["appearance"] = "场上已存在"
+                    item["actual_kind"] = entry.get("kind") or ""
+            teams_items.append(item)
         return {
             "stage": payload,
-            "teams": [summary for summary in
-                      (self._team_summary(team_id)
-                       for team_id in self._stage_teams.get(mission_id, []))
-                      if summary is not None],
+            "teams": teams_items,
             "support_teams": support_items,
             "support_team_count": len(support_links),
             "reserve_teams": reserve_items,
@@ -2318,6 +2432,9 @@ class Catalog:
             "prefix_stages": methods.get("prefix", 0),
             "neighbor_stages": methods.get("neighbor", 0),
             "manual_stages": methods.get("manual", 0),
+            "inherited_stages": sum(
+                1 for row in rows
+                if (self._stage_reserve_meta.get(row["stage_id"]) or {}).get("inherited")),
         }
         report = {
             "generated_at": self.built_at,

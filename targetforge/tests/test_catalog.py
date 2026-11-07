@@ -179,17 +179,19 @@ class CatalogDataTest(unittest.TestCase):
         detail = self.catalog.stage(11435)
         self.assertEqual(detail["stage"]["team_count"], 30)          # 敌方计数不变
         self.assertEqual(detail["stage"]["support_team_count"], 17)  # 支援计数不变
-        self.assertEqual(detail["reserve_team_count"], 16)           # 6363xxx 未引用队
+        # v1.9.6：11435 改用手动表（秋水Ameth），33 = 可能刷怪 32 + 实际未出现 1
+        self.assertEqual(detail["reserve_team_count"], 33)
         reserve = {team["id"]: team for team in detail["reserve_teams"]}
         self.assertIn(6363057, reserve)   # AA-02
         self.assertIn(6363060, reserve)   # AA-02
         for team_id in (6363057, 6363060):
             item = reserve[team_id]
             self.assertEqual(item["role"], "reserve")
-            self.assertTrue(item["inferred"])
+            self.assertFalse(item["inferred"])          # 手动表非推断
             self.assertTrue(item["collectable"])
-            self.assertEqual(item["reserve_reason"], catalog.RESERVE_REASON)
-            self.assertIn("机场", item["reserve_reason"])
+            self.assertEqual(item["appearance"], "可能刷怪")
+            self.assertEqual(item["actual_kind"], "Stay in Hell")
+            self.assertIn("固定怪组表", item["reserve_reason"])
         self.assertEqual(reserve[6363057]["power"], 189798)
         self.assertEqual(reserve[6363060]["power"], 187497)
         # 静默沙盘（11946）后续含威廉 770060
@@ -199,27 +201,30 @@ class CatalogDataTest(unittest.TestCase):
         panluo = {team["id"] for team in self.catalog.stage(11603)["reserve_teams"]}
         self.assertIn(660002, panluo)
         self.assertIn(660003, panluo)
-        # v1.8.1 修复坠入兔洞+（10105）：引用 2147-2150 四位数前缀各不相同，
-        # 3 位前缀「214」命中 2141-2146（Aegis/Nemeum/Tarantula/Dinergate）。
+        # v1.9.6：坠入兔洞+（10105）改用秋水Ameth手动表（22 条），
+        # 2141-2143 在刷怪表内（可能刷怪），2144-2146 族内未列出（实际未出现）。
         rabbit = {team["id"]: team for team in
                   self.catalog.stage(10105)["reserve_teams"]}
-        self.assertGreaterEqual(len(rabbit), 6)
-        for team_id in (2141, 2142, 2143, 2144, 2145, 2146):
+        self.assertEqual(len(rabbit), 35)   # 可能刷怪 18 + 实际未出现 17
+        for team_id in (2141, 2142, 2143):
             self.assertIn(team_id, rabbit, f"10105 缺 reserve {team_id}")
             self.assertEqual(rabbit[team_id]["role"], "reserve")
-            self.assertTrue(rabbit[team_id]["inferred"])
-        for team_id in (2147, 2148, 2149, 2150):   # 已引用队伍不得重算
+            self.assertFalse(rabbit[team_id]["inferred"])
+            self.assertEqual(rabbit[team_id]["appearance"], "可能刷怪")
+        for team_id in (2144, 2145, 2146):
+            self.assertIn(team_id, rabbit, f"10105 缺 reserve {team_id}")
+            self.assertEqual(rabbit[team_id]["appearance"], "实际未出现")
+        for team_id in (2147, 2148, 2149, 2150):   # 固定怪组已在场上，不进 reserve
             self.assertNotIn(team_id, rabbit)
         rabbit_meta = self.catalog._stage_reserve_meta.get(10105) or {}
-        self.assertEqual(rabbit_meta.get("prefix"), "214")
-        self.assertEqual(rabbit_meta.get("prefix_length"), 3)   # 最短前缀
-        self.assertEqual(rabbit_meta.get("method"), "prefix")
-        # 最短前缀：11435 用 3 位「636」（而非 4 位 6363），命中不变
+        self.assertEqual(rabbit_meta.get("prefix"), "202,203,214,215")
+        self.assertEqual(rabbit_meta.get("method"), "manual")
+        # v1.9.6：11435 手动表，pool_prefix「6363」
         meta_11435 = self.catalog._stage_reserve_meta.get(11435) or {}
-        self.assertEqual(meta_11435.get("prefix"), "636")
-        self.assertEqual(meta_11435.get("prefix_length"), 3)
-        self.assertGreaterEqual(int(meta_11435.get("refs") or 0), 3)
-        self.assertEqual(meta_11435.get("method"), "prefix")
+        self.assertEqual(meta_11435.get("prefix"), "6363")
+        self.assertEqual(meta_11435.get("prefix_length"), 4)
+        self.assertEqual(int(meta_11435.get("refs") or 0), 62)
+        self.assertEqual(meta_11435.get("method"), "manual")
         # 邻近窗口 fallback：50105 类（前缀法无候选）选到 ±20 内未引用队伍
         neighbor_stage = next(
             meta for meta in self.catalog._stage_reserve_meta.values()
@@ -232,7 +237,7 @@ class CatalogDataTest(unittest.TestCase):
         # 章节 stage 行只带数量
         row = next(stage for stage in self.catalog.chapter("score--60")["stages"]
                    if stage["id"] == 11435)
-        self.assertEqual(row["reserve_team_count"], 16)
+        self.assertEqual(row["reserve_team_count"], 33)
         # appearances 里出现「可能刷新（推断）」条目，但不改变 orphan/roles 真实状态
         team = self.catalog.team(6363057)
         self.assertIsNotNone(team)
@@ -246,6 +251,41 @@ class CatalogDataTest(unittest.TestCase):
         # 有 reserve 的 stage 数量与 meta 一致
         self.assertEqual(len(self.catalog._stage_reserve_teams),
                          EXPECT_RESERVE_STAGES)
+
+    # -- 手动表三段式分类（v1.9.6：场上已存在/可能刷怪/实际未出现） ------
+    def test_manual_spawn_classification(self):
+        """v1.9.6：秋水Ameth 手动表 → 场上已存在/可能刷怪/实际未出现 三段式。"""
+        detail = self.catalog.stage(11988)
+        meta = detail["reserve_meta"]
+        self.assertEqual(meta.get("method"), "manual")
+        # 场上 8 支全部在固定怪组表内 → 标「场上已存在」+ 实际 kind
+        onfield = detail["teams"]
+        self.assertEqual(len(onfield), 8)
+        for team in onfield:
+            self.assertEqual(team.get("appearance"), "场上已存在")
+            self.assertEqual(team.get("actual_kind"), "固定")
+        # reserve：可能刷怪 42（无烟花15+烟花强化18+固定9）/ 实际未出现 70
+        reserve = detail["reserve_teams"]
+        spawn = [team for team in reserve if team.get("appearance") == "可能刷怪"]
+        absent = [team for team in reserve if team.get("appearance") == "实际未出现"]
+        self.assertEqual(len(spawn), 42)
+        self.assertEqual(len(absent), 70)
+        self.assertEqual(meta.get("spawn_count"), 42)
+        self.assertEqual(meta.get("not_appeared_count"), 70)
+        self.assertEqual(meta.get("in_stage_count"), 8)
+        kinds = {team.get("actual_kind") for team in spawn}
+        self.assertEqual(kinds, {"无烟花", "烟花强化", "固定"})
+        for team in absent:
+            self.assertFalse(team.get("actual_kind"))
+        # 手动表关卡覆盖：16 个积分关卡（不含仅推断的 11117 逃亡圣咏昼）
+        manual_stages = {mid for mid, m in self.catalog._stage_reserve_meta.items()
+                         if m.get("method") == "manual"}
+        self.assertEqual(manual_stages, {10105, 10158, 10508, 10766, 11008, 11116,
+                                         11118, 11320, 11403, 11435, 11497, 11549,
+                                         11603, 11630, 11946, 11988})
+        # 11117（逃亡圣咏昼）不在秋水表覆盖范围 → 仍为推断
+        meta_11117 = self.catalog._stage_reserve_meta.get(11117) or {}
+        self.assertEqual(meta_11117.get("method"), "prefix")
 
     def test_reserve_audit(self):
         """v1.8.1：全量 score 章节 reserve 审计（改进前后 + 仍为 0 的原因）。"""
@@ -264,9 +304,9 @@ class CatalogDataTest(unittest.TestCase):
         self.assertIn(10105, improved_ids)
         rabbit = next(row for row in report["improved"] if row["stage_id"] == 10105)
         self.assertEqual(rabbit["reserve_legacy_count"], 0)
-        self.assertEqual(rabbit["reserve_count"], 6)
-        self.assertEqual(rabbit["prefix"], "214")
-        self.assertEqual(rabbit["method"], "prefix")
+        self.assertEqual(rabbit["reserve_count"], 35)   # v1.9.6 手动表
+        self.assertEqual(rabbit["prefix"], "202,203,214,215")
+        self.assertEqual(rabbit["method"], "manual")
         self.assertTrue(rabbit["reserve_team_ids"])
         # 逐关字段齐全；所有 score stage 现在都有 reserve
         expected_keys = {"chapter_id", "chapter_title", "stage_id", "title",

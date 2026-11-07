@@ -14,6 +14,8 @@ import {
   toastErr,
   confirmDialog,
   setBusy,
+  factionChip,
+  speciesIconHtml,
 } from "../ui.js";
 import { settlementLineHtml } from "../components/settlement.js";
 import {
@@ -23,9 +25,9 @@ import {
   powerFilterMeta,
   defaultPowerFilter,
 } from "../components/power-filter.js";
-import { esc, fmtNum, navigate, bindSearch, isSupportTeam, supportCountOf, isReserveTeam, reserveCountOf } from "../util.js";
+import { esc, fmtNum, navigate, bindSearch, isSupportTeam, supportCountOf, isReserveTeam, reserveCountOf, powerDisplay } from "../util.js";
 
-const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter(), reserveOpen: false, reserveVisible: 12 };
+const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter(), reserveOpen: false, reserveVisible: 24, absentOpen: true };
 let rootEl = null;
 let loaded = null;
 let filteredTeams = [];
@@ -110,6 +112,9 @@ export async function render(root, { params }) {
     loaded.reserveTeams = rawReserve.map((team) => prepareReserveTeam(team));
     loaded.reserveMeta = loaded.reserve_meta || stageObj.reserve_meta || {};
     loaded.manualReserve = loaded.reserveMeta.method === "manual";
+    // 三段式分类：场上已存在（上方主列表）/ 可能刷怪（固定·刷怪表或推断）/ 实际未出现（表外）
+    loaded.spawnTeams = loaded.reserveTeams.filter((team) => !(team.manual && team.appeared === false));
+    loaded.absentTeams = loaded.reserveTeams.filter((team) => team.manual && team.appeared === false);
     loaded.supportCount = supportCountOf(stageObj, loaded.supportTeams) || loaded.supportTeams.length;
     loaded.reserveCount = reserveCountOf(stageObj, loaded.reserveTeams) || loaded.reserveTeams.length;
     renderPage();
@@ -141,20 +146,21 @@ function renderPage() {
   const supportCount = loaded.supportCount ?? 0;
   const reserveCount = loaded.reserveCount ?? 0;
   const manualReserve = loaded.manualReserve;
-  const possibleCount = Number(loaded.reserveMeta?.possible_count || 0);
-  const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
+  const spawnCount = loaded.spawnTeams?.length ?? 0;
+  const absentCount = loaded.absentTeams?.length ?? 0;
   const reserveChip = manualReserve
-    ? `<span class="team-side-chip reserve" title="固定怪组表 + 刷怪表；表中没有的标为未实际出现怪组">${icon("list", 10)} 固定/刷怪 <b>${possibleCount || reserveCount}</b></span>`
-    : `<span class="team-side-chip reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 10)} 可能刷新 <b>${reserveCount}</b></span>`;
+    ? `<span class="team-side-chip reserve" title="固定怪组表 + 刷怪表里、不在上方场上的怪组">${icon("list", 10)} 可能刷怪 <b>${spawnCount}</b></span>
+       ${absentCount ? `<span class="team-side-chip absent" title="同系列可收藏，但固定/刷怪表中没有">${icon("list", 10)} 实际未出现 <b>${absentCount}</b></span>` : ""}`
+    : `<span class="team-side-chip reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 10)} 可能刷怪 <b>${reserveCount}</b></span>`;
   const factions = [...new Set(teams.map((team) => team.faction).filter(Boolean))];
   const sideChips = `
-    <span class="team-side-chip enemy">敌方 <b>${enemyCount}</b></span>
+    <span class="team-side-chip enemy">场上已存在 <b>${enemyCount}</b></span>
     ${supportCount ? `<span class="team-side-chip support">${icon("shield", 10)} 支援 <b>${supportCount}</b></span>` : ""}
     ${manualReserve || reserveCount ? reserveChip : ""}
   `;
   const reserveMergeHint = manualReserve
-    ? "（固定/刷怪表已并入下方列表；表中没有的标为未实际出现怪组）"
-    : "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）";
+    ? "（下方分两段：可能刷怪 = 固定/刷怪表；实际未出现 = 表中没有的同系列怪组）"
+    : "（支援 / 可能刷怪候选已并入下方列表，卡面带角色徽标）";
 
   rootEl.innerHTML = `
     ${pageHeadHtml({
@@ -214,9 +220,8 @@ function renderPage() {
     const pageItems = filtered.slice(start, start + state.pageSize);
 
     const supportInPage = pageItems.filter((team) => isSupportTeam(team)).length;
-    const reserveInPage = pageItems.filter((team) => isReserveTeam(team)).length;
     rootEl.querySelector("[data-team-meta]").innerHTML =
-      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>` : ""}${reserveInPage ? `${supportInPage ? " · " : "（"}${loaded.manualReserve ? "固定/刷怪" : "可能刷新"} <b>${reserveInPage}</b>` : ""}${supportInPage || reserveInPage ? "）" : ""} · 每页 ${state.pageSize}`;
+      `${icon("users", 11)} 场上已存在：显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>）` : ""} · 每页 ${state.pageSize}`;
     const pfMeta = rootEl.querySelector("[data-pf-meta]");
     if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, teams.length, total);
 
@@ -247,75 +252,166 @@ function renderPage() {
   renderList();
 
   const reserveAreaEl = rootEl.querySelector("[data-reserve-area]");
+
+  const applyFilters = (items) => {
+    const query = state.query.trim();
+    let filtered = items;
+    if (query) filtered = filtered.filter((team) => String(team.id).includes(query));
+    if (state.faction) filtered = filtered.filter((team) => team.faction === state.faction);
+    return filterAndSortTeams(filtered, state.filter);
+  };
+
+  /** 「实际未出现」表格：与全怪组总表同款的高密度列表（编号/效能/单位·总血/阵营/怪种/代表出处） */
+  const absentTableHtml = (teams) => {
+    const row = (team) => {
+      const disp = powerDisplay(team.power, team.power_known);
+      const powerCell = disp.known
+        ? `<b class="mono ${disp.negative ? "neg" : ""}" ${disp.negative ? 'title="积分关卡数据，可能为负"' : ""}>${disp.text}</b>`
+        : `<span class="dim">未标注</span>`;
+      const species = Array.isArray(team.species) ? team.species : [];
+      const shown = species.slice(0, 6);
+      const rest = species.length - shown.length;
+      const speciesCell = shown.length
+        ? `<span class="roster-species">${shown
+            .map(
+              (item) => `<span class="rs-ico" title="${esc(item.name || "")} #${String(item.codex_no || "").padStart(3, "0")}">${speciesIconHtml(
+                item,
+                { size: 16, variant: "mini", fallbackFaction: team.faction },
+              )}</span>`,
+            )
+            .join("")}${rest > 0 ? `<span class="rs-more" title="共 ${species.length} 个怪种">+${rest}</span>` : ""}</span>`
+        : `<span class="text-mute">—</span>`;
+      const originTitle = team.stage
+        ? [team.stage.title, team.stage.stage_title, team.stage.code].filter(Boolean).join(" · ")
+        : "";
+      const origin = team.stage
+        ? `<span class="roster-chapters" title="${esc(originTitle)}">${esc(team.stage.title || "")}${team.stage.stage_title ? ` · ${esc(team.stage.stage_title)}` : ""}${team.stage.code ? ` <span class="dim">${esc(team.stage.code)}</span>` : ""}</span>`
+        : `<span class="text-mute">无固定关卡</span>`;
+      return `<tr class="roster-row" data-team-detail="${esc(team.id)}" tabindex="0" aria-label="队伍 #${esc(team.id)}" title="同系列可收藏，固定/刷怪表中没有">
+        <td class="roster-id">#${esc(team.id)}</td>
+        <td class="num">${powerCell}</td>
+        <td class="num roster-uh" title="单位数 / 总血量"><b>${fmtNum(team.units)}</b><span class="roster-hp"> / ${fmtNum(team.hp_total)}</span></td>
+        <td>${team.faction ? factionChip(team.faction, { small: true }) : "—"}</td>
+        <td>${speciesCell}</td>
+        <td>${origin}</td>
+        <td class="roster-actions">
+          <button class="btn btn-xs btn-ghost" type="button" title="查看详情" data-team-detail="${esc(team.id)}">${icon("eye", 12)}</button>
+          <button class="btn btn-xs btn-cyan" type="button" title="加入序列" data-add-team="${esc(team.id)}">${icon("plus", 12)}</button>
+        </td>
+      </tr>`;
+    };
+    return `<div class="absent-table-wrap"><table class="data-table absent-table">
+      <thead><tr>
+        <th scope="col">编号</th>
+        <th scope="col">效能</th>
+        <th scope="col">单位/总血</th>
+        <th scope="col">阵营</th>
+        <th scope="col">怪种</th>
+        <th scope="col">代表出处</th>
+        <th scope="col" class="ta-r">操作</th>
+      </tr></thead>
+      <tbody>${teams.map(row).join("")}</tbody>
+    </table></div>`;
+  };
+
   const renderReserveStrip = () => {
     if (!reserveAreaEl) return;
     if (!loaded.reserveTeams.length) {
       reserveAreaEl.innerHTML = "";
       return;
     }
-    const query = state.query.trim();
-    let reserves = loaded.reserveTeams;
-    if (query) reserves = reserves.filter((team) => String(team.id).includes(query));
-    if (state.faction) reserves = reserves.filter((team) => team.faction === state.faction);
-    reserves = filterAndSortTeams(reserves, state.filter);
-    const filteredCount = reserves.length;
-    const total = loaded.reserveCount || loaded.reserveTeams.length;
-    const filtering = Boolean(query || state.faction || state.filter.mode !== "all");
-    const expanded = state.reserveOpen || (filtering && filteredCount > 0);
-    const shown = expanded ? reserves.slice(0, state.reserveVisible) : [];
-    const remain = Math.max(0, filteredCount - shown.length);
+    const filtering = Boolean(state.query.trim() || state.faction || state.filter.mode !== "all");
     const manual = Boolean(loaded.manualReserve);
     const possibleCount = Number(loaded.reserveMeta?.possible_count || 0);
     const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
-    const notAppearedCount = Number(loaded.reserveMeta?.not_appeared_count || 0);
-    const stripTitle = manual
-      ? `固定/刷怪 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}${possibleCount ? ` · 全部 ${possibleCount}${inStageCount ? `（含上方 ${inStageCount}）` : ""}` : ""}`
-      : `可能刷新 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}`;
-    const stripHint = manual
-      ? `固定怪组表 + 刷怪表（无烟花/烟花强化）；表中没有的标为「未实际出现怪组」${notAppearedCount ? `（${notAppearedCount} 支）` : ""}`
-      : "机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射";
-    const stripFlag = manual ? "固定/刷怪" : "推断";
-    const stripFoot = manual
-      ? `包含固定怪组与刷怪表；表中没有的队伍标为「未实际出现怪组」，仍可查看/加入序列。`
-      : `以上为推断候选，不是确定出场；同样可加入序列，卡面带「机场可能刷新（推断）」徽标。`;
+
+    // ---- 段一：可能刷怪（固定/刷怪表内、不在场上；或推断候选）----
+    const spawnAll = applyFilters(loaded.spawnTeams);
+    const spawnTotal = loaded.spawnTeams.length;
+    const spawnExpanded = state.reserveOpen || (filtering && spawnAll.length > 0);
+    const shown = spawnExpanded ? spawnAll.slice(0, state.reserveVisible) : [];
+    const remain = Math.max(0, spawnAll.length - shown.length);
+    const spawnTitle = `可能刷怪 <b>${filtering ? spawnAll.length : spawnTotal}</b> 支${filtering && spawnAll.length !== spawnTotal ? `（共 ${spawnTotal}）` : ""}${manual && possibleCount ? ` · 全部 ${possibleCount}${inStageCount ? `（含上方 ${inStageCount}）` : ""}` : ""}`;
+    const spawnHint = manual
+      ? "固定怪组表 + 刷怪表（无烟花/烟花强化）里、不在上方场上的怪组；紧凑卡片，点详情看编成"
+      : "机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射（推断）";
+    const spawnFoot = manual
+      ? "以上为固定怪组表 + 刷怪表中的怪组（卡面带 固定/无烟花/烟花强化 小标签），可加入序列。"
+      : "以上为推断候选，不是确定出场；同样可加入序列，卡面带「可能刷怪（推断）」徽标。";
+
+    // ---- 段二：实际未出现（仅 manual；紧凑行列表）----
+    const absentAll = applyFilters(loaded.absentTeams);
+    const absentTotal = loaded.absentTeams.length;
+    const absentExpanded = state.absentOpen || (filtering && absentAll.length > 0);
+    const absentTitle = `实际未出现 <b>${filtering ? absentAll.length : absentTotal}</b> 支${filtering && absentAll.length !== absentTotal ? `（共 ${absentTotal}）` : ""}`;
+    const absentHint = "同系列可收藏，但固定怪组表/刷怪表中没有；表格列出（含怪种与代表出处），仅供查看/收藏";
+
     reserveAreaEl.innerHTML = `
+      ${spawnTotal ? `
       <section class="reserve-strip" data-reserve-strip>
-        <button class="reserve-toggle ${expanded ? "open" : ""}" type="button" data-reserve-toggle
-          aria-expanded="${expanded}" title="${esc(stripHint)}">
-          <span class="reserve-flag">${icon(manual ? "list" : "refresh", 11)} ${stripFlag}</span>
-          <span class="reserve-toggle-title">${stripTitle}</span>
-          <span class="reserve-toggle-hint">${esc(stripHint)}</span>
-          <span class="reserve-toggle-action">${icon(expanded ? "chevronUp" : "chevronDown", 13)} ${expanded ? "收起" : "展开"}</span>
+        <button class="reserve-toggle ${spawnExpanded ? "open" : ""}" type="button" data-reserve-toggle
+          aria-expanded="${spawnExpanded}" title="${esc(spawnHint)}">
+          <span class="reserve-flag">${icon(manual ? "list" : "refresh", 11)} ${manual ? "固定/刷怪表" : "推断"}</span>
+          <span class="reserve-toggle-title">${spawnTitle}</span>
+          <span class="reserve-toggle-hint">${esc(spawnHint)}</span>
+          <span class="reserve-toggle-action">${icon(spawnExpanded ? "chevronUp" : "chevronDown", 13)} ${spawnExpanded ? "收起" : "展开"}</span>
         </button>
         ${
-          expanded
+          spawnExpanded
             ? `<div class="reserve-grid-wrap">
-                 <div class="team-grid reserve-grid">${shown.map((team) => teamCardHtml(team)).join("")}</div>
+                 <div class="team-grid compact reserve-grid">${shown.map((team) => teamCardHtml(team, { compact: true })).join("")}</div>
                  <div class="reserve-foot">
-                   <span class="reserve-foot-hint">${stripFoot}</span>
+                   <span class="reserve-foot-hint">${spawnFoot}</span>
                    ${
                      remain > 0
                        ? `<button class="btn btn-sm btn-ghost" type="button" data-reserve-more>${icon("chevronDown", 12)} 再显示更多（剩余 ${remain}）</button>`
-                       : `<button class="btn btn-sm btn-ghost" type="button" data-reserve-less>${icon("chevronUp", 12)} 收起候选</button>`
+                       : shown.length > 24
+                         ? `<button class="btn btn-sm btn-ghost" type="button" data-reserve-less>${icon("chevronUp", 12)} 收起候选</button>`
+                         : ""
                    }
                  </div>
                </div>`
             : ""
         }
-      </section>`;
+      </section>` : ""}
+      ${absentTotal ? `
+      <section class="reserve-strip absent-strip" data-absent-strip>
+        <button class="reserve-toggle ${absentExpanded ? "open" : ""}" type="button" data-absent-toggle
+          aria-expanded="${absentExpanded}" title="${esc(absentHint)}">
+          <span class="reserve-flag absent">${icon("list", 11)} 表外</span>
+          <span class="reserve-toggle-title">${absentTitle}</span>
+          <span class="reserve-toggle-hint">${esc(absentHint)}</span>
+          <span class="reserve-toggle-action">${icon(absentExpanded ? "chevronUp" : "chevronDown", 13)} ${absentExpanded ? "收起" : "展开"}</span>
+        </button>
+        ${
+          absentExpanded
+            ? `<div class="reserve-grid-wrap absent-wrap">
+                 ${absentTableHtml(absentAll)}
+                 <div class="reserve-foot">
+                   <span class="reserve-foot-hint">这些怪组该系列可收藏，但本关固定/刷怪表均未出现；仍可查看详情或加入序列。</span>
+                 </div>
+               </div>`
+            : ""
+        }
+      </section>` : ""}`;
+
     reserveAreaEl.querySelector("[data-reserve-toggle]")?.addEventListener("click", () => {
       state.reserveOpen = !state.reserveOpen;
-      state.reserveVisible = 12;
+      state.reserveVisible = 24;
       renderReserveStrip();
     });
     reserveAreaEl.querySelector("[data-reserve-more]")?.addEventListener("click", () => {
-      state.reserveVisible += 12;
+      state.reserveVisible += 24;
       state.reserveOpen = true;
       renderReserveStrip();
     });
     reserveAreaEl.querySelector("[data-reserve-less]")?.addEventListener("click", () => {
       state.reserveOpen = false;
-      state.reserveVisible = 12;
+      state.reserveVisible = 24;
+      renderReserveStrip();
+    });
+    reserveAreaEl.querySelector("[data-absent-toggle]")?.addEventListener("click", () => {
+      state.absentOpen = !state.absentOpen;
       renderReserveStrip();
     });
   };
@@ -324,7 +420,7 @@ function renderPage() {
   bindSearch(rootEl.querySelector("[data-team-search]"), (value) => {
     state.query = value;
     state.page = 1;
-    state.reserveVisible = 12;
+    state.reserveVisible = 24;
     renderList();
     renderReserveStrip();
   });
@@ -332,7 +428,7 @@ function renderPage() {
   bindPowerFilter(rootEl, (filter) => {
     state.filter = filter;
     state.page = 1;
-    state.reserveVisible = 12;
+    state.reserveVisible = 24;
     renderList();
     renderReserveStrip();
   });
@@ -344,7 +440,7 @@ function renderPage() {
     button.classList.add("active");
     state.faction = button.dataset.faction;
     state.page = 1;
-    state.reserveVisible = 12;
+    state.reserveVisible = 24;
     renderList();
     renderReserveStrip();
   });

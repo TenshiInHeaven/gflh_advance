@@ -3664,16 +3664,16 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 /* ---------- 28.5 大蓝闪蝶（Blue Morpho）主题装饰 ---------- */
 .butterfly { display: block; overflow: visible; opacity: var(--bf-op, 1); }
 .butterfly .bf-fore,
-.butterfly .bf-hind { stroke: #050b1a; stroke-width: 2.4; stroke-linejoin: round; }
-.butterfly .bf-rim { fill: none; stroke: #050b1a; stroke-width: 9.5; stroke-linejoin: round; }
+.butterfly .bf-hind { stroke: #050b1a; stroke-width: 2; stroke-linejoin: round; }
+.butterfly .bf-rim { fill: none; stroke: #050b1a; stroke-width: 7; stroke-linejoin: round; }
 .butterfly .bf-glow-rim {
   fill: none;
   stroke: rgba(94, 225, 255, 0.22);
-  stroke-width: 15;
+  stroke-width: 12;
   stroke-linejoin: round;
 }
 .butterfly .bf-tip-dark { fill: #050b1a; opacity: 0.94; }
-.butterfly .bf-vein { fill: none; stroke: #07142e; stroke-width: 1.7; stroke-linecap: round; opacity: 0.55; }
+.butterfly .bf-vein { fill: none; stroke: #07142e; stroke-width: 1.3; stroke-linecap: round; opacity: 0.55; }
 .butterfly .bf-sheen { fill: #bff4ff; opacity: 0.15; }
 .butterfly .bf-iridescence {
   fill: none;
@@ -3683,7 +3683,7 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
   opacity: 0.28;
 }
 .butterfly .bf-spot { fill: #eaf8ff; opacity: 0.92; }
-.butterfly .bf-antenna { fill: none; stroke: #101a33; stroke-width: 2.4; stroke-linecap: round; }
+.butterfly .bf-antenna { fill: none; stroke: #101a33; stroke-width: 1.9; stroke-linecap: round; }
 .butterfly .bf-antenna-tip { fill: #0a1326; }
 .butterfly .bf-thorax,
 .butterfly .bf-abdomen,
@@ -4178,6 +4178,47 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .reserve-foot-hint { color: var(--text-mute); font-size: 10.5px; line-height: 1.6; }
 .tag.reserve { color: #ffd27a; border-color: rgba(242, 193, 78, 0.4); background: rgba(242, 193, 78, 0.08); }
 
+/* ---------- 28.49b 三段式分类：可能刷怪（紧凑卡片）/ 实际未出现（紧凑行） ---------- */
+.team-grid.compact { grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 9px; }
+.team-grid.compact .team-card { padding: 9px 11px; }
+.team-grid.compact .tc-meta { row-gap: 4px; }
+.team-grid.compact .tc-foot { margin-top: 7px; }
+
+.team-side-chip.absent { color: var(--text-dim); border: 1px solid var(--line); background: rgba(140, 185, 255, 0.04); }
+.absent-strip { border-color: var(--line); background: rgba(10, 18, 39, 0.3); }
+.absent-strip .reserve-toggle:hover { background: rgba(140, 185, 255, 0.04); }
+.absent-strip .reserve-toggle.open { border-bottom-color: var(--line); }
+.absent-strip .reserve-toggle-title b { color: var(--text-dim); }
+.reserve-flag.absent {
+  color: var(--text-dim);
+  background: rgba(140, 185, 255, 0.1);
+  border: 1px solid var(--line);
+}
+.absent-wrap { padding: 9px 13px 11px; }
+.absent-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: rgba(9, 16, 34, 0.5); }
+.absent-table { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+.absent-table thead th {
+  padding: 8px 10px;
+  background: #0c1730;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-mute);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.absent-table tbody td { padding: 6px 8px; border-bottom: 1px solid rgba(120, 160, 220, 0.08); vertical-align: middle; }
+.absent-table tbody tr:last-child td { border-bottom: 0; }
+.absent-table th:nth-child(1), .absent-table td:nth-child(1) { width: 60px; }
+.absent-table th:nth-child(2), .absent-table td:nth-child(2) { width: 74px; }
+.absent-table th:nth-child(3), .absent-table td:nth-child(3) { width: 104px; }
+.absent-table th:nth-child(4), .absent-table td:nth-child(4) { width: 86px; }
+.absent-table th:nth-child(5), .absent-table td:nth-child(5) { width: 22%; }
+.absent-table th:nth-child(7), .absent-table td:nth-child(7) { width: 64px; }
+.absent-table .roster-actions { position: static; background: none; }
+.absent-table .roster-row:hover .roster-actions { background: none; }
+
 /* ---------- 30. 全怪组总表页（v1.6） ---------- */
 .roster-filters {
   display: flex;
@@ -4281,7 +4322,7 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .sp-opt .sp-icon { flex: none; }
 
 .roster-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--r); background: rgba(9, 16, 34, 0.5); max-width: 100%; }
-.roster-table { min-width: 960px; width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+.roster-table { min-width: 845px; width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
 .roster-table thead th {
   position: sticky;
   top: 0;
@@ -4301,31 +4342,35 @@ table.data-table td .unit-code { color: var(--text-mute); font-size: 10px; margi
 .roster-table th.active { color: var(--amber-2); }
 .roster-table th .si { margin-left: 4px; opacity: 0.55; font-size: 9px; }
 .roster-table th.active .si { opacity: 1; color: var(--amber); }
-.roster-table tbody td { padding: 8px 10px; border-bottom: 1px solid rgba(120, 160, 220, 0.08); vertical-align: middle; }
+.roster-table tbody td { padding: 7px 8px; border-bottom: 1px solid rgba(120, 160, 220, 0.08); vertical-align: middle; }
 .roster-table tbody tr:last-child td { border-bottom: 0; }
 .roster-row { cursor: pointer; transition: background 0.12s; }
 .roster-row:hover { background: rgba(94, 225, 255, 0.055); }
 .roster-id { font-family: var(--font-mono); color: var(--text-2); white-space: nowrap; }
 .roster-roles { white-space: nowrap; }
 .roster-roles .badge { height: 17px; font-size: 9px; margin-right: 3px; }
-.roster-species { display: inline-flex; align-items: center; gap: 3px; }
+.roster-species { display: inline-flex; align-items: center; gap: 2px; }
 .roster-species .rs-ico { display: inline-flex; }
 .roster-species .rs-ico .sp-icon { border-radius: 3px; }
 .rs-more { color: var(--text-mute); font-family: var(--font-mono); font-size: 9.5px; }
-.roster-table th:nth-child(1), .roster-table td:nth-child(1) { width: 64px; }
-.roster-table th:nth-child(2), .roster-table td:nth-child(2) { width: 88px; }
-.roster-table th:nth-child(3), .roster-table td:nth-child(3) { width: 58px; }
-.roster-table th:nth-child(4), .roster-table td:nth-child(4) { width: 78px; }
-.roster-table th:nth-child(5), .roster-table td:nth-child(5) { width: 88px; }
-.roster-table th:nth-child(6), .roster-table td:nth-child(6) { width: 140px; }
-.roster-table th:nth-child(7), .roster-table td:nth-child(7) { width: 150px; }
-.roster-table th:nth-child(9), .roster-table td:nth-child(9) { width: 136px; }
+.roster-table th:nth-child(1), .roster-table td:nth-child(1) { width: 60px; }
+.roster-table th:nth-child(2), .roster-table td:nth-child(2) { width: 74px; }
+.roster-table th:nth-child(3), .roster-table td:nth-child(3) { width: 104px; }
+.roster-table th:nth-child(4), .roster-table td:nth-child(4) { width: 86px; }
+.roster-table th:nth-child(5), .roster-table td:nth-child(5) { width: 215px; }
+.roster-table th:nth-child(6), .roster-table td:nth-child(6) { width: 14%; }
+.roster-table th:nth-child(8), .roster-table td:nth-child(8) { width: 64px; }
+.roster-table th .col-resize { position: absolute; right: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 6; touch-action: none; }
+.roster-table th .col-resize:hover, .roster-table th .col-resize.active { background: rgba(94, 225, 255, 0.35); border-radius: 2px; }
+.roster-uh b { font-weight: 600; }
+.roster-hp { color: var(--text-mute); font-size: 10px; }
 .roster-roles { white-space: nowrap; }
 .roster-chapters { color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
 .roster-actions { white-space: nowrap; text-align: right; position: sticky; right: 0; background: #0b142b; z-index: 1; }
 .roster-table thead th:last-child { position: sticky; right: 0; background: #0c1730; z-index: 3; }
 .roster-row:hover .roster-actions { background: #0e1c3a; }
-.roster-actions .btn { height: 22px; padding: 0 7px; font-size: 10px; }
+.roster-actions .btn { width: 24px; height: 22px; padding: 0; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+.roster-actions .btn + .btn { margin-left: 4px; }
 .roster-pager { margin-top: 14px; }
 .roster-pager-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .roster-loading, .roster-error { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 34px 16px; color: var(--text-mute); font-size: 11.5px; }

@@ -38,9 +38,9 @@ TargetForge 以 **MIT License** 发布。MIT 允许使用、修改与再分发�
 
 ## 社区数据贡献
 
-- **秋水Ameth** —— 整理《铁雨礼赞 - 刷怪表（无烟花强化）》：
-  [腾讯表格](https://docs.qq.com/sheet/DYWNjWkRSQXN4QVdw?nlc=1&tab=000002)。
-  表中提供了各区域/回合的刷怪队伍编号与基础效能，本项目据此为 `铁雨礼赞` 积分关卡
+- **秋水Ameth** —— 整理《少女前线积分关卡 固定怪组表 + 刷怪表》合集（16 个关卡）：
+  [腾讯表格合集](https://docs.qq.com/sheet/DYWFRU1dmRnJmY0JV?nlc=1&tab=BB08J2)
+  表中提供了各区域/回合的刷怪队伍编号与基础效能，本项目据此为这些积分关卡
   建立显式刷怪表（`targetforge/manual_spawns.json`），替代不可靠的 ID 前缀推断。
   感谢授权引用；数据版权归原整理者。
 

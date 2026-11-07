@@ -14,6 +14,9 @@ import {
 import { esc, fmtNum, powerDisplay, bindSearch, isSupportTeam, isReserveTeam, factionClass } from "../util.js";
 
 const PAGE_SIZES = [50, 100, 200];
+const COL_COUNT = 8;
+const COL_MIN = 44;
+const COL_WIDTHS_KEY = "roster.colWidths.v1";
 const SORT_OPTIONS = [
   ["id_asc", "序号 ↑"],
   ["id_desc", "序号 ↓"],
@@ -113,7 +116,7 @@ function roleOptionsHtml() {
     ["", "全部角色"],
     ["enemy", "敌方"],
     ["support", "支援"],
-    ["reserve", "机场推断"],
+    ["reserve", "可能刷怪（推断）"],
   ]
     .map(([value, label]) => `<option value="${value}">${label}</option>`)
     .join("");
@@ -148,12 +151,12 @@ function roleBadgesHtml(team) {
     badges.push(`<span class="badge support">${icon("shield", 9)} 支援</span>`);
   }
   if (roles.includes("reserve") || isReserveTeam(team)) {
-    badges.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场推断</span>`);
+    badges.push(`<span class="badge reserve" title="可能刷怪（推断）：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 可能刷怪</span>`);
   }
   if (!roles.includes("support") && !roles.includes("reserve")) {
     badges.push(`<span class="badge mono">敌方</span>`);
   }
-  if (team.orphan) badges.push(`<span class="badge violet">无固定关卡</span>`);
+  if (team.orphan) badges.push(`<span class="badge violet" title="无固定关卡">无关卡</span>`);
   return badges.join(" ");
 }
 
@@ -166,10 +169,10 @@ function speciesCellHtml(team) {
     .map(
       (item) => `<span class="rs-ico" title="${esc(item.name || "")} #${String(item.codex_no || "").padStart(3, "0")}">${speciesIconHtml(
         item,
-        { size: 20, variant: "mini", fallbackFaction: team.faction },
+        { size: 16, variant: "mini", fallbackFaction: team.faction },
       )}</span>`,
     )
-    .join("")}${rest > 0 ? `<span class="rs-more">+${rest}</span>` : ""}</span>`;
+    .join("")}${rest > 0 ? `<span class="rs-more" title="共 ${species.length} 个怪种">+${rest}</span>` : ""}</span>`;
 }
 
 function chaptersCellHtml(team) {
@@ -193,36 +196,111 @@ function rowHtml(team) {
   return `<tr class="roster-row" data-team-detail="${esc(team.id)}" tabindex="0" aria-label="队伍 #${esc(team.id)}">
     <td class="roster-id">#${esc(team.id)}</td>
     <td class="num">${powerCell}</td>
-    <td class="num">${fmtNum(team.units)}</td>
-    <td class="num">${fmtNum(team.hp_total)}</td>
+    <td class="num roster-uh" title="单位数 / 总血量"><b>${fmtNum(team.units)}</b><span class="roster-hp"> / ${fmtNum(team.hp_total)}</span></td>
     <td>${team.faction ? `<span class="faction-chip ${factionClass(team.faction)}"><i></i>${esc(team.faction)}</span>` : "—"}</td>
     <td class="roster-roles">${roleBadgesHtml(team)}</td>
     <td>${speciesCellHtml(team)}</td>
     <td>${chaptersCellHtml(team)}</td>
     <td class="roster-actions">
-      <button class="btn btn-xs btn-ghost" type="button" data-team-detail="${esc(team.id)}">${icon("eye", 11)} 详情</button>
-      <button class="btn btn-xs btn-cyan" type="button" data-add-team="${esc(team.id)}" ${inSeq ? "disabled" : ""}>${icon("plus", 11)} ${inSeq ? "已在序列" : "加入序列"}</button>
+      <button class="btn btn-xs btn-ghost" type="button" title="查看详情" data-team-detail="${esc(team.id)}">${icon("eye", 12)}</button>
+      <button class="btn btn-xs btn-cyan" type="button" title="${inSeq ? "已在序列" : "加入序列"}" data-add-team="${esc(team.id)}" ${inSeq ? "disabled" : ""}>${icon(inSeq ? "check" : "plus", 12)}</button>
     </td>
   </tr>`;
 }
 
+function loadColWidths() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || "null");
+    return Array.isArray(raw) && raw.length === COL_COUNT && raw.some((w) => Number(w) > 0) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyColWidths(widths) {
+  const table = rootEl?.querySelector(".roster-table");
+  if (!table) return;
+  const cols = [...table.querySelectorAll("col")];
+  if (cols.length !== COL_COUNT) return;
+  cols.forEach((col, i) => {
+    col.style.width = `${Math.max(COL_MIN, Math.round(widths[i]))}px`;
+  });
+  table.style.minWidth = "0";
+  table.style.width = `${widths.reduce((acc, w) => acc + Math.max(COL_MIN, Math.round(w)), 0)}px`;
+}
+
+function resetColWidths() {
+  try {
+    localStorage.removeItem(COL_WIDTHS_KEY);
+  } catch {
+    /* ignore */
+  }
+  const table = rootEl?.querySelector(".roster-table");
+  if (!table) return;
+  table.querySelectorAll("col").forEach((col) => {
+    col.style.width = "";
+  });
+  table.style.minWidth = "";
+  table.style.width = "";
+}
+
+function bindColResize() {
+  const table = rootEl?.querySelector(".roster-table");
+  if (!table) return;
+  const ths = [...table.querySelectorAll("thead th")];
+  table.querySelectorAll("[data-col-resize]").forEach((handle) => {
+    const idx = Number(handle.dataset.colResize);
+    handle.addEventListener("click", (event) => event.stopPropagation());
+    handle.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      resetColWidths();
+    });
+    handle.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startW = ths[idx].getBoundingClientRect().width;
+      // 进入手动模式：先冻结所有列当前像素宽，再拖目标列
+      const manual = ths.map((th) => Math.max(COL_MIN, Math.round(th.getBoundingClientRect().width)));
+      handle.classList.add("active");
+      const onMove = (ev) => {
+        manual[idx] = Math.max(COL_MIN, Math.round(startW + ev.clientX - startX));
+        applyColWidths(manual);
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        handle.classList.remove("active");
+        try {
+          localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(manual));
+        } catch {
+          /* ignore */
+        }
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  });
+}
+
 function tableHeadHtml() {
-  const sortCell = (col, label) => {
+  const handle = (i) => `<span class="col-resize" data-col-resize="${i}" title="拖拽调整列宽 · 双击恢复默认"></span>`;
+  const sortCell = (col, label, i) => {
     const cfg = SORT_COLS[col];
     const active = cfg && (state.sort === cfg.desc || state.sort === cfg.asc);
     const arrow = cfg && state.sort === cfg.desc ? "↓" : cfg && state.sort === cfg.asc ? "↑" : "↕";
-    return `<th class="sortable ${active ? "active" : ""}" data-sort-col="${col}" scope="col">${label}<span class="si">${arrow}</span></th>`;
+    return `<th class="sortable ${active ? "active" : ""}" data-sort-col="${col}" scope="col">${label}<span class="si">${arrow}</span>${handle(i)}</th>`;
   };
   return `<thead><tr>
-    ${sortCell("id", "编号")}
-    ${sortCell("power", "效能")}
-    ${sortCell("units", "单位数")}
-    ${sortCell("hp", "总血")}
-    <th scope="col">阵营</th>
-    <th scope="col">角色</th>
-    ${sortCell("species", "怪种")}
-    <th scope="col">出现章节</th>
-    <th scope="col" class="ta-r">操作</th>
+    ${sortCell("id", "编号", 0)}
+    ${sortCell("power", "效能", 1)}
+    ${sortCell("units", "单位/总血", 2)}
+    <th scope="col">阵营${handle(3)}</th>
+    <th scope="col">角色${handle(4)}</th>
+    ${sortCell("species", "怪种", 5)}
+    <th scope="col">出现章节${handle(6)}</th>
+    <th scope="col" class="ta-r">操作${handle(7)}</th>
   </tr></thead>`;
 }
 
@@ -267,12 +345,12 @@ function shellHtml() {
     crumbs: [{ label: "全怪组" }],
     title: "全怪组",
     badge: "ROSTER",
-    sub: "全部可收藏怪组总表：按编号 / 效能 / 单位数 / 总血 / 阵营 / 角色 / 怪种 / 出场章节浏览。支持多条件筛选（章节出现位置、怪种多选取「同时包含」、效能与单位数区间）与表头排序；机场刷新候选为推断数据，卡上标「机场推断」。",
+    sub: "全部可收藏怪组总表：按编号 / 效能 / 单位数 / 总血 / 阵营 / 角色 / 怪种 / 出场章节浏览。支持多条件筛选（章节出现位置、怪种多选取「同时包含」、效能与单位数区间）与表头排序；机场刷新候选为推断数据，标「可能刷怪」徽标。收起右侧序列面板可获得更宽表格。",
   })}
   ${filterPanelHtml()}
   <div class="roster-table-wrap">
-    <table class="data-table roster-table">${tableHeadHtml()}<tbody data-roster-tbody>
-      <tr><td colspan="9"><div class="roster-loading"><span class="spinner"></span> 正在加载怪组…</div></td></tr>
+    <table class="data-table roster-table"><colgroup>${"<col>".repeat(COL_COUNT)}</colgroup>${tableHeadHtml()}<tbody data-roster-tbody>
+      <tr><td colspan="8"><div class="roster-loading"><span class="spinner"></span> 正在加载怪组…</div></td></tr>
     </tbody></table>
   </div>
   <div data-roster-pager class="roster-pager"></div>`;
@@ -324,6 +402,9 @@ export async function render(root) {
   if (spMenu) spMenu.innerHTML = speciesMenuHtml();
 
   bindEvents();
+  bindColResize();
+  const savedWidths = loadColWidths();
+  if (savedWidths) applyColWidths(savedWidths);
   await loadTeams();
 }
 
@@ -511,14 +592,14 @@ async function loadTeams() {
   const pagerHost = rootEl.querySelector("[data-roster-pager]");
   if (!tbody) return;
   state.loading = true;
-  tbody.innerHTML = `<tr><td colspan="9"><div class="roster-loading"><span class="spinner"></span> 正在加载怪组…</div></td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="8"><div class="roster-loading"><span class="spinner"></span> 正在加载怪组…</div></td></tr>`;
   try {
     const data = await api.teams(buildQuery());
     if (token !== reqToken) return;
     state.total = Number(data.total) || 0;
     const items = data.items || [];
     if (!items.length) {
-      tbody.innerHTML = `<tr><td colspan="9">${emptyHtml()}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8">${emptyHtml()}</td></tr>`;
       if (pagerHost) pagerHost.innerHTML = "";
       updateMeta(true);
       return;
@@ -528,7 +609,7 @@ async function loadTeams() {
     updateMeta(false);
   } catch (err) {
     if (token !== reqToken) return;
-    tbody.innerHTML = `<tr><td colspan="9"><div class="roster-error">${icon("alert", 16)} 读取怪组总表失败：${esc(err.message || "未知错误")}${
+    tbody.innerHTML = `<tr><td colspan="8"><div class="roster-error">${icon("alert", 16)} 读取怪组总表失败：${esc(err.message || "未知错误")}${
       err.status === 404 ? "（/api/teams 接口尚未就绪）" : ""
     }<button class="btn btn-sm btn-cyan" type="button" data-roster-retry>${icon("refresh", 12)} 重试</button></div></td></tr>`;
     rootEl.querySelector("[data-roster-retry]")?.addEventListener("click", () => loadTeams());

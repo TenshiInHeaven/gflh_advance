@@ -365,7 +365,7 @@ const runSearch = debounce(async (value, wait = 0) => {
         Boolean(detail.reserve_reason) ||
         (Array.isArray(detail.appearances) &&
           detail.appearances.some((item) => String(item?.role || "").toLowerCase() === "reserve"));
-      if (isReserve) roleBadges.push('<span class="badge reserve">机场可能刷新（推断）</span>');
+      if (isReserve) roleBadges.push('<span class="badge reserve">可能刷怪（推断）</span>');
       const inSequence = (store.sequence?.draft || []).some((team) => Number(team.id) === Number(detail.id));
       drop.innerHTML = `
         <div class="sd-group-title">队伍（按编号）</div>

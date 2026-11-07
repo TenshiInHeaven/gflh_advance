@@ -227,8 +227,10 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.9.5**（当前发布）：铁雨礼赞列出全部 **120 个可能怪组**（50 个固定/刷怪表中的实际怪组 + 70 个表中没有的
-「未实际出现怪组」），不再只显示 15 个，也不再使用「社区表」标签；页面直接标实际怪组类型/未实际出现状态。
+**v1.9.6**（当前发布）：**16 个积分关卡**接入秋水Ameth 显式固定/刷怪表（合集见致谢），关卡页按
+「场上已存在 / 可能刷怪 / 实际未出现」三段式展示（表外同系列怪组以表格列出，含怪种与代表出处）；
+无表关卡的推断引擎增强（前缀并集 + 兄弟关继承，积分关推断兜底归零）；全怪组总表支持
+**拖拽调列宽**（本地记忆）、单位数/总血合并列、操作列图标按钮；大蓝闪蝶图标重绘。
 完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
 安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
 
@@ -238,8 +240,8 @@ gflh_advance/
   [GFLH](https://github.com/MaaGF1/GFLH) 的协议与思路上。
 - **ZIRC / gflzirc**：感谢 **MaaGF1** 与 ZIRC 贡献者；`gflzirc` 以 **MIT** 发布，
   是本项目与游戏接口、本地抓包交互的基础。
-- **秋水Ameth**：感谢整理「铁雨礼赞 - 刷怪表（无烟花强化）」及基础效能数据；
-  该表已作为 `铁雨礼赞` 积分关卡的社区显式刷怪表来源（见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)）。
+- **秋水Ameth**：感谢整理积分关卡「固定怪组表 + 刷怪表」腾讯表格合集（16 个关卡）及基础效能数据；
+  该合集已作为这些积分关卡的社区显式刷怪表来源（见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)）。
 - **GF Forge**：感谢数据层与靶机编号规划的上游工作；自 v1.9.0 起其精简子集已内置在本仓库。
 - 也感谢 Python、requests、urllib3、charset-normalizer、idna、certifi、UnityPy、Pillow、Playwright
   等开源项目的作者与维护者。
