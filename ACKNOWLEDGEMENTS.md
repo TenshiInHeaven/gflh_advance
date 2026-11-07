@@ -36,6 +36,14 @@ TargetForge 以 **MIT License** 发布。MIT 允许使用、修改与再分发�
 | [Pillow](https://python-pillow.org/) | Alex Clark 及贡献者 | HPND |
 | [Playwright](https://playwright.dev/) | Microsoft | Apache-2.0 |
 
+## 社区数据贡献
+
+- **秋水Ameth** —— 整理《铁雨礼赞 - 刷怪表（无烟花强化）》：
+  [腾讯表格](https://docs.qq.com/sheet/DYWNjWkRSQXN4QVdw?nlc=1&tab=000002)。
+  表中提供了各区域/回合的刷怪队伍编号与基础效能，本项目据此为 `铁雨礼赞` 积分关卡
+  建立显式刷怪表（`targetforge/manual_spawns.json`），替代不可靠的 ID 前缀推断。
+  感谢授权引用；数据版权归原整理者。
+
 ## 游戏数据与素材
 
 - 《少女前线》游戏及其角色、单位、图标等素材版权归 **Sunborn Network Technology / MICA Team**

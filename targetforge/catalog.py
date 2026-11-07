@@ -57,7 +57,10 @@ v1.2 变化（用户实测反馈）
 8. **机场/后续刷新候选（v1.5）**：STC **没有显式 mission→机场刷新池映射**；按同系列
    team id 族推断 ``reserve_teams``：取该 stage 已引用队伍（enemy∪ally∪boss，排除 id<=1000）
    中出现最多的 ``str(id)[:4]`` 前缀（≥3 个引用），候选 = 同前缀、有槽位、可收藏、未被
-   引用的队伍（id 升序，≤80）。stage 详情带 ``reserve_teams``（team_summary +
+   引用的队伍（id 升序，≤80；80 只是项目为避免列表过长的自设上限，不是游戏规则）。
+   若 ``targetforge/manual_spawns.json`` 有该关卡，则用社区显式刷怪表覆盖推断
+   （``reserve_meta.method=manual``，带来源/作者/区域/回合，不受 80 上限影响）。
+   stage 详情带 ``reserve_teams``（team_summary +
    ``role:"reserve"`` / ``inferred:true`` / ``reserve_reason``）与 ``reserve_team_count``；
    章节 stage 行只带 ``reserve_team_count``。这是**推断**：不计入 team_count/
    support_team_count，也不改变队伍的 orphan/roles 真实链接状态（只在 detail appearances
@@ -127,6 +130,25 @@ RESERVE_PREFIX_LENGTHS: tuple[int, ...] = (3, 4, 5, 6)
 #: 前缀法失败时的邻近窗口 fallback（±20，最多 20 支）
 RESERVE_NEIGHBOR_WINDOW = 20
 RESERVE_NEIGHBOR_CAP = 20
+
+#: 社区显式刷怪表（来源/作者/效能）；按 stage id 覆盖推断候选。见 manual_spawns.json。
+MANUAL_SPAWNS_FILE = Path(__file__).with_name("manual_spawns.json")
+
+
+def _load_manual_spawns() -> dict[int, dict]:
+    try:
+        raw = json.loads(MANUAL_SPAWNS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    result: dict[int, dict] = {}
+    for key, value in (raw or {}).items():
+        try:
+            mission_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, dict) and isinstance(value.get("entries"), list):
+            result[mission_id] = value
+    return result
 
 #: 灰域真实区域层级：difficulty_group 1..4 有客户端名称（沙尘带/风暴带/硅状带/结晶带），
 #: 组 5/6 与未映射节点归「特殊区域」；「装甲突击」（标题前缀）是爬塔模式，单独成区。
@@ -916,6 +938,37 @@ def _build_payload() -> dict:
     for ids in reserve_team_missions.values():
         ids.sort()
 
+    # ---- 社区显式刷怪表：覆盖推断候选（目前：铁雨礼赞，来源见文件注释） ----
+    manual_effects: dict[int, int] = {}
+    manual_spawns = _load_manual_spawns()
+    for mission_id, info in manual_spawns.items():
+        entries = [entry for entry in info.get("entries") or []
+                   if isinstance(entry, dict) and _int(entry.get("team")) > 0]
+        if not entries:
+            continue
+        team_ids = [_int(entry.get("team")) for entry in entries]
+        stage_reserve_teams[mission_id] = team_ids
+        stage_reserve_meta[mission_id] = {
+            "method": "manual",
+            "prefix": "",
+            "prefix_length": 0,
+            "refs": len(team_ids),
+            "count": len(team_ids),
+            "title": str(info.get("title") or ""),
+            "author": str(info.get("author") or ""),
+            "source_url": str(info.get("source_url") or ""),
+            "entries": entries,
+        }
+        for team_id in team_ids:
+            missions_list = reserve_team_missions.setdefault(team_id, [])
+            if mission_id not in missions_list:
+                missions_list.append(mission_id)
+                missions_list.sort()
+        for entry in entries:
+            power = _int(entry.get("power"))
+            if power:
+                manual_effects[_int(entry.get("team"))] = power
+
     # ---- 队伍记录（详情数值按需计算，这里只存紧凑索引） ----------------
     team_records: list[dict] = []
     team_species: dict[int, set[int]] = {}
@@ -1021,7 +1074,7 @@ def _build_payload() -> dict:
         if full_forcefield:
             tags.append("满力场")
 
-        power = _int(team_row.get("effect_ext"))
+        power = _int(team_row.get("effect_ext")) or manual_effects.get(team_id, 0)
         team_records.append({
             "id": team_id,
             "power": power,
@@ -1089,7 +1142,7 @@ def _build_payload() -> dict:
                                              faction_counter[name][1]))
                         if faction_counter else "其它")
         support_appearances = sorted(support_team_missions.get(team_id, ()))
-        power = _int(team_row.get("effect_ext"))
+        power = _int(team_row.get("effect_ext")) or manual_effects.get(team_id, 0)
         return {
             "id": team_id,
             "power": power,
@@ -1667,6 +1720,8 @@ def _build_payload() -> dict:
                                  if meta.get("method") == "prefix"),
             "neighbor_stages": sum(1 for meta in stage_reserve_meta.values()
                                    if meta.get("method") == "neighbor"),
+            "manual_stages": sum(1 for meta in stage_reserve_meta.values()
+                                 if meta.get("method") == "manual"),
             "reason": RESERVE_REASON,
         },
         "client_text": _source_file_info(TEXT_FILE),
@@ -1991,6 +2046,11 @@ class Catalog:
             item["support_count"] = support_count
             support_items.append(item)
         reserve_links = self._stage_reserve_teams.get(mission_id, [])
+        reserve_meta = dict(self._stage_reserve_meta.get(mission_id) or {})
+        manual = reserve_meta.get("method") == "manual"
+        manual_entries = {_int(entry.get("team")): entry
+                          for entry in (reserve_meta.get("entries") or [])
+                          if isinstance(entry, dict)}
         reserve_items: list[dict] = []
         for team_id in reserve_links:
             summary = self._team_summary(team_id)
@@ -1998,8 +2058,15 @@ class Catalog:
                 continue
             item = dict(summary)
             item["role"] = "reserve"
-            item["inferred"] = True
-            item["reserve_reason"] = RESERVE_REASON
+            item["inferred"] = not manual
+            item["reserve_source"] = "manual" if manual else "inferred"
+            item["reserve_reason"] = (reserve_meta.get("title")
+                                      if manual else RESERVE_REASON)
+            entry = manual_entries.get(team_id)
+            if entry:
+                item["reserve_area"] = entry.get("area") or ""
+                item["reserve_turns"] = entry.get("turns") or ""
+                item["reserve_logic"] = entry.get("logic") or ""
             reserve_items.append(item)
         return {
             "stage": payload,
@@ -2011,6 +2078,7 @@ class Catalog:
             "support_team_count": len(support_links),
             "reserve_teams": reserve_items,
             "reserve_team_count": len(reserve_links),
+            "reserve_meta": reserve_meta,
         }
 
     # -- 灰域 ---------------------------------------------------------
@@ -2231,6 +2299,7 @@ class Catalog:
                                               if row["reserve_legacy_count"] > 0),
             "prefix_stages": methods.get("prefix", 0),
             "neighbor_stages": methods.get("neighbor", 0),
+            "manual_stages": methods.get("manual", 0),
         }
         report = {
             "generated_at": self.built_at,

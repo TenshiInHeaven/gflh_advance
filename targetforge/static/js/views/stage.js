@@ -64,10 +64,13 @@ function buildTeamList(stageObj, rawTeams, rawSupports) {
 
 /** 机场刷新候选统一标记（role=reserve / inferred=true / reserve_reason） */
 function prepareReserveTeam(team) {
+  const manual = team.reserve_source === "manual" || team.inferred === false;
   return {
     ...team,
     reserve: true,
-    inferred: true,
+    inferred: !manual,
+    manual,
+    reserve_source: manual ? "manual" : "inferred",
     role: "reserve",
     roles: team.roles && team.roles.length ? team.roles : ["reserve"],
   };
@@ -105,6 +108,8 @@ export async function render(root, { params }) {
     loaded.enemyTeams = loaded.allTeams.filter((team) => !isSupportTeam(team));
     loaded.supportTeams = loaded.allTeams.filter((team) => isSupportTeam(team));
     loaded.reserveTeams = rawReserve.map((team) => prepareReserveTeam(team));
+    loaded.reserveMeta = loaded.reserve_meta || stageObj.reserve_meta || {};
+    loaded.manualReserve = loaded.reserveMeta.method === "manual";
     loaded.supportCount = supportCountOf(stageObj, loaded.supportTeams) || loaded.supportTeams.length;
     loaded.reserveCount = reserveCountOf(stageObj, loaded.reserveTeams) || loaded.reserveTeams.length;
     renderPage();
@@ -135,12 +140,19 @@ function renderPage() {
   const enemyCount = loaded.enemyTeams?.length ?? teams.length;
   const supportCount = loaded.supportCount ?? 0;
   const reserveCount = loaded.reserveCount ?? 0;
+  const manualReserve = loaded.manualReserve;
+  const reserveChip = manualReserve
+    ? `<span class="team-side-chip reserve" title="来源：${esc(loaded.reserveMeta.author || "社区")} 的社区刷怪表">${icon("list", 10)} 社区刷怪 <b>${reserveCount}</b></span>`
+    : `<span class="team-side-chip reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 10)} 可能刷新 <b>${reserveCount}</b></span>`;
   const factions = [...new Set(teams.map((team) => team.faction).filter(Boolean))];
   const sideChips = `
     <span class="team-side-chip enemy">敌方 <b>${enemyCount}</b></span>
     ${supportCount ? `<span class="team-side-chip support">${icon("shield", 10)} 支援 <b>${supportCount}</b></span>` : ""}
-    ${reserveCount ? `<span class="team-side-chip reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 10)} 可能刷新 <b>${reserveCount}</b></span>` : ""}
+    ${reserveCount ? reserveChip : ""}
   `;
+  const reserveMergeHint = manualReserve
+    ? "（支援 / 社区刷怪表已并入下方列表）"
+    : "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）";
 
   rootEl.innerHTML = `
     ${pageHeadHtml({
@@ -154,8 +166,8 @@ function renderPage() {
       title: stage.title || "未命名关卡",
       badge: isGrayNode ? `GRAY NODE${grayRegion && grayRegion.title ? ` · ${grayRegion.title}` : ""}` : stage.code ? String(stage.code) : `#${stage.id}`,
       sub: isGrayNode
-        ? `灰域节点 · ${grayRegion && grayRegion.title ? `区域：${esc(grayRegion.title)} · ` : ""}${grayRegion && grayRegion.location ? `地点：${esc(grayRegion.location)} · ` : ""}mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b> · ${sideChips}${supportCount || reserveCount ? "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`
-        : `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · ${sideChips}${supportCount || reserveCount ? "（支援 / 机场刷新候选已并入下方列表，卡面带角色徽标）" : ""}。点卡片看详情，或直接加入右侧序列。`,
+        ? `灰域节点 · ${grayRegion && grayRegion.title ? `区域：${esc(grayRegion.title)} · ` : ""}${grayRegion && grayRegion.location ? `地点：${esc(grayRegion.location)} · ` : ""}mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b> · ${sideChips}${supportCount || reserveCount ? reserveMergeHint : ""}。点卡片看详情，或直接加入右侧序列。`
+        : `mission #${esc(stage.id)} · 难度 <b class="mono-inline">${fmtNum(stage.difficulty)}</b>${stage.recommend_level ? ` · 推荐等级 ${stage.recommend_level}` : ""} · ${sideChips}${supportCount || reserveCount ? reserveMergeHint : ""}。点卡片看详情，或直接加入右侧序列。`,
       actions: `
         <button class="btn btn-ghost" type="button" data-nav-back>${icon("chevronLeft", 14)} ${isGrayNode && grayRegion ? "返回节点列表" : "返回章节"}</button>
         <button class="btn btn-primary" type="button" data-act="add-all">${icon("plus", 14)} 全部加入序列 <span class="mono-inline" style="opacity:.75">(${teams.length})</span></button>
@@ -202,7 +214,7 @@ function renderPage() {
     const supportInPage = pageItems.filter((team) => isSupportTeam(team)).length;
     const reserveInPage = pageItems.filter((team) => isReserveTeam(team)).length;
     rootEl.querySelector("[data-team-meta]").innerHTML =
-      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>` : ""}${reserveInPage ? `${supportInPage ? " · " : "（"}可能刷新 <b>${reserveInPage}</b>` : ""}${supportInPage || reserveInPage ? "）" : ""} · 每页 ${state.pageSize}`;
+      `${icon("users", 11)} 显示 <b>${pageItems.length}</b> / ${fmtNum(total)} 支队伍${supportInPage ? `（含支援 <b>${supportInPage}</b>` : ""}${reserveInPage ? `${supportInPage ? " · " : "（"}${loaded.manualReserve ? "社区刷怪" : "可能刷新"} <b>${reserveInPage}</b>` : ""}${supportInPage || reserveInPage ? "）" : ""} · 每页 ${state.pageSize}`;
     const pfMeta = rootEl.querySelector("[data-pf-meta]");
     if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, teams.length, total);
 
@@ -250,13 +262,26 @@ function renderPage() {
     const expanded = state.reserveOpen || (filtering && filteredCount > 0);
     const shown = expanded ? reserves.slice(0, state.reserveVisible) : [];
     const remain = Math.max(0, filteredCount - shown.length);
+    const manual = Boolean(loaded.manualReserve);
+    const sourceTitle = loaded.reserveMeta?.title || "社区刷怪表";
+    const sourceAuthor = loaded.reserveMeta?.author || "社区";
+    const stripTitle = manual
+      ? `刷怪表 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}`
+      : `可能刷新 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}`;
+    const stripHint = manual
+      ? `来源：${sourceAuthor} · ${sourceTitle}（社区整理，非客户端官方映射）`
+      : "机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射";
+    const stripFlag = manual ? "社区表" : "推断";
+    const stripFoot = manual
+      ? `以上来自社区刷怪表，不是推断；同样可加入序列，卡面带「社区刷怪表」徽标。`
+      : `以上为推断候选，不是确定出场；同样可加入序列，卡面带「机场可能刷新（推断）」徽标。`;
     reserveAreaEl.innerHTML = `
       <section class="reserve-strip" data-reserve-strip>
         <button class="reserve-toggle ${expanded ? "open" : ""}" type="button" data-reserve-toggle
-          aria-expanded="${expanded}" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">
-          <span class="reserve-flag">${icon("refresh", 11)} 推断</span>
-          <span class="reserve-toggle-title">可能刷新 <b>${filtering ? filteredCount : total}</b> 支${filtering && filteredCount !== total ? `（共 ${total}）` : ""}</span>
-          <span class="reserve-toggle-hint">机场/后续刷新候选：同系列未入场怪组，STC 无显式机场刷新映射</span>
+          aria-expanded="${expanded}" title="${esc(stripHint)}">
+          <span class="reserve-flag">${icon(manual ? "list" : "refresh", 11)} ${stripFlag}</span>
+          <span class="reserve-toggle-title">${stripTitle}</span>
+          <span class="reserve-toggle-hint">${esc(stripHint)}</span>
           <span class="reserve-toggle-action">${icon(expanded ? "chevronUp" : "chevronDown", 13)} ${expanded ? "收起" : "展开"}</span>
         </button>
         ${
@@ -264,7 +289,7 @@ function renderPage() {
             ? `<div class="reserve-grid-wrap">
                  <div class="team-grid reserve-grid">${shown.map((team) => teamCardHtml(team)).join("")}</div>
                  <div class="reserve-foot">
-                   <span class="reserve-foot-hint">以上为推断候选，不是确定出场；同样可加入序列，卡面带「机场可能刷新（推断）」徽标。</span>
+                   <span class="reserve-foot-hint">${stripFoot}</span>
                    ${
                      remain > 0
                        ? `<button class="btn btn-sm btn-ghost" type="button" data-reserve-more>${icon("chevronDown", 12)} 再显示更多（剩余 ${remain}）</button>`

@@ -730,15 +730,18 @@ export function teamCardHtml(team, options = {}) {
   if (team.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
   const support = isSupportTeam(team);
   const reserve = isReserveTeam(team);
+  const manualReserve = reserve && (team.manual === true || team.reserve_source === "manual");
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
-  if (reserve) flags.push(`<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
+  if (reserve) flags.push(manualReserve
+    ? `<span class="badge reserve" title="来源：社区刷怪表（${esc(team.reserve_reason || "非客户端官方映射")}）">${icon("list", 9)} 社区刷怪表</span>`
+    : `<span class="badge reserve" title="推断：同系列未入场怪组，STC 无显式机场刷新映射">${icon("refresh", 9)} 机场可能刷新（推断）</span>`);
   const disp = powerDisplay(team.power, team.power_known);
   const stageLine = team.stage
-    ? `${support ? "支援 · " : reserve ? "可能刷新 · " : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
+    ? `${support ? "支援 · " : reserve ? (manualReserve ? "社区刷怪 · " : "可能刷新 · ") : ""}${esc(team.stage.title || "")} · ${esc(team.stage.stage_title || "")} <b>${esc(team.stage.code || "")}</b>`
     : support
       ? "支援队伍"
       : reserve
-        ? "机场可能刷新（推断）"
+        ? (manualReserve ? "社区刷怪表" : "机场可能刷新（推断）")
         : team.gray_zone
           ? "灰域探查"
           : team.orphan

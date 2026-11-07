@@ -160,7 +160,8 @@ class CatalogDataTest(unittest.TestCase):
         self.assertGreater(reserve_meta["links"], 0)
         self.assertIn("机场", reserve_meta["reason"])
         # v1.8.1：3~6 位最短前缀 + 邻近窗口 fallback
-        self.assertEqual(reserve_meta["prefix_stages"] + reserve_meta["neighbor_stages"],
+        self.assertEqual(reserve_meta["prefix_stages"] + reserve_meta["neighbor_stages"]
+                         + reserve_meta.get("manual_stages", 0),
                          reserve_meta["stages_with_reserve"])
         self.assertGreater(reserve_meta["prefix_stages"], 0)
         self.assertGreater(reserve_meta["neighbor_stages"], 0)
@@ -256,7 +257,8 @@ class CatalogDataTest(unittest.TestCase):
         self.assertEqual(summary["still_zero_stages"], 0)
         self.assertEqual(summary["improved_from_zero"], 12)
         self.assertEqual(summary["legacy_stages_with_reserve"], 41)
-        self.assertEqual(summary["prefix_stages"] + summary["neighbor_stages"], 53)
+        self.assertEqual(summary["prefix_stages"] + summary["neighbor_stages"]
+                         + summary.get("manual_stages", 0), 53)
         # 改进前 0 → 改进后 >0：坠入兔洞+（10105）在列
         improved_ids = {row["stage_id"] for row in report["improved"]}
         self.assertIn(10105, improved_ids)
@@ -726,7 +728,7 @@ class CatalogDataTest(unittest.TestCase):
         # 章节详情行 / stage 详情现在都带支援 + reserve（推断）字段
         self.assertEqual(set(detail),
                          {"stage", "teams", "support_teams", "support_team_count",
-                          "reserve_teams", "reserve_team_count"})
+                          "reserve_teams", "reserve_team_count", "reserve_meta"})
         stage = detail["stage"]
         self.assertEqual(stage["id"], 5)
         self.assertEqual(stage["title"], "演习训练")
@@ -810,7 +812,7 @@ class CatalogDataTest(unittest.TestCase):
         self.assertIsNotNone(detail)
         self.assertEqual(set(detail),
                          {"stage", "teams", "support_teams", "support_team_count",
-                          "reserve_teams", "reserve_team_count"})
+                          "reserve_teams", "reserve_team_count", "reserve_meta"})
         # 敌方队伍列表/team_count 不变，支援队伍单独列
         self.assertEqual(detail["stage"]["team_count"], 30)
         self.assertNotIn(6363006, {team["id"] for team in detail["teams"]})

@@ -1,0 +1,24 @@
+{
+  "11988": {
+    "title": "铁雨礼赞 - 刷怪表（无烟花强化）",
+    "author": "秋水Ameth",
+    "source_url": "https://docs.qq.com/sheet/DYWNjWkRSQXN4QVdw?nlc=1&tab=000002",
+    "entries": [
+      {"team": 800228, "power": 40005, "area": "左下", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800229, "power": 40197, "area": "左下", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800230, "power": 40218, "area": "左下", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800231, "power": 40376, "area": "左下", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800232, "power": 40486, "area": "左下", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800202, "power": 120000, "area": "右下顶点", "turns": "1", "logic": "进攻"},
+      {"team": 800203, "power": 140000, "area": "右下顶点", "turns": "2", "logic": "进攻"},
+      {"team": 800224, "power": 20058, "area": "右下顶点/右下机场", "turns": "3/5/1~5", "logic": "警戒[6]"},
+      {"team": 800225, "power": 20136, "area": "右下顶点/右下机场", "turns": "3/5/1~5", "logic": "警戒[6]"},
+      {"team": 800226, "power": 20282, "area": "右下顶点/右下机场", "turns": "3/5/1~5", "logic": "警戒[6]"},
+      {"team": 800227, "power": 20375, "area": "右下顶点/右下机场", "turns": "3/5/1~5", "logic": "警戒[6]"},
+      {"team": 800205, "power": 200000, "area": "右下顶点", "turns": "4", "logic": "进攻"},
+      {"team": 800221, "power": 10026, "area": "右上", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800222, "power": 10138, "area": "右上", "turns": "1~5", "logic": "警戒[6]"},
+      {"team": 800223, "power": 10273, "area": "右上", "turns": "1~5", "logic": "警戒[6]"}
+    ]
+  }
+}

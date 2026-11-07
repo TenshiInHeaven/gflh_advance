@@ -196,6 +196,7 @@ gflh_advance/
   targetforge/                 应用本体
     app.py                     HTTP 服务 / 路由 / 序列状态 / 后台 job / 头像接口 / 游戏目录设置
     gamepath.py                游戏客户端检测 / 校验 / 文件夹选择 / local_paths
+    manual_spawns.json         社区显式刷怪表（铁雨礼赞；来源/作者/区域/回合/效能）
     catalog.py                 STC → 章节 / 关卡 / 怪种 / 怪组数据层（缓存 + 查询 + 效能/图标）
     gflh.py                    登录抓取（GFLProxy）/ 序列规划 / 注入（addCollect·delCollect）/ 游戏控制
     datapaths.py               数据目录唯一来源（支持 TARGETFORGE_DATA_DIR）
@@ -226,8 +227,8 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.9.3**（当前发布）：本机 API 随机 token、`/api/game/pick` 限流、500 错误不回显 traceback；
-此前版本已包含 DPAPI 凭证加密、依赖 hash 锁定、Host/Origin/CSRF 防护等。
+**v1.9.4**（当前发布）：铁雨礼赞积分关卡改用**社区显式刷怪表**（15 支实际队伍 + 基础效能，来源：秋水Ameth），
+不再展示被 80 上限截断/无关的推断候选；本机 API token、pick 限流、500 错误不回显 traceback 也在本版。
 完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
 安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
 
@@ -237,6 +238,8 @@ gflh_advance/
   [GFLH](https://github.com/MaaGF1/GFLH) 的协议与思路上。
 - **ZIRC / gflzirc**：感谢 **MaaGF1** 与 ZIRC 贡献者；`gflzirc` 以 **MIT** 发布，
   是本项目与游戏接口、本地抓包交互的基础。
+- **秋水Ameth**：感谢整理「铁雨礼赞 - 刷怪表（无烟花强化）」及基础效能数据；
+  该表已作为 `铁雨礼赞` 积分关卡的社区显式刷怪表来源（见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)）。
 - **GF Forge**：感谢数据层与靶机编号规划的上游工作；自 v1.9.0 起其精简子集已内置在本仓库。
 - 也感谢 Python、requests、urllib3、charset-normalizer、idna、certifi、UnityPy、Pillow、Playwright
   等开源项目的作者与维护者。
