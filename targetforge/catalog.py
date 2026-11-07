@@ -965,10 +965,7 @@ def _build_payload() -> dict:
             if chosen:
                 candidates = sorted(team_id for team_id in _pool_of(chosen)
                                     if team_id not in referenced)
-                # 积分关卡容易有大量机场/后续刷新队伍；不设 80 上限，避免把真实候选截掉。
-                # 普通关卡仍用上限控制缓存/页面体积。
-                if not is_score:
-                    candidates = candidates[:RESERVE_CAP]
+                # v1.9.10：不再用任意 80 上限截断任何关卡；候选完整列出。
         if candidates:
             _record(mission_id, candidates, chosen=chosen,
                     refs=chosen_count, method="prefix")
@@ -1024,8 +1021,6 @@ def _build_payload() -> dict:
             candidates = [team_id for team_id, _distance in
                           sorted(nearest_distance.items(),
                                  key=lambda item: (item[1], item[0]))]
-            if mission_id not in score_mission_ids:
-                candidates = candidates[:RESERVE_NEIGHBOR_CAP]
         if candidates:
             _record(mission_id, candidates, chosen=[],
                     refs=0, method="neighbor")
