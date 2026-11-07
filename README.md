@@ -242,10 +242,7 @@ gflh_advance/
   是本项目与游戏接口、本地抓包交互的基础。
 - **秋水Ameth**：感谢整理积分关卡「固定怪组表 + 刷怪表」腾讯表格合集（16 个关卡）及基础效能数据；
   该合集已作为这些积分关卡的社区显式刷怪表来源（见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)）。
-- **GF Forge**：感谢数据层与靶机编号规划的上游工作；自 v1.9.0 起其精简子集已内置在本仓库。
-- 也感谢 Python、requests、urllib3、charset-normalizer、idna、certifi、UnityPy、Pillow、Playwright
-  等开源项目的作者与维护者。
-- 另外感谢 欧根的fan 群友的支持。
+- 另外感谢 同群群友 的支持，以及其他上游依赖包的开发者。
 
 完整的上游项目、依赖许可证与 MIT 合规说明见 **[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)**。
 MIT 允许自由使用/修改/再分发，但请保留原作者版权与许可声明。
