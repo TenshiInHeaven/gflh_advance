@@ -2,6 +2,16 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.4（2026-11-08）
+
+- 登录凭证按类别只保留一份最新：`creds_profile_cn_pc.json`、`creds_profile_cn_revival.json`、
+  `creds_profile_tw.json`、`creds_profile_jp.json`、`creds_profile_custom.json`；
+  同类别重新抓包直接覆盖旧 sign，不再堆积多份无用凭证；
+- 登录抓取页只显示每个类别的最新凭证；
+- 登录凭证面板支持收起/展开，状态保存在浏览器本地；
+- `creds_latest.json` 仍是当前执行使用的活动凭证；加载某个类别会复制为该活动凭证；
+- 历史靶机配置与登录凭证继续保持分离。
+
 ## v1.10.3（2026-11-08）
 
 - 登录抓取页新增「历史靶机配置」：

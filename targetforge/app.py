@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.10.3"
+VERSION = "1.10.4"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -36,6 +36,8 @@ from targetforge import emucapture  # noqa: E402
 from targetforge import regions  # noqa: E402
 from targetforge import adb  # noqa: E402
 from targetforge import target_history  # noqa: E402
+from targetforge import cred_slots  # noqa: E402
+from targetforge import creds_store  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -749,6 +751,7 @@ def api_capture_start(body: dict) -> dict:
         set_proxy=bool(body.get("set_proxy", True)),
         auto_restore_proxy=bool(body.get("auto_restore_proxy",
                                        settings.get("auto_restore_proxy", True))),
+        region=str(body.get("region") or "cn"),
     )
 
 
@@ -778,6 +781,27 @@ def api_capture_ca() -> dict:
         raise HttpError(500, "CA 生成失败", detail=str(exc),
                         hint="请安装 mitmproxy 和 cryptography。") from exc
     return {"filename": "targetforge-mitm-ca.crt", "pem": path.read_text(encoding="utf-8")}
+
+
+def api_cred_profiles() -> dict:
+    """每个区服/客户端只展示一份最新凭证。"""
+    profiles = cred_slots.list_slots()
+    active_path = Path(DATA_DIR) / "creds_latest.json"
+    active = creds_store.read_creds(active_path) if active_path.is_file() else None
+    if active:
+        category = cred_slots.category_for_region(active.get("region") or "cn")
+        if not any(item.get("category") == category for item in profiles):
+            profiles.append({
+                "name": active_path.name,
+                "path": str(active_path),
+                "category": category,
+                "title": f"{cred_slots.CATEGORIES.get(category, {}).get('title', category)}（当前）",
+                "uid": active.get("uid"),
+                "base_url": active.get("base_url"),
+                "targets_count": len(active.get("enemies") or []),
+                "updated_at": active.get("captured_at"),
+            })
+    return {"profiles": profiles, "dir": str(DATA_DIR)}
 
 
 def api_target_history_get() -> dict:
@@ -1017,6 +1041,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/capture/ca$"), lambda ctx: api_capture_ca()),
     (re.compile(r"^/api/emulator/detect$"), lambda ctx: api_emulator_detect()),
     (re.compile(r"^/api/target-history$"), lambda ctx: api_target_history_get()),
+    (re.compile(r"^/api/cred-profiles$"), lambda ctx: api_cred_profiles()),
     (re.compile(r"^/api/tutorial$"), lambda ctx: api_tutorial_get()),
     (re.compile(r"^/api/settings$"), lambda ctx: api_settings_get()),
 ]

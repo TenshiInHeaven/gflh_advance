@@ -19,6 +19,7 @@ from typing import Any
 from targetforge.datapaths import CREDS_LATEST, DATA_DIR
 from targetforge.regions import get_region
 from targetforge import creds_store
+from targetforge import cred_slots
 
 LOCK = threading.Lock()
 _PROC: subprocess.Popen | None = None
@@ -151,6 +152,10 @@ def _finalize_creds() -> None:
     except OSError as exc:
         _log("error", f"写凭证失败：{type(exc).__name__}: {exc}")
         return
+    try:
+        cred_slots.write_slot(str(data.get("region") or "custom"), payload)
+    except OSError as exc:
+        _log("warn", f"写类别凭证失败：{type(exc).__name__}: {exc}")
     _CREDS_SIG = sig
     with LOCK:
         _STATE["creds_path"] = str(path)

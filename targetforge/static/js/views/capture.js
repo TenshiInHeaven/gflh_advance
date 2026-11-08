@@ -238,11 +238,13 @@ export async function render(root) {
         </div>
 
         <div class="capture-panel mt16">
-          ${sectionHeadHtml("登录凭证", { hint: "uid/sign；加载后复制为 creds_latest.json", iconName: "key" })}
-          <div class="creds-list" data-creds-list>${skeletonRows(3)}</div>
-          <div class="mt12" style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" type="button" data-act="load-creds" disabled>${icon("upload", 12)} 加载选中凭证</button>
-            <span class="text-mute" style="font-size:10.5px;align-self:center" data-cred-hint>先选择一条凭证</span>
+          ${sectionHeadHtml("登录凭证", { hint: "每个区服只保留一份最新凭证", iconName: "key", actions: `<button class="btn btn-xs btn-ghost" type="button" data-act="toggle-creds">收起</button>` })}
+          <div data-creds-body>
+            <div class="creds-list" data-creds-list>${skeletonRows(3)}</div>
+            <div class="mt12" style="display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" type="button" data-act="load-creds" disabled>${icon("upload", 12)} 加载选中凭证</button>
+              <span class="text-mute" style="font-size:10.5px;align-self:center" data-cred-hint>先选择一条凭证</span>
+            </div>
           </div>
         </div>
 
@@ -553,6 +555,21 @@ function bindCaptureMode(root) {
 }
 
 function bindShellEvents(root) {
+  const credsBody = root.querySelector("[data-creds-body]");
+  const credsToggle = root.querySelector('[data-act="toggle-creds"]');
+  const applyCollapsed = (collapsed) => {
+    if (!credsBody || !credsToggle) return;
+    credsBody.style.display = collapsed ? "none" : "";
+    credsToggle.textContent = collapsed ? "展开" : "收起";
+    try { localStorage.setItem("tf_creds_collapsed", collapsed ? "1" : "0"); } catch (e) {}
+  };
+  let credsCollapsed = false;
+  try { credsCollapsed = localStorage.getItem("tf_creds_collapsed") === "1"; } catch (e) {}
+  credsToggle?.addEventListener("click", () => {
+    credsCollapsed = !credsCollapsed;
+    applyCollapsed(credsCollapsed);
+  });
+  applyCollapsed(credsCollapsed);
   root.querySelector('[data-act="save-target-history"]')?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     setBusy(button, true, "保存中…");
@@ -920,8 +937,8 @@ function renderTargetHistory() {
 
 async function loadCreds() {
   try {
-    const data = await api.creds();
-    credsData = data.creds || [];
+    const data = await api.credProfiles();
+    credsData = data.profiles || [];
     renderCreds();
   } catch (err) {
     const listEl = rootEl?.querySelector("[data-creds-list]");
@@ -936,26 +953,25 @@ function renderCreds() {
   if (!listEl) return;
   const creds = credsData || [];
   if (!creds.length) {
-    listEl.innerHTML = `<div class="plan-empty" style="padding:16px">暂无凭证文件，先完成一次登录抓取。</div>`;
+    listEl.innerHTML = `<div class="plan-empty" style="padding:16px">暂无分类凭证，先完成一次登录抓取。</div>`;
     const loadBtn = rootEl.querySelector('[data-act="load-creds"]');
     if (loadBtn) loadBtn.disabled = true;
     return;
   }
-  const latestName = [...creds].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0]?.name;
   listEl.innerHTML = creds
     .map(
       (cred) => `
-      <button class="cred-item ${cred.name === latestName ? "is-latest" : ""}" type="button" data-cred-name="${esc(cred.name)}">
+      <button class="cred-item" type="button" data-cred-name="${esc(cred.name)}">
         <span class="cred-radio"></span>
         <span class="cred-main">
-          <span class="cred-name">${esc(cred.name)}</span>
+          <span class="cred-name">${esc(cred.title || cred.name)}</span>
           <span class="cred-sub">
             <span>uid ${esc(cred.uid || "—")}</span>
             <span>${cred.targets_count ?? 0} 个靶机</span>
             <span>${esc(cred.updated_at ? timeAgo(cred.updated_at) : "—")}</span>
           </span>
         </span>
-        <span class="badge ${cred.name === latestName ? "green" : ""}">${cred.name === latestName ? "最新" : "历史"}</span>
+        <span class="badge green">最新</span>
       </button>`,
     )
     .join("");

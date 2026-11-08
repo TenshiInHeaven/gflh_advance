@@ -51,6 +51,7 @@ from pathlib import Path
 
 from targetforge.datapaths import CREDS_LATEST as DEFAULT_CREDS
 from targetforge import creds_store
+from targetforge import cred_slots
 from targetforge.datapaths import DATA_DIR
 
 # ---------------------------------------------------------------------------
@@ -745,6 +746,7 @@ def _new_capture_state() -> dict:
         "proxy_active": False,
         "system_proxy_on": False,
         "auto_restore_proxy": True,
+        "region": "cn",
         "uid": None,
         "sign": None,
         "base_url": None,
@@ -1020,6 +1022,7 @@ def _write_capture_creds() -> str | None:
             "enemies": list(_CAPTURE.get("enemies") or []),
             "orders": list(_CAPTURE.get("orders") or []),
             "urls": list(_CAPTURE.get("urls") or []),
+            "region": _CAPTURE.get("region") or "cn",
             "captured_at": _now_iso(),
         }
     try:
@@ -1027,6 +1030,10 @@ def _write_capture_creds() -> str | None:
     except OSError as exc:
         _cap_log("error", f"写入凭证失败：{type(exc).__name__}: {exc}")
         return None
+    try:
+        cred_slots.write_slot(str(payload.get("region") or "cn"), payload)
+    except OSError as exc:
+        _cap_log("warn", f"写入类别凭证失败：{type(exc).__name__}: {exc}")
     return str(path)
 
 
@@ -1057,7 +1064,7 @@ def _capture_watchdog(generation: int | None = None) -> None:
 
 
 def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
-                  auto_restore_proxy: bool = True) -> dict:
+                  auto_restore_proxy: bool = True, region: str = "cn") -> dict:
     """启动抓包代理（端口可配置，默认 18080；立即返回 status，不阻塞）。
 
     * ``port``：监听端口。监听、系统代理地址、``status.port``、
@@ -1079,6 +1086,7 @@ def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
         fresh = _new_capture_state()
         fresh["port"] = port if PORT_MIN <= port <= PORT_MAX else CAPTURE_PORT
         fresh["auto_restore_proxy"] = bool(auto_restore_proxy)
+        fresh["region"] = str(region or "cn")
         fresh["state"] = "starting"
         _CAPTURE.clear()
         _CAPTURE.update(fresh)

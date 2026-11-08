@@ -173,6 +173,7 @@ export const api = {
   captureStatus: () => get("/api/capture/status"),
   captureRegions: () => get("/api/capture/regions"),
   captureCa: () => get("/api/capture/ca"),
+  credProfiles: () => get("/api/cred-profiles"),
   targetHistory: () => get("/api/target-history"),
   saveTargetHistory: (body = {}) => post("/api/target-history", { action: "save", ...body }),
   deleteTargetHistory: (name) => post("/api/target-history", { action: "delete", name }),
