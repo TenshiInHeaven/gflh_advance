@@ -2,6 +2,12 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.1（2026-11-08）
+
+- 修复登录抓取页前端模板字符串中未转义的反引号（`adb reverse`）导致 `Unexpected identifier 'adb'`，
+  整个前端启动失败、页面卡在「读取中…」的问题。
+- 包含 v1.10.0 的全部模拟器抓包/多区服/ADB 自动检测与一键配置功能。
+
 ## v1.10.0（2026-11-08）
 
 - **安卓模拟器抓包 + 区服**：新增 `targetforge/emucapture.py`、`regions.py`、`tools/emulator_mitm.py`。

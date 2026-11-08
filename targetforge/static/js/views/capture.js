@@ -136,7 +136,7 @@ export async function render(root) {
         </div>
         <div class="pc-hint" style="margin-top:6px;line-height:1.7">
           1. 推荐先点「自动检测」填入 ADB 和串口；<br>
-          2. 一键操作会 `adb reverse`，把模拟器 127.0.0.1:端口 转发到本机，不需要把代理暴露到局域网；<br>
+          2. 一键操作会 <b>adb reverse</b>，把模拟器 127.0.0.1:端口 转发到本机，不需要把代理暴露到局域网；<br>
           3. 打开游戏登录，抓包会从 HTTPS 流量里识别 uid/sign/base_url。<br>
           <span class="text-mute">注意：MuMu/雷电/夜神/BlueStacks 的 ADB 路径不同；只要 ADB 能连、能 root 装系统 CA，抓包流程通用。</span>
         </div>
