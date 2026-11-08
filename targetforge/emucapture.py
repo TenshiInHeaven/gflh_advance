@@ -46,6 +46,7 @@ CA_DIR = Path(DATA_DIR) / "mitm_ca"
 CONF_DIR = Path(DATA_DIR) / "mitm_conf"
 CAPTURE_JSON = Path(DATA_DIR) / "emulator_capture.json"
 CAPTURE_LOG = Path(DATA_DIR) / "emulator_capture.log"
+_CREDS_SIG: tuple | None = None
 
 
 def _log(level: str, text: str) -> None:
@@ -115,12 +116,14 @@ def _prepare_conf(cert: Path, key: Path) -> None:
 
 
 def _finalize_creds() -> None:
+    global _CREDS_SIG
     with LOCK:
         data = dict(_STATE)
     sign = data.get("_sign")
     if not (data.get("uid") and sign):
         return
-    if data.get("creds_path") and Path(data["creds_path"]).is_file():
+    sig = (str(data["uid"]), str(sign), int(data.get("targets_count") or 0))
+    if _CREDS_SIG == sig:
         return
     rows = []
     payload: dict[str, Any] = {
@@ -148,6 +151,7 @@ def _finalize_creds() -> None:
     except OSError as exc:
         _log("error", f"写凭证失败：{type(exc).__name__}: {exc}")
         return
+    _CREDS_SIG = sig
     with LOCK:
         _STATE["creds_path"] = str(path)
     _log("info", f"凭证已写入 {path}")
@@ -209,7 +213,8 @@ def is_active() -> bool:
 
 def start(*, port: int = 8084, region: str = "tw",
           listen_host: str = "0.0.0.0") -> dict:
-    global _PROC, _THREAD, _LOG_FILE
+    global _PROC, _THREAD, _LOG_FILE, _CREDS_SIG
+    _CREDS_SIG = None
     with LOCK:
         if _PROC is not None and _PROC.poll() is None:
             return {"error": "模拟器抓包已在运行", "state": _STATE.get("state")}

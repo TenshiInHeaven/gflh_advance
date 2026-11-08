@@ -104,8 +104,9 @@ export async function render(root) {
           <option value="emulator">安卓模拟器（LAN + CA）</option>
         </select>
         <select class="rf-select" data-capture-region>
+          <option value="cn">国服 PC</option>
+          <option value="cn_revival">国服复活版（安卓）</option>
           <option value="tw">台服 TW</option>
-          <option value="cn">国服 CN</option>
           <option value="jp">日服 JP</option>
           <option value="custom">自定义区服</option>
         </select>
@@ -407,17 +408,25 @@ function bindCaptureMode(root) {
   const regionEl = root.querySelector("[data-capture-region]");
   const box = root.querySelector("[data-emulator-box]");
   const hint = root.querySelector("[data-capture-mode-hint]");
+  const gameClient = root.querySelector("[data-game-client]");
+  const modeCard = root.querySelector(".capture-mode-card");
+  // 抓包模式在游戏客户端之上；模拟器模式不需要 PC 客户端目录
+  if (modeCard && gameClient && modeCard.compareDocumentPosition(gameClient) & Node.DOCUMENT_POSITION_PRECEDING) {
+    gameClient.before(modeCard);
+  }
   const sync = () => {
     const emu = modeEl?.value === "emulator";
     if (box) box.style.display = emu ? "" : "none";
+    if (gameClient) gameClient.style.display = emu ? "none" : "";
     if (hint) {
       hint.textContent = emu
-        ? "模拟器模式：不改系统代理；用 PC 局域网 IP + 端口，并安装 CA。"
+        ? "模拟器模式：不需要 PC 客户端目录；用 ADB + CA + 本机反向代理抓包。"
         : "国服 PC 模式：沿用系统代理 + 本地 127.0.0.1 端口。";
     }
     const wizard = root.querySelector("[data-wizard]");
     if (wizard) wizard.style.display = emu ? "none" : "";
-    if (regionEl) regionEl.disabled = !emu;
+    // 区服始终可切换：选到模拟器区服会自动切到模拟器模式
+    if (regionEl) regionEl.disabled = false;
   };
   modeEl?.addEventListener("change", sync);
   regionEl?.addEventListener("change", sync);
@@ -426,12 +435,25 @@ function bindCaptureMode(root) {
   const adbPathEl = root.querySelector("[data-adb-path]");
   const serialEl = root.querySelector("[data-adb-serial]");
   const hintEl = root.querySelector("[data-adb-detect-hint]");
-  const regionPackages = { tw: "tw.txwy.and.snqx", cn: "", jp: "", custom: "" };
-  const applyRegionPackage = () => {
-    if (!packageEl || packageEl.value.trim()) return;
-    packageEl.value = regionPackages[regionEl?.value] || "";
+  const regionPackages = {
+    tw: "tw.txwy.and.snqx",
+    cn: "",
+    cn_revival: "com.sunborn.girlsfrontline.pt",
+    jp: "com.sunborn.girlsfrontline",
+    custom: "",
   };
-  regionEl?.addEventListener("change", applyRegionPackage);
+  const regionModes = { cn: "pc", cn_revival: "emulator", tw: "emulator", jp: "emulator", custom: "emulator" };
+  const applyRegionPackage = () => {
+    if (!packageEl) return;
+    const wanted = regionPackages[regionEl?.value] || "";
+    if (wanted) packageEl.value = wanted;
+  };
+  regionEl?.addEventListener("change", () => {
+    const wantedMode = regionModes[regionEl.value];
+    if (modeEl && wantedMode) modeEl.value = wantedMode;
+    sync();
+    applyRegionPackage();
+  });
   root.querySelector('[data-act="detect-adb"]')?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     setBusy(button, true, "检测中…");

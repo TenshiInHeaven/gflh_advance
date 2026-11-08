@@ -172,6 +172,16 @@ def reverse(exe: str, serial: str, port: int = 8084) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def forward(exe: str, serial: str, port: int) -> dict:
+    """把 PC 的 127.0.0.1:port 转发到模拟器内部，供复活版本地桥接端口使用。"""
+    try:
+        r = _run(exe, ["-s", serial, "forward", f"tcp:{port}", f"tcp:{port}"], timeout=10)
+        return {"ok": r.returncode == 0, "port": port,
+                "error": (r.stderr or "").strip()[:200]}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "port": port, "error": str(exc)}
+
+
 def restart_game(exe: str, serial: str, package: str) -> dict:
     if not package:
         return {"ok": False, "error": "缺少游戏包名"}
@@ -194,8 +204,12 @@ def setup(exe: str, serial: str, ca_cert: Path, package: str,
     results = {"device": device, "reverse": reverse(exe, serial, port),
                "ca": install_ca(exe, serial, ca_cert),
                "proxy": set_proxy(exe, serial, "127.0.0.1", port)}
+    # 国服复活版：游戏内部有 127.0.0.1:18765/18766 本地桥接；全局代理会把
+    # localhost 请求也送到 PC，因此把 PC 同名端口 forward 回模拟器。
+    results["bridge"] = [forward(exe, serial, item) for item in (18765, 18766)]
     if package:
         results["restart"] = restart_game(exe, serial, package)
     results["ok"] = all(result.get("ok") for key, result in results.items()
-                        if key in ("reverse", "ca", "proxy"))
+                        if key in ("reverse", "ca", "proxy")) and all(
+                            item.get("ok") for item in results["bridge"])
     return results

@@ -10,12 +10,26 @@ from typing import Any
 PROFILES: dict[str, dict[str, Any]] = {
     "cn": {
         "id": "cn",
-        "title": "国服",
+        "title": "国服 PC",
         "short": "CN",
         "capture_mode": "pc",
         "base_url": "",
         "package": "",
-        "notes": "Steam / PC 客户端；沿用现有系统代理 + GFLProxy 抓包。",
+        "package_hints": [],
+        "data_root": "dataMiner/reference/GFLData/ch/stc",
+        "notes": "Steam / PC 客户端，走国服官方服务器；沿用系统代理 + GFLProxy 抓包。",
+    },
+    "cn_revival": {
+        "id": "cn_revival",
+        "title": "国服复活版（安卓）",
+        "short": "CN-REV",
+        "capture_mode": "emulator",
+        "base_url": "",
+        "package": "com.sunborn.girlsfrontline.pt",
+        "package_hints": ["com.sunborn.girlsfrontline.pt"],
+        "data_root": "dataMiner/reference/GFLData/ch/stc",
+        "notes": "安卓复活版：把国服 STC/文字桥接进日服客户端（jp_3.0810），"
+                 "登录走国服数据；用模拟器抓包，数据应对齐国服 STC。",
     },
     "tw": {
         "id": "tw",
@@ -24,6 +38,8 @@ PROFILES: dict[str, dict[str, Any]] = {
         "capture_mode": "emulator",
         "base_url": "https://sn-game.txwy.tw/index.php/1001/",
         "package": "tw.txwy.and.snqx",
+        "package_hints": ["tw.txwy.and.snqx"],
+        "data_root": "dataMiner/reference/GFLData/tw/stc",
         "notes": "安卓模拟器（MuMu 等）；HTTPS MITM + CA，抓包自动识别 base_url。",
     },
     "jp": {
@@ -32,7 +48,10 @@ PROFILES: dict[str, dict[str, Any]] = {
         "short": "JP",
         "capture_mode": "emulator",
         "base_url": "",
-        "package": "",
+        "package": "com.sunborn.girlsfrontline.pt",
+        "package_hints": ["com.sunborn.girlsfrontline", "com.sunborn.girlsfrontline.jp",
+                          "com.sunborn.girlsfrontline.pt"],
+        "data_root": "dataMiner/reference/GFLData/jp/stc",
         "notes": "安卓模拟器；服务端域名由抓包自动识别，首次需要装 CA。",
     },
     "custom": {
@@ -42,6 +61,8 @@ PROFILES: dict[str, dict[str, Any]] = {
         "capture_mode": "emulator",
         "base_url": "",
         "package": "",
+        "package_hints": [],
+        "data_root": "",
         "notes": "其它区服/私有端；base_url 以抓到的流量为准。",
     },
 }
