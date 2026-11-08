@@ -227,12 +227,16 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.9.10**（当前发布）：**彻底取消所有关卡的 80 条候选上限**。审计发现普通关卡里仍有
-211 个关卡正好卡在 80、117 个邻近窗口关卡卡在 20；现在所有关卡都列出完整候选（最大 610/关，
-catalog 约 18.8MB）。
+**v1.10.0**（当前发布）：**安卓模拟器抓包 + 多区服支持（国服/台服/日服/自定义）**。
 
-同时修复普通关卡只取单一前缀的漏怪：11-3「静默追踪」已包含 2243（枪骑兵）等 224 族候选。
-本版也包含 v1.9.9/v1.9.8 的力场三列、积分关卡不限 80、灰域 BOSS 点位标记等。
+- 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
+- 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
+- 新增 ADB 自动检测（MuMu / 雷电 / 夜神 / BlueStacks 常见路径），可填 ADB 路径/串口；
+- 一键安装系统 CA、`adb reverse` + 设置代理、重启游戏；
+- 抓到的凭证写入 `creds_latest.json`，后续注入直接使用抓到的区服 base_url；
+- 模拟器抓包需要可选依赖：`pip install -r requirements-emulator.txt`（mitmproxy / cryptography）。
+
+本版仍包含 v1.9.10 的完整候选、11-3 枪骑兵修复、力场三列、灰域 BOSS 等。
 完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
 安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
 

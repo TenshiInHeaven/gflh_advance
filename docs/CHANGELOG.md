@@ -2,6 +2,18 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.0（2026-11-08）
+
+- **安卓模拟器抓包 + 区服**：新增 `targetforge/emucapture.py`、`regions.py`、`tools/emulator_mitm.py`。
+  - 国服 / 台服 / 日服 / 自定义 profile；
+  - 模拟器模式 mitmproxy + 自签 CA，自动抓 uid/sign/base_url；
+  - 不修改 Windows 系统代理；建议 `adb reverse` 走 127.0.0.1；
+- **ADB 自动检测**：`targetforge/adb.py` 扫描 MuMu / 雷电 / 夜神 / BlueStacks 常见路径；
+  页面可填 ADB 路径与串口；
+- **一键配置**：安装系统 CA、`adb reverse`、设置 HTTP 代理、强制重启游戏；
+- 登录抓取页新增模式/区服/ADB/包名/CA 下载；
+- 可选依赖：`requirements-emulator.txt`（mitmproxy / cryptography）。
+
 ## v1.9.10（2026-11-07）
 
 - **取消所有关卡的候选上限**：此前普通关卡前缀法仍截断到 80、邻近窗口截断到 20；

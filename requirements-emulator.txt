@@ -1,0 +1,3 @@
+﻿# 模拟器抓包可选依赖（PC/国服模式不需要）
+mitmproxy>=11.0
+cryptography>=42.0

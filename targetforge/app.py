@@ -25,13 +25,16 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.9.10"
+VERSION = "1.10.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from targetforge.datapaths import DATA_DIR, ICON_DIR, STATE_FILE, ensure_dirs  # noqa: E402
 from targetforge import security  # noqa: E402
+from targetforge import emucapture  # noqa: E402
+from targetforge import regions  # noqa: E402
+from targetforge import adb  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -727,6 +730,18 @@ def api_current(qs: dict) -> dict:
 def api_capture_start(body: dict) -> dict:
     gflh = _gflh_module()
     settings = state_load().get("settings") or {}
+    mode = str(body.get("mode") or "pc").strip().lower()
+    if mode == "emulator":
+        if gflh.capture_status().get("state") in ("starting", "running"):
+            raise HttpError(409, "PC 抓包正在运行", hint="请先在 PC 抓包页完成并关闭代理。")
+        try:
+            return emucapture.start(
+                port=int(body.get("port") or 8084),
+                region=str(body.get("region") or "tw"),
+                listen_host=str(body.get("listen_host") or "0.0.0.0"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise HttpError(400, f"模拟器抓包参数错误：{exc}") from exc
     port = int(body.get("port") or settings.get("capture_port") or gflh.CAPTURE_PORT)
     return gflh.capture_start(
         port=port,
@@ -734,6 +749,80 @@ def api_capture_start(body: dict) -> dict:
         auto_restore_proxy=bool(body.get("auto_restore_proxy",
                                        settings.get("auto_restore_proxy", True))),
     )
+
+
+def api_capture_status() -> dict:
+    emu = emucapture.status()
+    if emu.get("state") in ("starting", "running", "stopping"):
+        return emu
+    if emu.get("state") == "error":
+        return emu
+    return _gflh_module().capture_status()
+
+
+def api_capture_stop() -> dict:
+    if emucapture.is_active():
+        return emucapture.stop()
+    return _gflh_module().capture_stop()
+
+
+def api_capture_regions() -> dict:
+    return {"regions": regions.list_regions()}
+
+
+def api_capture_ca() -> dict:
+    try:
+        path = emucapture.ca_cert_path()
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "CA 生成失败", detail=str(exc),
+                        hint="请安装 mitmproxy 和 cryptography。") from exc
+    return {"filename": "targetforge-mitm-ca.crt", "pem": path.read_text(encoding="utf-8")}
+
+
+def api_emulator_detect() -> dict:
+    try:
+        return adb.detect()
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "ADB 检测失败", detail=str(exc)) from exc
+
+
+def api_emulator_setup(body: dict) -> dict:
+    region = regions.get_region(str(body.get("region") or "tw"))
+    adb_path = str(body.get("adb_path") or "").strip()
+    serial = str(body.get("serial") or "").strip()
+    package = str(body.get("package") or region.get("package") or "").strip()
+    port = int(body.get("port") or 8084)
+    if not adb_path or not serial:
+        detected = adb.detect()
+        default = detected.get("default") or {}
+        adb_path = adb_path or str(default.get("path") or "")
+        serial = serial or str(detected.get("default_serial") or "")
+    if not adb_path or not serial:
+        raise HttpError(400, "未找到 ADB 或设备",
+                        hint="请在页面填写 ADB 路径和串口，或先启动模拟器后点「自动检测」。")
+    state = state_load()
+    settings = state.get("settings") or {}
+    settings["emulator_adb_path"] = adb_path
+    settings["emulator_serial"] = serial
+    settings["emulator_package"] = package
+    state["settings"] = settings
+    state_save(state)
+    capture_started = False
+    if not emucapture.is_active():
+        emucapture.start(port=port, region=str(region.get("id") or "tw"),
+                         listen_host="127.0.0.1")
+        capture_started = True
+    try:
+        ca_path = emucapture.ca_cert_path()
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "CA 生成失败", detail=str(exc)) from exc
+    result = adb.setup(adb_path, serial, ca_path, package, port=port,
+                       listen_host="127.0.0.1")
+    result["capture_started"] = capture_started
+    result["adb_path"] = adb_path
+    result["serial"] = serial
+    result["port"] = port
+    return result
 
 
 def _system_proxy_body(body: dict) -> dict:
@@ -866,7 +955,10 @@ GET_ROUTES = [
     (re.compile(r"^/api/sequence$"), lambda ctx: api_sequence_get()),
     (re.compile(r"^/api/execute/preview$"), lambda ctx: api_execute_preview(ctx["json"] if ctx["method"] == "POST" else {})),
     (re.compile(r"^/api/jobs/(?P<jid>[0-9a-f]+)$"), lambda ctx: _job_get(ctx["match"].group("jid"))),
-    (re.compile(r"^/api/capture/status$"), lambda ctx: _gflh_module().capture_status()),
+    (re.compile(r"^/api/capture/status$"), lambda ctx: api_capture_status()),
+    (re.compile(r"^/api/capture/regions$"), lambda ctx: api_capture_regions()),
+    (re.compile(r"^/api/capture/ca$"), lambda ctx: api_capture_ca()),
+    (re.compile(r"^/api/emulator/detect$"), lambda ctx: api_emulator_detect()),
     (re.compile(r"^/api/tutorial$"), lambda ctx: api_tutorial_get()),
     (re.compile(r"^/api/settings$"), lambda ctx: api_settings_get()),
 ]
@@ -880,7 +972,8 @@ POST_ROUTES = [
     (re.compile(r"^/api/execute$"), lambda ctx: api_execute(ctx["json"])),
     (re.compile(r"^/api/jobs/(?P<jid>[0-9a-f]+)/cancel$"), lambda ctx: _job_cancel(ctx["match"].group("jid"))),
     (re.compile(r"^/api/capture/start$"), lambda ctx: api_capture_start(ctx["json"])),
-    (re.compile(r"^/api/capture/stop$"), lambda ctx: _gflh_module().capture_stop()),
+    (re.compile(r"^/api/capture/stop$"), lambda ctx: api_capture_stop()),
+    (re.compile(r"^/api/emulator/setup$"), lambda ctx: api_emulator_setup(ctx["json"])),
     (re.compile(r"^/api/capture/restart_game$"), lambda ctx: _gflh_module().capture_restart_game()),
     (re.compile(r"^/api/creds/load$"), lambda ctx: api_creds_load(ctx["json"])),
     (re.compile(r"^/api/game/restart$"), lambda ctx: _gflh_module().restart_game(

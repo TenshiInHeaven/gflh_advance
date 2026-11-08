@@ -96,6 +96,52 @@ export async function render(root) {
       `,
     })}
     <div data-game-client></div>
+    <div class="capture-mode-card" style="margin:0 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:rgba(10,18,39,.55)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="pc-title">${icon("wifi", 13)} 抓包模式 / 区服</span>
+        <select class="rf-select" data-capture-mode>
+          <option value="pc">PC / 国服（系统代理）</option>
+          <option value="emulator">安卓模拟器（LAN + CA）</option>
+        </select>
+        <select class="rf-select" data-capture-region>
+          <option value="tw">台服 TW</option>
+          <option value="cn">国服 CN</option>
+          <option value="jp">日服 JP</option>
+          <option value="custom">自定义区服</option>
+        </select>
+        <span class="pc-hint" data-capture-mode-hint>国服 PC 模式：沿用系统代理 + 本地 127.0.0.1 端口。</span>
+      </div>
+      <div data-emulator-box style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="pc-hint">模拟器代理：<b class="mono-inline">PC 局域网 IP :</b></span>
+          <input type="number" class="port-input" data-emu-port min="${PORT_MIN}" max="${PORT_MAX}" step="1" value="8084" aria-label="模拟器抓包端口" />
+          <span class="pc-hint">监听地址</span>
+          <select class="rf-select" data-listen-host>
+            <option value="0.0.0.0">0.0.0.0（局域网）</option>
+            <option value="127.0.0.1">127.0.0.1（仅本机）</option>
+          </select>
+          <button class="btn btn-sm btn-cyan" type="button" data-act="download-ca">${icon("lock", 12)} 下载 CA 证书</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <span class="pc-hint">ADB</span>
+          <input type="text" class="port-input" style="width:260px" data-adb-path placeholder="自动检测 / 填 adb.exe 路径" />
+          <input type="text" class="port-input" style="width:140px" data-adb-serial placeholder="串口，如 127.0.0.1:7555" />
+          <button class="btn btn-sm btn-ghost" type="button" data-act="detect-adb">${icon("search", 12)} 自动检测</button>
+          <span class="pc-hint" data-adb-detect-hint></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <span class="pc-hint">游戏包名</span>
+          <input type="text" class="port-input" style="width:230px" data-emu-package placeholder="台服 tw.txwy.and.snqx" />
+          <button class="btn btn-sm btn-primary" type="button" data-act="emu-setup">${icon("settings", 12)} 一键装 CA / 设代理 / 重启游戏</button>
+        </div>
+        <div class="pc-hint" style="margin-top:6px;line-height:1.7">
+          1. 推荐先点「自动检测」填入 ADB 和串口；<br>
+          2. 一键操作会 `adb reverse`，把模拟器 127.0.0.1:端口 转发到本机，不需要把代理暴露到局域网；<br>
+          3. 打开游戏登录，抓包会从 HTTPS 流量里识别 uid/sign/base_url。<br>
+          <span class="text-mute">注意：MuMu/雷电/夜神/BlueStacks 的 ADB 路径不同；只要 ADB 能连、能 root 装系统 CA，抓包流程通用。</span>
+        </div>
+      </div>
+    </div>
     <div class="capture-cols">
       <div>
         <div class="capture-panel" data-capture-panel>
@@ -233,6 +279,7 @@ export async function render(root) {
 
   bindShellEvents(root);
   bindPortEvents(root);
+  bindCaptureMode(root);
   bindPowerFilter(root, (filter) => {
     currentFilter = filter;
     renderCurrent();
@@ -258,10 +305,17 @@ async function loadSettings() {
     const settings = await api.settings();
     loadGameClientCard();
 
-  const port = validPort(settings?.capture_port);
+    const port = validPort(settings?.capture_port);
     if (port) {
       currentPort = setCapturePort(port);
     }
+    const adbPathEl = rootEl?.querySelector("[data-adb-path]");
+    const serialEl = rootEl?.querySelector("[data-adb-serial]");
+    const packageEl = rootEl?.querySelector("[data-emu-package]");
+    if (adbPathEl && settings?.emulator_adb_path) adbPathEl.value = settings.emulator_adb_path;
+    if (serialEl && settings?.emulator_serial) serialEl.value = settings.emulator_serial;
+    if (packageEl && settings?.emulator_package) packageEl.value = settings.emulator_package;
+    if (packageEl && !packageEl.value.trim()) packageEl.value = "tw.txwy.and.snqx";
     markCapturePortLoaded();
   } catch {
     /* 设置读取失败时保持默认端口 */
@@ -348,6 +402,120 @@ function bindPortEvents(root) {
 /* ------------------------------------------------------------------ */
 /* 事件绑定                                                           */
 /* ------------------------------------------------------------------ */
+function bindCaptureMode(root) {
+  const modeEl = root.querySelector("[data-capture-mode]");
+  const regionEl = root.querySelector("[data-capture-region]");
+  const box = root.querySelector("[data-emulator-box]");
+  const hint = root.querySelector("[data-capture-mode-hint]");
+  const sync = () => {
+    const emu = modeEl?.value === "emulator";
+    if (box) box.style.display = emu ? "" : "none";
+    if (hint) {
+      hint.textContent = emu
+        ? "模拟器模式：不改系统代理；用 PC 局域网 IP + 端口，并安装 CA。"
+        : "国服 PC 模式：沿用系统代理 + 本地 127.0.0.1 端口。";
+    }
+    const wizard = root.querySelector("[data-wizard]");
+    if (wizard) wizard.style.display = emu ? "none" : "";
+    if (regionEl) regionEl.disabled = !emu;
+  };
+  modeEl?.addEventListener("change", sync);
+  regionEl?.addEventListener("change", sync);
+  sync();
+  const packageEl = root.querySelector("[data-emu-package]");
+  const adbPathEl = root.querySelector("[data-adb-path]");
+  const serialEl = root.querySelector("[data-adb-serial]");
+  const hintEl = root.querySelector("[data-adb-detect-hint]");
+  const regionPackages = { tw: "tw.txwy.and.snqx", cn: "", jp: "", custom: "" };
+  const applyRegionPackage = () => {
+    if (!packageEl || packageEl.value.trim()) return;
+    packageEl.value = regionPackages[regionEl?.value] || "";
+  };
+  regionEl?.addEventListener("change", applyRegionPackage);
+  root.querySelector('[data-act="detect-adb"]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setBusy(button, true, "检测中…");
+    try {
+      const data = await api.emulatorDetect();
+      const candidates = data.candidates || [];
+      const picked = data.default || candidates[0];
+      if (!picked) {
+        if (hintEl) hintEl.textContent = "未发现 ADB；请手动填写路径。";
+        toastErr("未检测到 ADB", "MuMu/雷电/夜神/BlueStacks 的 adb.exe 路径不同。");
+        return;
+      }
+      if (adbPathEl) adbPathEl.value = picked.path || "";
+      const serial = data.default_serial || (picked.devices || [{}])[0]?.serial || "";
+      if (serialEl) serialEl.value = serial;
+      applyRegionPackage();
+      const names = candidates.map((item) => `${item.name}${(item.devices || []).length ? `(${item.devices.length})` : ""}`).join(" / ");
+      if (hintEl) hintEl.textContent = serial ? `已选：${picked.name} ${serial}` : `发现 ${names}，但没有在线设备，请先启动模拟器。`;
+      toastOk("ADB 检测完成", serial ? `${picked.name} · ${serial}` : "需要先启动模拟器并开启 ADB。");
+    } catch (err) {
+      toastErr("检测失败", err.message);
+    } finally {
+      setBusy(button, false);
+    }
+  });
+  root.querySelector('[data-act="emu-setup"]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const portValue = validPort(root.querySelector("[data-emu-port]")?.value);
+    if (portValue === null) {
+      toastErr("端口不合法", `请输入 ${PORT_MIN}-${PORT_MAX} 之间的整数。`);
+      return;
+    }
+    const body = {
+      region: regionEl?.value || "tw",
+      adb_path: adbPathEl?.value.trim() || "",
+      serial: serialEl?.value.trim() || "",
+      package: packageEl?.value.trim() || "",
+      port: portValue,
+    };
+    const ok = await confirmDialog({
+      title: "安装 CA / 设置代理 / 重启游戏",
+      message: "将对模拟器执行 adb reverse、安装系统 CA、设置 HTTP 代理，并强制重启游戏。",
+      detail: "这需要模拟器 ADB 已连接且开启 root；重启后请在游戏里登录。抓包结束后请点「完成并关闭代理」。",
+      confirmText: "开始配置",
+    });
+    if (!ok) return;
+    setBusy(button, true, "配置中…");
+    try {
+      const result = await api.emulatorSetup(body);
+      if (!result.ok) {
+        toastErr("配置未完全成功", (result.error || "请查看返回结果").slice(0, 300));
+      } else {
+        toastOk("模拟器配置完成", "CA/代理已设置，游戏正在重启。请登录到主界面。");
+      }
+      await refreshStatus();
+    } catch (err) {
+      toastErr("配置失败", err.message + (err.hint ? `（${err.hint}）` : ""));
+    } finally {
+      setBusy(button, false);
+    }
+  });
+  root.querySelector('[data-act="download-ca"]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setBusy(button, true, "生成中…");
+    try {
+      const data = await api.captureCa();
+      const blob = new Blob([data.pem || ""], { type: "application/x-x509-ca-cert" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename || "targetforge-mitm-ca.crt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toastOk("CA 已下载", "请装进模拟器的系统证书目录（Android 7+ 需 root/Magisk）。");
+    } catch (err) {
+      toastErr("CA 生成失败", err.message + (err.hint ? `（${err.hint}）` : ""));
+    } finally {
+      setBusy(button, false);
+    }
+  });
+}
+
 function bindShellEvents(root) {
   root.querySelectorAll('[data-act="refresh"]').forEach((button) =>
     button.addEventListener("click", async (event) => {
@@ -382,7 +550,32 @@ function bindShellEvents(root) {
       }
       setBusy(target, true, "启动中…");
       try {
-        const status = await api.captureStart({ port: currentPort, set_proxy: true, auto_restore_proxy: true });
+        const mode = root.querySelector("[data-capture-mode]")?.value || "pc";
+        const region = root.querySelector("[data-capture-region]")?.value || "cn";
+        if (mode === "emulator") {
+          const emuPort = validPort(root.querySelector("[data-emu-port]")?.value);
+          if (emuPort === null) {
+            toastErr("端口不合法", `请输入 ${PORT_MIN}-${PORT_MAX} 之间的整数。`);
+            return;
+          }
+          const listenHost = root.querySelector("[data-listen-host]")?.value || "0.0.0.0";
+          const status = await api.captureStart({
+            mode: "emulator",
+            region,
+            port: emuPort,
+            listen_host: listenHost,
+            set_proxy: false,
+            auto_restore_proxy: false,
+          });
+          applyStatus(status);
+          if (status.error) {
+            toastErr("模拟器抓包启动失败", status.error);
+          } else {
+            toastOk("模拟器抓包已启动", `监听 ${listenHost}:${emuPort}。请在模拟器 Wi-Fi 代理填写 PC 局域网 IP:${emuPort} 并安装 CA。`);
+          }
+          return;
+        }
+        const status = await api.captureStart({ port: currentPort, mode: "pc", set_proxy: true, auto_restore_proxy: true });
         applyStatus(status);
         toastOk("抓包代理已启动", `端口 ${currentPort}。下一步：设置代理并重启游戏，然后登录到主界面。`);
       } catch (err) {
@@ -487,7 +680,12 @@ function applyStatus(status) {
     currentPort = setCapturePort(status.port);
     applyPortUi();
   }
-  const proxyText = status.proxy_active ? proxyAddr(statusPort) : "未开启";
+  const emulatorMode = status.mode === "emulator";
+  const proxyText = !status.proxy_active
+    ? "未开启"
+    : emulatorMode
+      ? `${status.listen_host || "0.0.0.0"}:${statusPort}`
+      : proxyAddr(statusPort);
 
   const chip = rootEl.querySelector("[data-cap-state]");
   if (chip) {
@@ -544,7 +742,7 @@ function applyStatus(status) {
     button.disabled = state === "running" || state === "starting";
   });
   rootEl.querySelectorAll('[data-act="restart-game"]').forEach((button) => {
-    button.disabled = !(state === "running" || state === "starting");
+    button.disabled = emulatorMode || !(state === "running" || state === "starting");
   });
   rootEl.querySelectorAll('[data-act="stop"]').forEach((button) => {
     button.disabled = !(state === "running" || state === "starting");

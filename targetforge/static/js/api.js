@@ -171,6 +171,10 @@ export const api = {
   cancelJob: (jobId) => post(`/api/jobs/${encodeURIComponent(jobId)}/cancel`),
 
   captureStatus: () => get("/api/capture/status"),
+  captureRegions: () => get("/api/capture/regions"),
+  captureCa: () => get("/api/capture/ca"),
+  emulatorDetect: () => get("/api/emulator/detect"),
+  emulatorSetup: (body = {}) => post("/api/emulator/setup", body),
   captureStart: (body = {}) =>
     post("/api/capture/start", {
       port: runtime.capturePort,

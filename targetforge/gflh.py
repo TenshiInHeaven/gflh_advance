@@ -171,6 +171,13 @@ def _train():
             return _TRAIN_MODULE
         script = ROOT / "scripts" / "gflh_target_train.py"
         if not script.is_file():
+            # 工作区整理后脚本可能被归到 simBattle/scripts；按常见位置回退查找。
+            for candidate in (ROOT / "simBattle" / "scripts" / "gflh_target_train.py",
+                              ROOT / "misc" / "scripts" / "gflh_target_train.py"):
+                if candidate.is_file():
+                    script = candidate
+                    break
+        if not script.is_file():
             raise RuntimeError(f"缺少 {script}：靶机编号规划依赖它")
         spec = importlib.util.spec_from_file_location("targetforge._gflh_target_train", script)
         if spec is None or spec.loader is None:
