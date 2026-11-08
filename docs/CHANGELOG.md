@@ -2,6 +2,13 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.5（2026-11-08）
+
+- README 前置依赖改为真实存在的 `requirements.lock`（核心，带 sha256）；
+- 新增说明：安卓模拟器抓包需要可选依赖 `requirements-emulator.txt`（mitmproxy / cryptography）；
+- `start.ps1` 增加 `-WithEmulator`：普通启动只装核心依赖，模拟器模式才装可选依赖；
+- 修正 README 目录里已不存在的 `requirements.txt` 引用。
+
 ## v1.10.4（2026-11-08）
 
 - 登录凭证按类别只保留一份最新：`creds_profile_cn_pc.json`、`creds_profile_cn_revival.json`、

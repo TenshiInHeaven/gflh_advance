@@ -66,10 +66,11 @@
 | 依赖 | 说明 |
 |---|---|
 | Windows 10/11 | 抓包 / 游戏控制 / winreg 代理设置目前是 Windows 实现 |
-| Python 3.10+（推荐 3.14） | 运行 `python -m targetforge`；需 `gflzirc==0.4.4`（`pip install -r requirements.txt`） |
+| Python 3.10+（推荐 3.14） | 运行 `python -m targetforge`；核心依赖 `gflzirc==0.4.4`，已锁定在 `requirements.lock` |
 | 内置数据层 | `unit_model/`（STC 解析最小集）+ `project_paths.py` + `scripts/gflh_target_train.py` + 预构建 `dataMiner/derived/{catalog.json,icons}`；无需 GF Forge 主仓库 |
 | 本机游戏客户端（可选） | 《少女前线》PC 版（Steam appid **3347970**）。**注入/刷新数据时必须**；纯浏览可不用。首次启动会要求选择客户端目录（自动检测 / 浏览文件夹），之后可在「登录抓取」页修改 |
 | 端口 | 应用 **8765**；抓包代理默认 **18080**，可在「登录抓取 → 抓包端口」配置（8080 常被其它程序占用，不建议用） |
+| 安卓模拟器抓包（可选） | 需要 Python 包 `mitmproxy` + `cryptography`，执行 `pip install -r requirements-emulator.txt`；还需要模拟器 ADB 可连接、可 root 装系统 CA。**只使用 PC/国服模式时不需要** |
 | 可选 | UnityPy + Pillow（重新导出小怪头像）、Playwright + Edge（页面自检） |
 
 ## 安装
@@ -87,12 +88,16 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.lock
 
+# 3b) 安卓模拟器抓包（可选；PC / 国服模式不需要）
+python -m pip install -r requirements-emulator.txt
+
 # 4) 启动（Windows 可双击/运行 start.ps1，会自动用 .venv）
 python -m targetforge --open
 ```
 
 > 不熟悉命令行的，可以把本 README 交给 AI 助手（如「大肥鱼」）阅读后按步骤构建。
-> `start.ps1` 会自动创建 `.venv`、安装锁定依赖并启动，不想手输命令可以用它。
+> `start.ps1` 会自动创建 `.venv`、安装锁定依赖并启动；需要模拟器抓包时运行
+> `.\start.ps1 -WithEmulator`，会额外安装 `requirements-emulator.txt`。
 
 首次启动会弹出**「先选择游戏客户端」**前置步骤：自动检测本机 Steam/运行中游戏，或点「浏览文件夹」手动选择
 `GIRLS' FRONTLINE` 安装目录（含 `GrilsFrontLine.exe` 与 `GrilsFrontLine_Data` 的那一层）。
@@ -181,8 +186,9 @@ python targetforge/tools/analyze_score_stages.py          # 积分关卡结算�
 gflh_advance/
   README.md                    本文件
   LICENSE                      MIT
-  start.ps1                    一键安装依赖并启动（Windows）
-  requirements.txt             运行依赖（gflzirc）
+  start.ps1                    一键安装依赖并启动（Windows）；-WithEmulator 安装模拟器可选依赖
+  requirements.lock            核心锁定依赖（gflzirc 等，带 sha256）
+  requirements-emulator.txt    模拟器抓包可选依赖（mitmproxy / cryptography）
   local_paths.example.json     本机游戏目录示例（复制为 local_paths.json，或首次启动向导写入）
   docs/screenshots/            README 用截图
   project_paths.py             仓库根 / 游戏目录解析（内置精简数据层）
@@ -227,9 +233,9 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.10.4**（当前发布）：登录凭证改为**按区服/客户端类别只保留一份最新**（国服 PC、国服复活版、
-台服、日服、自定义），新抓包直接覆盖同类别旧 sign；登录凭证面板支持收起/展开；历史靶机配置
-仍独立保存，不含 sign。
+**v1.10.5**（当前发布）：补齐前置依赖说明：README 明确 `requirements.lock` 为必需依赖、
+`requirements-emulator.txt` 为模拟器抓包可选依赖；`start.ps1` 增加 `-WithEmulator` 参数自动安装
+mitmproxy/cryptography。
 
 - 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
 - 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
