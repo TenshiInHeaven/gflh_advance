@@ -2,6 +2,16 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.3（2026-11-08）
+
+- 登录抓取页新增「历史靶机配置」：
+  - 手动保存当前靶机批次，按 `targets_YYYYMMDD_HHMMSS.json` 命名；
+  - 存档存入 `dataMiner/derived/targetforge/target_history/`；
+  - 只保存靶机 order/team、uid/base_url/region，不保存 sign；
+  - 支持一键全部加入当前序列、删除存档；
+  - 存档不会自动覆盖，避免每次抓包把历史批次冲掉。
+- 「可用凭证」改名为「登录凭证」，明确区分 uid/sign 与靶机配置。
+
 ## v1.10.2（2026-11-08）
 
 - WebUI 区服覆盖：国服 PC、国服复活版（安卓）、台服、日服、自定义；

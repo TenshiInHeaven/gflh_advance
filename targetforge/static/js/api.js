@@ -173,6 +173,10 @@ export const api = {
   captureStatus: () => get("/api/capture/status"),
   captureRegions: () => get("/api/capture/regions"),
   captureCa: () => get("/api/capture/ca"),
+  targetHistory: () => get("/api/target-history"),
+  saveTargetHistory: (body = {}) => post("/api/target-history", { action: "save", ...body }),
+  deleteTargetHistory: (name) => post("/api/target-history", { action: "delete", name }),
+  appendTargetHistory: (name) => post("/api/target-history", { action: "append", name }),
   emulatorDetect: () => get("/api/emulator/detect"),
   emulatorSetup: (body = {}) => post("/api/emulator/setup", body),
   captureStart: (body = {}) =>

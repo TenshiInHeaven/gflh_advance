@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.10.2"
+VERSION = "1.10.3"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -35,6 +35,7 @@ from targetforge import security  # noqa: E402
 from targetforge import emucapture  # noqa: E402
 from targetforge import regions  # noqa: E402
 from targetforge import adb  # noqa: E402
+from targetforge import target_history  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -779,6 +780,62 @@ def api_capture_ca() -> dict:
     return {"filename": "targetforge-mitm-ca.crt", "pem": path.read_text(encoding="utf-8")}
 
 
+def api_target_history_get() -> dict:
+    return {
+        "history": target_history.list_history(),
+        "dir": str(target_history.HISTORY_DIR),
+    }
+
+
+def api_target_history_post(body: dict) -> dict:
+    action = str(body.get("action") or "").strip().lower()
+    if action == "save":
+        current = _gflh_module().current_targets("auto")
+        try:
+            item = target_history.save_current(
+                current, region=str(body.get("region") or ""), label=str(body.get("label") or ""))
+        except ValueError as exc:
+            raise HttpError(400, str(exc)) from exc
+        return {"ok": True, "item": item, "history": target_history.list_history()}
+    if action == "delete":
+        try:
+            target_history.delete_history(str(body.get("name") or ""))
+        except FileNotFoundError as exc:
+            raise HttpError(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HttpError(400, str(exc)) from exc
+        return {"ok": True, "history": target_history.list_history()}
+    if action == "append":
+        try:
+            payload = target_history.load_history(str(body.get("name") or ""))
+        except FileNotFoundError as exc:
+            raise HttpError(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HttpError(400, str(exc)) from exc
+        teams = []
+        for item in payload.get("targets") or []:
+            try:
+                team = int(item.get("team"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if team > 0 and team not in teams:
+                teams.append(team)
+        if not teams:
+            raise HttpError(400, "历史存档里没有有效队伍", detail=str(body.get("name") or ""))
+        before = len(state_load().get("draft") or [])
+        sequence = api_sequence_post({"action": "add_many", "team_ids": teams})
+        return {
+            "ok": True,
+            "name": str(body.get("name") or ""),
+            "requested": len(teams),
+            "added": max(0, int(sequence.get("count") or 0) - before),
+            "missing": sequence.get("missing") or [],
+            "sequence": sequence,
+        }
+    raise HttpError(400, f"未知历史操作：{action!r}",
+                    hint="可用：save / delete / append")
+
+
 def api_emulator_detect() -> dict:
     try:
         return adb.detect()
@@ -959,6 +1016,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/capture/regions$"), lambda ctx: api_capture_regions()),
     (re.compile(r"^/api/capture/ca$"), lambda ctx: api_capture_ca()),
     (re.compile(r"^/api/emulator/detect$"), lambda ctx: api_emulator_detect()),
+    (re.compile(r"^/api/target-history$"), lambda ctx: api_target_history_get()),
     (re.compile(r"^/api/tutorial$"), lambda ctx: api_tutorial_get()),
     (re.compile(r"^/api/settings$"), lambda ctx: api_settings_get()),
 ]
@@ -974,6 +1032,7 @@ POST_ROUTES = [
     (re.compile(r"^/api/capture/start$"), lambda ctx: api_capture_start(ctx["json"])),
     (re.compile(r"^/api/capture/stop$"), lambda ctx: api_capture_stop()),
     (re.compile(r"^/api/emulator/setup$"), lambda ctx: api_emulator_setup(ctx["json"])),
+    (re.compile(r"^/api/target-history$"), lambda ctx: api_target_history_post(ctx["json"])),
     (re.compile(r"^/api/capture/restart_game$"), lambda ctx: _gflh_module().capture_restart_game()),
     (re.compile(r"^/api/creds/load$"), lambda ctx: api_creds_load(ctx["json"])),
     (re.compile(r"^/api/game/restart$"), lambda ctx: _gflh_module().restart_game(

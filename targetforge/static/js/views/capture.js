@@ -2,7 +2,7 @@
  * 抓包端口可配置（默认 18080，范围 1024-65535，持久化到 /api/settings）。
  */
 import { api, setCapturePort, getCapturePort, markCapturePortLoaded } from "../api.js";
-import { store, refreshHealth, refreshCurrent, tryRefreshCurrent, loadChapters } from "../store.js";
+import { store, refreshHealth, refreshCurrent, tryRefreshCurrent, loadChapters, refreshSequence } from "../store.js";
 import {
   icon,
   pageHeadHtml,
@@ -52,6 +52,8 @@ let pollTimer = 0;
 let captureStatus = null;
 let currentData = null;
 let credsData = null;
+let historyData = [];
+let historyDir = "";
 let targetFillToken = 0;
 let currentPort = getCapturePort();
 let portSaveBusy = false;
@@ -80,6 +82,8 @@ export async function render(root) {
   captureStatus = null;
   currentData = null;
   credsData = null;
+  historyData = [];
+  historyDir = "";
   targetFillToken += 1;
   currentPort = getCapturePort();
 
@@ -234,12 +238,22 @@ export async function render(root) {
         </div>
 
         <div class="capture-panel mt16">
-          ${sectionHeadHtml("可用凭证", { hint: "点击加载会复制为 creds_latest.json", iconName: "database" })}
+          ${sectionHeadHtml("登录凭证", { hint: "uid/sign；加载后复制为 creds_latest.json", iconName: "key" })}
           <div class="creds-list" data-creds-list>${skeletonRows(3)}</div>
           <div class="mt12" style="display:flex;gap:8px">
             <button class="btn btn-ghost btn-sm" type="button" data-act="load-creds" disabled>${icon("upload", 12)} 加载选中凭证</button>
             <span class="text-mute" style="font-size:10.5px;align-self:center" data-cred-hint>先选择一条凭证</span>
           </div>
+        </div>
+
+        <div class="capture-panel mt16" data-target-history-panel>
+          ${sectionHeadHtml("历史靶机配置", { hint: "手动备份当前批次；只存靶机，不存 sign", iconName: "database" })}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-cyan btn-sm" type="button" data-act="save-target-history">${icon("database", 12)} 保存当前靶机批次</button>
+            <span class="text-mute" style="font-size:10.5px" data-history-hint>存档按时间命名，可一键全部加入当前序列</span>
+          </div>
+          <div class="target-history-list mt12" data-target-history-list>${skeletonRows(2)}</div>
+          <div class="pc-hint" style="margin-top:6px">存于 <code data-history-dir>dataMiner/derived/targetforge/target_history/</code>；不自动覆盖，需手动保存。</div>
         </div>
       </div>
 
@@ -285,7 +299,7 @@ export async function render(root) {
     currentFilter = filter;
     renderCurrent();
   });
-  await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadCurrent(), applyDataDir()]);
+  await Promise.allSettled([loadSettings(), refreshStatus(), loadCreds(), loadTargetHistory(), loadCurrent(), applyDataDir()]);
   applyPortUi();
 
   pollTimer = setInterval(() => {
@@ -539,6 +553,65 @@ function bindCaptureMode(root) {
 }
 
 function bindShellEvents(root) {
+  root.querySelector('[data-act="save-target-history"]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    setBusy(button, true, "保存中…");
+    try {
+      const result = await api.saveTargetHistory();
+      if (result.ok) {
+        toastOk("靶机批次已保存", `${result.item?.count || 0} 个靶机 · ${result.item?.name || ""}`);
+        await loadTargetHistory();
+      } else {
+        toastErr("保存失败", "后端未返回有效结果");
+      }
+    } catch (err) {
+      toastErr("保存失败", err.message + (err.hint ? `（${err.hint}）` : ""));
+    } finally {
+      setBusy(button, false);
+    }
+  });
+  root.querySelector("[data-target-history-list]")?.addEventListener("click", async (event) => {
+    const actionEl = event.target.closest("[data-history-act]");
+    if (!actionEl) return;
+    const item = actionEl.closest("[data-history-name]");
+    const name = item?.dataset.historyName;
+    if (!name) return;
+    const action = actionEl.dataset.historyAct;
+    if (action === "append") {
+      setBusy(actionEl, true, "加入中…");
+      try {
+        const result = await api.appendTargetHistory(name);
+        await refreshSequence();
+        const missing = (result.missing || []).length;
+        toastOk("已加入当前序列", `请求 ${result.requested} 个，实际新增 ${result.added} 个${missing ? `，${missing} 个不在 catalog` : ""}`);
+      } catch (err) {
+        toastErr("加入失败", err.message + (err.hint ? `（${err.hint}）` : ""));
+      } finally {
+        setBusy(actionEl, false);
+      }
+      return;
+    }
+    if (action === "delete") {
+      const ok = await confirmDialog({
+        title: "删除历史靶机配置",
+        message: `确定删除 ${name}？`,
+        detail: "只删除本地存档，不影响游戏内收藏标靶。",
+        confirmText: "删除",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const result = await api.deleteTargetHistory(name);
+        toastOk("已删除", name);
+        if (result.history) {
+          historyData = result.history;
+          renderTargetHistory();
+        }
+      } catch (err) {
+        toastErr("删除失败", err.message);
+      }
+    }
+  });
   root.querySelectorAll('[data-act="refresh"]').forEach((button) =>
     button.addEventListener("click", async (event) => {
       const target = event.currentTarget;
@@ -807,6 +880,44 @@ function applyStatus(status) {
 /* ------------------------------------------------------------------ */
 /* 凭证 / 当前靶机                                                     */
 /* ------------------------------------------------------------------ */
+async function loadTargetHistory() {
+  try {
+    const data = await api.targetHistory();
+    historyData = data.history || [];
+    historyDir = data.dir || "";
+    const dirEl = rootEl?.querySelector("[data-history-dir]");
+    if (dirEl && historyDir) dirEl.textContent = historyDir;
+    renderTargetHistory();
+  } catch (err) {
+    const listEl = rootEl?.querySelector("[data-target-history-list]");
+    if (listEl) listEl.innerHTML = `<div class="plan-empty" style="padding:12px">历史靶机配置读取失败：${esc(err.message)}</div>`;
+  }
+}
+
+function renderTargetHistory() {
+  const listEl = rootEl?.querySelector("[data-target-history-list]");
+  if (!listEl) return;
+  const items = historyData || [];
+  if (!items.length) {
+    listEl.innerHTML = `<div class="plan-empty" style="padding:12px">暂无历史批次。抓到当前靶机后点「保存当前靶机批次」。</div>`;
+    return;
+  }
+  listEl.innerHTML = items.map((item) => `
+    <div class="target-history-item" data-history-name="${esc(item.name)}" style="padding:9px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;background:rgba(8,16,34,.5)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="badge mono">${esc(item.created_at || item.name)}</span>
+        <span style="font-size:11px" class="text-mute">${Number(item.count) || 0} 个靶机</span>
+        ${item.uid ? `<span style="font-size:10.5px" class="text-mute">uid ${esc(item.uid)}</span>` : ""}
+      </div>
+      <div style="font-size:10.5px;margin-top:4px;word-break:break-all" class="text-mute">${esc(item.base_url || item.name)}</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn btn-xs btn-cyan" type="button" data-history-act="append">${icon("plus", 10)} 全部加入序列</button>
+        <button class="btn btn-xs btn-ghost" type="button" data-history-act="delete">${icon("trash", 10)} 删除</button>
+      </div>
+    </div>
+  `).join("");
+}
+
 async function loadCreds() {
   try {
     const data = await api.creds();
