@@ -1083,8 +1083,9 @@ class CatalogDataTest(unittest.TestCase):
                   for category in ("normal", "grayzone", "orphan")}
         # 非互斥：过滤数之和 > 264
         self.assertGreater(sum(counts.values()), EXPECT_SPECIES)
-        # v1.4 支援链接会让部分物种获得/失去场景 flag（正常 244→250、灰域 66→68、orphan 211→204）
-        self.assertLessEqual(abs(counts["normal"] - 250), 2)
+        # v1.4 支援链接会让部分物种获得/失去场景 flag；v1.10.6 按图鉴表修正特殊 codex 后
+        # 正常分类多 3 个（253），灰域/orphan 口径不变
+        self.assertLessEqual(abs(counts["normal"] - 253), 2)
         self.assertLessEqual(abs(counts["grayzone"] - 68), 2)
         self.assertLessEqual(abs(counts["orphan"] - 204), 2)
         self.assertEqual(self.catalog.species_list(category="all")["total"],
@@ -1198,6 +1199,23 @@ class CatalogIconTest(unittest.TestCase):
         for item in with_icon:
             self.assertTrue((DATA_ICON_DIR / item["icon"]).is_file(),
                             f"species 图标文件不存在：{item['icon']}")
+
+    def test_special_codex_name_icon_alignment(self):
+        """部分活动单位在 enemy_full_model.csv 的 codex_no 会偏移一位；
+        图鉴必须以 enemy_illustration 的 code→id 为准，名称和头像不能串行。"""
+        by_codex = {int(item["codex_no"]): item for item in self.catalog._species_items}
+        expected = {
+            100011: ("人偶歼灭者", "gg_elfeldt_sf.png"),
+            100012: ("盾牌娘", "bh2_shield.png"),
+            100013: ("普通娘", "bh2_normal.png"),
+            100018: ("持盾者", "divmauler.png"),
+            100019: ("掷弹兵", "divgrenadier.png"),
+        }
+        for codex, (name, icon) in expected.items():
+            item = by_codex.get(codex)
+            self.assertIsNotNone(item, f"缺少怪种 {codex}")
+            self.assertEqual(item["name"], name)
+            self.assertEqual(item["icon"], icon)
 
     def test_team_icon_fields(self):
         summary = self.catalog.team_summaries([660011])[0]

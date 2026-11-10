@@ -233,9 +233,9 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.10.5**（当前发布）：补齐前置依赖说明：README 明确 `requirements.lock` 为必需依赖、
-`requirements-emulator.txt` 为模拟器抓包可选依赖；`start.ps1` 增加 `-WithEmulator` 参数自动安装
-mitmproxy/cryptography。
+**v1.10.6**（当前发布）：修复怪物图鉴名称与小怪单位/头像串行的问题：部分活动/BOSS 单位在
+`enemy_full_model.csv` 的 codex 编号偏移，现以 `enemy_illustration` 的 code→图鉴编号唯一映射为准；
+并致谢 **我是小可酱** 对本项目图鉴的勘误。
 
 - 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
 - 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
@@ -256,6 +256,8 @@ mitmproxy/cryptography。
   是本项目与游戏接口、本地抓包交互的基础。
 - **秋水Ameth**：感谢整理积分关卡「固定怪组表 + 刷怪表」腾讯表格合集（16 个关卡）及基础效能数据；
   该合集已作为这些积分关卡的社区显式刷怪表来源（见 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)）。
+- **我是小可酱**：感谢对本项目的勘误，指出怪物图鉴中名称与小怪单位/头像对应错误，
+  帮助修正特殊活动单位的图鉴 codex 映射。
 - 另外感谢 同群群友 的支持，以及其他上游依赖包的开发者。
 
 完整的上游项目、依赖许可证与 MIT 合规说明见 **[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)**。

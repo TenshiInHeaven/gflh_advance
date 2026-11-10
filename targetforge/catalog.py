@@ -716,10 +716,25 @@ def _build_payload() -> dict:
 
     # 图鉴（codex 编号 = enemy_illustration.id；名称 = 行内 name 文本 key）
     illustration_by_id: dict[int, list[dict]] = defaultdict(list)
+    illustration_ids_by_code: dict[str, set[int]] = defaultdict(set)
     for row in tables["enemy_illustration"]:
-        illustration_by_id[_int(row.get("id"))].append(row)
+        codex_id = _int(row.get("id"))
+        illustration_by_id[codex_id].append(row)
+        code = str(row.get("code") or "").strip().lower()
+        if code:
+            illustration_ids_by_code[code].add(codex_id)
     for rows in illustration_by_id.values():
         rows.sort(key=lambda item: _int(item.get("sub_id")))
+
+    # enemy_full_model.csv 的 codex_no 在部分活动/BOSS 单位上会偏移一位；
+    # 当某个 type code 在 enemy_illustration 里只对应唯一 codex 时，以图鉴为准。
+    # （同一 code 同时对应本体与 BOSS 的少数情况保持 CSV，避免把本体/BOSS 混在一起）
+    for row in model_rows:
+        type_id = _int(row.get("type_id"))
+        code = str(row.get("code") or "").strip().lower()
+        ids = illustration_ids_by_code.get(code) or set()
+        if type_id and len(ids) == 1:
+            type_codex[type_id] = next(iter(ids))
 
     # 活动 / 复刻名映射 + 积分关卡判定
     campaign_to_event: dict[int, str] = {}
