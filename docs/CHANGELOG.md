@@ -2,6 +2,17 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.10.7（2026-11-15）
+
+- 新增 Windows 一键启动脚本：
+  - `start.bat` 可双击运行，调用 `start.ps1`；
+  - 检查当前目录 `.venv` 与 Python：缺少 Python 时报告安装地址并停止；有 Python 则创建 `.venv`；
+  - 自动安装 `requirements.lock`（带 sha256）并启动 TargetForge；
+  - `-WithEmulator` 额外安装 `requirements-emulator.txt`；
+  - `-CheckOnly` 仅检查 Python/虚拟环境，不安装、不启动；
+  - 出错时窗口暂停，避免用户看不到报错；
+- README 增加「Windows 一键启动」和安全审计说明：可让大肥鱼或任意 AI 检查 `start.ps1` / `start.bat` 是否有额外风险。
+
 ## v1.10.6（2026-11-10）
 
 - 修复怪物图鉴名称与小怪单位/头像串行：

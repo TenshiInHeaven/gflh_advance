@@ -73,7 +73,36 @@
 | 安卓模拟器抓包（可选） | 需要 Python 包 `mitmproxy` + `cryptography`，执行 `pip install -r requirements-emulator.txt`；还需要模拟器 ADB 可连接、可 root 装系统 CA。**只使用 PC/国服模式时不需要** |
 | 可选 | UnityPy + Pillow（重新导出小怪头像）、Playwright + Edge（页面自检） |
 
+## Windows 一键启动（不会配环境）
+
+如果不想手动敲命令：
+
+1. 安装 **Python 3.10+**（推荐 3.14，安装时勾选 **Add python.exe to PATH**）；
+2. 解压发布包，进入包含 `start.bat` 的目录；
+3. **双击 `start.bat`**。
+
+脚本会自动：
+
+- 检查当前目录是否有 `.venv`，以及 Python 是否可用；
+- 没有 Python → 在窗口里报告并给出 python.org 安装地址，不会继续；
+- 没有 `.venv` 且 Python 可用 → 创建本地 `.venv`；
+- 安装 `requirements.lock` 锁定依赖（首次需要联网，可能几分钟）；
+- 启动 `python -m targetforge --open`。
+
+模拟器抓包需要额外依赖时，在命令行运行：
+
+```bat
+start.bat -WithEmulator
+```
+
+脚本不会修改系统 Python、不会写系统目录、不会自动删除文件；只会在当前文件夹创建 `.venv`、通过 pip 安装依赖并启动 TargetForge。
+
+> **安全审计**：如果用户不放心，可以把 `start.bat` / `start.ps1` 交给「大肥鱼」或任意 AI 助手阅读，检查是否存在额外下载、删除、提权等风险，再决定是否运行。也可以先运行
+> `start.bat -CheckOnly -NoPause` 只做 Python / 虚拟环境检查，不安装依赖、不启动应用。
+
 ## 安装
+
+> 不会配置环境的 Windows 用户优先看上面的「Windows 一键启动」，双击 `start.bat` 即可；以下命令供手动安装/排查使用。
 
 ```powershell
 # 1) 克隆本仓库（约 43MB，含预构建数据）
@@ -91,13 +120,14 @@ python -m pip install --require-hashes -r requirements.lock
 # 3b) 安卓模拟器抓包（可选；PC / 国服模式不需要）
 python -m pip install -r requirements-emulator.txt
 
-# 4) 启动（Windows 可双击/运行 start.ps1，会自动用 .venv）
+# 4) 启动（Windows 推荐直接双击 start.bat；或运行 .\start.ps1 使用 .venv）
 python -m targetforge --open
 ```
 
 > 不熟悉命令行的，可以把本 README 交给 AI 助手（如「大肥鱼」）阅读后按步骤构建。
 > `start.ps1` 会自动创建 `.venv`、安装锁定依赖并启动；需要模拟器抓包时运行
-> `.\start.ps1 -WithEmulator`，会额外安装 `requirements-emulator.txt`。
+> `.\start.ps1 -WithEmulator`，会额外安装 `requirements-emulator.txt`。Windows 用户也可直接双击
+> `start.bat`，效果相同。
 
 首次启动会弹出**「先选择游戏客户端」**前置步骤：自动检测本机 Steam/运行中游戏，或点「浏览文件夹」手动选择
 `GIRLS' FRONTLINE` 安装目录（含 `GrilsFrontLine.exe` 与 `GrilsFrontLine_Data` 的那一层）。
@@ -186,7 +216,8 @@ python targetforge/tools/analyze_score_stages.py          # 积分关卡结算�
 gflh_advance/
   README.md                    本文件
   LICENSE                      MIT
-  start.ps1                    一键安装依赖并启动（Windows）；-WithEmulator 安装模拟器可选依赖
+  start.ps1                    一键检查/创建 .venv、安装依赖并启动
+  start.bat                    Windows 双击入口（调用 start.ps1）
   requirements.lock            核心锁定依赖（gflzirc 等，带 sha256）
   requirements-emulator.txt    模拟器抓包可选依赖（mitmproxy / cryptography）
   local_paths.example.json     本机游戏目录示例（复制为 local_paths.json，或首次启动向导写入）
@@ -233,9 +264,9 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.10.6**（当前发布）：修复怪物图鉴名称与小怪单位/头像串行的问题：部分活动/BOSS 单位在
-`enemy_full_model.csv` 的 codex 编号偏移，现以 `enemy_illustration` 的 code→图鉴编号唯一映射为准；
-并致谢 **我是小可酱** 对本项目图鉴的勘误。
+**v1.10.7**（当前发布）：新增 Windows 一键启动：双击 `start.bat` 会检查 Python / `.venv`，
+缺少 Python 时明确提示，存在 Python 时自动创建 `.venv`、安装 `requirements.lock` 并启动；
+支持 `-WithEmulator` 和 `-CheckOnly`；README 说明可让大肥鱼/AI 审计脚本风险。
 
 - 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
 - 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
