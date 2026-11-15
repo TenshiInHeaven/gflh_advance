@@ -87,7 +87,7 @@
 - 没有 Python → 在窗口里报告并给出 python.org 安装地址，不会继续；
 - 没有 `.venv` 且 Python 可用 → 创建本地 `.venv`；
 - 安装 `requirements.lock` 锁定依赖（首次需要联网，可能几分钟）；
-- 启动 `python -m targetforge --open`。
+- 启动 `python -m targetforge`，默认自动从 `11451 / 14514 / 91781 / 78139` 中选择一个空闲端口。
 
 模拟器抓包需要额外依赖时，在命令行运行：
 
@@ -97,8 +97,44 @@ start.bat -WithEmulator
 
 脚本不会修改系统 Python、不会写系统目录、不会自动删除文件；只会在当前文件夹创建 `.venv`、通过 pip 安装依赖并启动 TargetForge。
 
-> **安全审计**：如果用户不放心，可以把 `start.bat` / `start.ps1` 交给「大肥鱼」或任意 AI 助手阅读，检查是否存在额外下载、删除、提权等风险，再决定是否运行。也可以先运行
+> **安全审计**：如果用户不放心，可以把 `start.bat` / `start.ps1` / `serve.bat` / `serve.ps1` 交给「大肥鱼」或任意 AI 助手阅读，检查是否存在额外下载、删除、提权等风险，再决定是否运行。也可以先运行
 > `start.bat -CheckOnly -NoPause` 只做 Python / 虚拟环境检查，不安装依赖、不启动应用。
+
+## 启动服务（不重新配置环境）
+
+环境已经由 `start.bat` 装好后，日常只需要启动服务：
+
+1. 双击 **`serve.bat`**；
+2. 脚本会依次探测本机端口：
+
+```text
+11451 → 14514 → 91781 → 78139
+```
+
+3. 选择第一个未被占用的端口，在**新窗口**中启动 TargetForge；
+4. 新窗口标题包含 **靶机工坊 TargetForge + 带 token 的网页地址**，同时浏览器会自动打开该地址。
+
+如果四个端口都被占用，窗口会说明情况并提示自定义端口启动。
+
+想自定义端口时，直接用 PowerShell：
+
+```powershell
+pwsh -File .\serve.ps1 -Port 9000
+```
+
+或者：
+
+```powershell
+.\.venv\Scripts\python.exe -m targetforge --port 9000 --open
+```
+
+`serve.ps1` 只负责检查 `.venv`、选择端口和启动服务；不会创建环境、不会安装依赖。可先运行：
+
+```powershell
+pwsh -File .\serve.ps1 -CheckOnly -NoPause
+```
+
+检查 Python/.venv 和端口，不启动服务。
 
 ## 安装
 
@@ -218,6 +254,8 @@ gflh_advance/
   LICENSE                      MIT
   start.ps1                    一键检查/创建 .venv、安装依赖并启动
   start.bat                    Windows 双击入口（调用 start.ps1）
+  serve.ps1                    日常服务启动：探测端口/自定义端口
+  serve.bat                    双击在新窗口启动服务（调用 serve.ps1）
   requirements.lock            核心锁定依赖（gflzirc 等，带 sha256）
   requirements-emulator.txt    模拟器抓包可选依赖（mitmproxy / cryptography）
   local_paths.example.json     本机游戏目录示例（复制为 local_paths.json，或首次启动向导写入）
@@ -264,9 +302,9 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.10.7**（当前发布）：新增 Windows 一键启动：双击 `start.bat` 会检查 Python / `.venv`，
-缺少 Python 时明确提示，存在 Python 时自动创建 `.venv`、安装 `requirements.lock` 并启动；
-支持 `-WithEmulator` 和 `-CheckOnly`；README 说明可让大肥鱼/AI 审计脚本风险。
+**v1.10.8**（当前发布）：新增 `serve.bat` 日常服务启动：双击后在新窗口启动，自动探测
+`11451 / 14514 / 91781 / 78139` 选空闲端口；新窗口标题包含 TargetForge 名称和带 token 的网页地址；
+自定义端口可用 `pwsh -File .\serve.ps1 -Port 9000`。`start.bat` 也改为默认使用这组端口。
 
 - 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
 - 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
