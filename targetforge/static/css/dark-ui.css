@@ -424,3 +424,12 @@
 :root[data-theme="dark"] .blocked-strip { border-color: rgba(255, 196, 0, .22) !important; }
 :root[data-theme="dark"] .reserve-flag.blocked { background: rgba(255,196,0,.13); color: #ffd75e; border-color: rgba(255,196,0,.3); }
 :root[data-theme="dark"] .blocked-strip .reserve-toggle-hint { color: #b7a45f; }
+
+:root[data-theme="dark"] .bridge-target-chip.blue { background: #172f45; border-color: #2d5678; color: #9ad8ff; }
+:root[data-theme="dark"] .bridge-target-chip.red { background: #3a2024; border-color: #6b323a; color: #ff9a9f; }
+:root[data-theme="dark"] .bridge-target-chip.unknown { background: #242a33; border-color: #343c48; color: #9ba0a7; }
+:root[data-theme="dark"] .bridge-kind-empty { color: #8d9299; }
+:root[data-theme="dark"] .bridge-rule.blue { background: #172b3d; color: #a9dcff; border-color: #2d5678; }
+:root[data-theme="dark"] .bridge-rule.red { background: #351f23; color: #ffb4b8; border-color: #6b323a; }
+:root[data-theme="dark"] .bridge-rule.error { background: #3a2024; color: #ff9a9f; border-color: #7a3941; }
+:root[data-theme="dark"] .bridge-rule.warn { background: #3a3218; color: #ffdc6a; border-color: #625522; }

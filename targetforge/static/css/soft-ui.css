@@ -825,3 +825,20 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .reserve-flag.blocked { background: rgba(245, 185, 0, .18); color: #7a5a00; border-color: rgba(245,185,0,.35); }
 .blocked-strip .help-dot { margin-left: 3px; }
 .blocked-strip .reserve-toggle-hint { color: #8a7740; }
+
+.bridge-target-kinds { margin: -2px 0 14px; }
+.bridge-target-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bridge-target-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px;
+  border-radius: 999px; font-size: 11px; border: 1px solid;
+}
+.bridge-target-chip b { font-family: var(--font-mono); font-size: 11px; }
+.bridge-target-chip.blue { background: #eaf5ff; border-color: #a9d6ff; color: #0b57d0; }
+.bridge-target-chip.red { background: #fff0f1; border-color: #f0b9bf; color: #a11d2a; }
+.bridge-target-chip.unknown { background: #f7f2e7; border-color: #e5dccb; color: #777b7f; }
+.bridge-kind-empty { color: #8b8f91; font-size: 12px; }
+.bridge-rule { margin-top: 8px; padding: 8px 11px; border-radius: 11px; font-size: 11.5px; line-height: 1.6; }
+.bridge-rule.blue { background: #eef7ff; color: #0b4c93; border: 1px solid #cbe4ff; }
+.bridge-rule.red { background: #fff2f3; color: #8e2731; border: 1px solid #f1c9cd; }
+.bridge-rule.error { background: #fff0f1; color: #9d1f2b; border: 1px solid #eeb4ba; font-weight: 700; }
+.bridge-rule.warn { background: #fff8e4; color: #7a5a00; border: 1px solid #ecd79a; }

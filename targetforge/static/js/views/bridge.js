@@ -16,6 +16,9 @@ const state = {
   mode: "inject",
   timer: null,
   busy: false,
+  targetInfo: new Map(),
+  mixed: false,
+  unknown: [],
 };
 
 function targetsText(status) {
@@ -27,6 +30,57 @@ function statusPill(status) {
   const label = value === "running" ? "桥接运行中" : value === "stale" ? "有残留进程" : "未运行";
   const cls = value === "running" ? "green" : value === "stale" ? "warn" : "";
   return `<span class="badge ${cls}">${label}</span>`;
+}
+
+
+function parseTargetIds() {
+  return state.targets
+    .split(/[,;\s]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
+}
+
+async function classifyTargets() {
+  const ids = parseTargetIds();
+  const info = new Map();
+  await Promise.all(ids.map(async (id) => {
+    try {
+      const team = await api.team(id);
+      info.set(id, { collectable: team.collectable !== false, team });
+    } catch {
+      info.set(id, { collectable: null, team: null });
+    }
+  }));
+  state.targetInfo = info;
+  const kinds = new Set([...info.values()].map((item) => item.collectable).filter((v) => v !== null));
+  state.mixed = kinds.size > 1;
+  state.unknown = [...info.entries()].filter(([, item]) => item.collectable === null).map(([id]) => id);
+  return info;
+}
+
+function targetKindsHtml() {
+  const ids = parseTargetIds();
+  if (!ids.length) return `<span class="bridge-kind-empty">尚未填写桥接目标</span>`;
+  const chips = ids.map((id) => {
+    const item = state.targetInfo.get(id);
+    const cls = item?.collectable === true ? "blue" : item?.collectable === false ? "red" : "unknown";
+    const label = cls === "blue" ? "蓝框 · 可临时加入" : cls === "red" ? "红框 · 必须桥接" : "未知/无数据";
+    return `<span class="bridge-target-chip ${cls}"><b>#${esc(id)}</b><span>${label}</span></span>`;
+  }).join("");
+  let rule = "";
+  if (state.mixed) {
+    rule = `<div class="bridge-rule error">红框和蓝框桥接目标不能混用：请分开两次桥接。红框必须桥接；蓝框可以桥接，表示临时加入。</div>`;
+  } else if ([...state.targetInfo.values()].some((item) => item.collectable === true)
+             && !state.unknown.length) {
+    rule = `<div class="bridge-rule blue">这些是正常可收藏的蓝框目标：走桥接等于“临时加入”，停止桥接后会清空。</div>`;
+  } else if ([...state.targetInfo.values()].some((item) => item.collectable === false)
+             && !state.unknown.length) {
+    rule = `<div class="bridge-rule red">这些是红框目标：正常 addCollect 不会接受，必须通过桥接临时加入。</div>`;
+  }
+  if (state.unknown.length) {
+    rule += `<div class="bridge-rule warn">未知/无 STC 数据的编号：${state.unknown.map((id) => `#${id}`).join("、")}</div>`;
+  }
+  return `<div class="bridge-target-chips">${chips}</div>${rule}`;
 }
 
 function renderBody(root) {
@@ -46,6 +100,7 @@ function renderBody(root) {
           <span>队伍编号（逗号分隔，最多 35 个）</span>
           <textarea data-bridge-targets rows="4" spellcheck="false" placeholder="7301601, 7300101">${esc(state.targets)}</textarea>
         </label>
+        <div class="bridge-target-kinds" data-bridge-kinds>${targetKindsHtml()}</div>
         <label class="bridge-field">
           <span>模式</span>
           <select data-bridge-mode class="rf-select">
@@ -54,7 +109,7 @@ function renderBody(root) {
           </select>
         </label>
         <div class="bridge-actions">
-          <button class="btn btn-primary" data-bridge-start ${state.busy ? "disabled" : ""}>${icon("play", 13)} 启动桥接并重启游戏</button>
+          <button class="btn btn-primary" data-bridge-start ${state.busy || state.mixed ? "disabled" : ""}>${icon("play", 13)} 启动桥接并重启游戏</button>
           <button class="btn btn-danger" data-bridge-stop ${state.busy ? "disabled" : ""}>${icon("close", 13)} 停止桥接并恢复代理</button>
         </div>
         <p class="bridge-note">启动前请先关闭普通抓包和模拟器抓包。HTTPS 会直通，不安装证书。</p>
@@ -73,14 +128,29 @@ function renderBody(root) {
     </div>
   `;
 
+  let classifyTimer = null;
   root.querySelector("[data-bridge-targets]")?.addEventListener("input", (event) => {
     state.targets = event.target.value;
+    clearTimeout(classifyTimer);
+    classifyTimer = setTimeout(async () => {
+      await classifyTargets();
+      const kinds = root.querySelector("[data-bridge-kinds]");
+      if (kinds) kinds.innerHTML = targetKindsHtml();
+      const start = root.querySelector("[data-bridge-start]");
+      if (start) start.disabled = state.mixed;
+    }, 320);
   });
   root.querySelector("[data-bridge-mode]")?.addEventListener("change", (event) => {
     state.mode = event.target.value;
   });
   root.querySelector("[data-bridge-start]")?.addEventListener("click", () => startBridge(root));
   root.querySelector("[data-bridge-stop]")?.addEventListener("click", () => stopBridge(root));
+  if (parseTargetIds().length) {
+    classifyTargets().then(() => {
+      const kinds = root.querySelector("[data-bridge-kinds]");
+      if (kinds) kinds.innerHTML = targetKindsHtml();
+    });
+  }
 }
 
 async function refresh(root) {
@@ -104,6 +174,11 @@ function parseTargets() {
 
 async function startBridge(root) {
   if (state.busy) return;
+  await classifyTargets();
+  if (state.mixed) {
+    toastErr("红框和蓝框不能混用", "请分开两次桥接：红框必须桥接；蓝框可以桥接，但表示临时加入。");
+    return;
+  }
   state.busy = true;
   const button = root.querySelector("[data-bridge-start]");
   setBusy(button, true, "启动中…");
