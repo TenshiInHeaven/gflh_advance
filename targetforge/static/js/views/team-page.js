@@ -33,13 +33,14 @@ export async function render(root, { params }) {
         sub: `${esc(detail.faction || "其它")} · 效能 <b class="mono-inline">${powerDisp.known ? powerDisp.text : "未标注"}</b> · ${detail.units} 个单位 · 总血量 <b class="mono-inline">${fmtNum(detail.hp_total)}</b>。本页只展示数值 / 编制 / 参数 / 关卡出处。`,
         actions: `
           <button class="btn btn-ghost" type="button" data-act="back">${icon("chevronLeft", 14)} 返回</button>
-          <button class="btn btn-primary" type="button" data-act="add">${icon("plus", 14)} 加入序列</button>
+          <button class="btn ${detail.collectable === false ? "btn-danger" : "btn-primary"}" type="button" data-act="add">${icon("plus", 14)} ${detail.collectable === false ? "尝试加入" : "加入序列"}</button>
         `,
       })}
       <div class="capture-panel" style="margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;padding-left:12px">
           <span style="position:absolute;left:0;top:2px;bottom:2px;width:3px;background:${factionColor(detail.faction)}"></span>
           <span class="faction-chip ${factionClass(detail.faction)}"><i></i>${esc(detail.faction || "其它")}</span>
+          ${detail.collectable === false ? `<span class="badge danger" title="按游戏机制不可收藏，仅展示">${icon("alert", 9)} 仅展示 / 不可加入</span>` : `<span class="badge cyan">可加入靶机池</span>`}
           ${isSupportTeam(detail) ? `<span class="badge support">${icon("shield", 9)} 支援队伍</span>` : ""}
           ${isReserveTeam(detail) ? (detail.reserve_source === "manual"
             ? `<span class="badge reserve" title="固定怪组表 / 刷怪表">${icon("list", 9)} ${detail.appeared === false ? "实际未出现" : esc(detail.actual_kind || "可能刷怪")}</span>`

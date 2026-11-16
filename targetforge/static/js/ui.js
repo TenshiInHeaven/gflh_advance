@@ -726,6 +726,8 @@ export function teamCardHtml(team, options = {}) {
   const { selected = false, showStage = true, compact = false } = options;
   const fc = factionColor(team.faction);
   const flags = [];
+  const addable = team.collectable !== false;
+  if (!addable) flags.push(`<span class="badge danger" title="游戏机制不允许加入靶机；仍可尝试，服务器会报错">${icon("alert", 9)} 仅展示 / 不可加入</span>`);
   if (team.gray_zone) flags.push('<span class="badge cyan">灰域</span>');
   if (team.orphan) flags.push('<span class="badge violet">无固定关卡</span>');
   const support = isSupportTeam(team);
@@ -761,7 +763,7 @@ export function teamCardHtml(team, options = {}) {
             ? "无固定关卡"
             : "";
   return `
-    <article class="team-card ${selected ? "is-selected" : ""} ${support ? "is-support" : ""} ${reserve ? "is-reserve" : ""}" style="--fc:${fc}" data-team-detail="${team.id}">
+    <article class="team-card ${addable ? "is-collectable" : "is-locked"} ${selected ? "is-selected" : ""} ${support ? "is-support" : ""} ${reserve ? "is-reserve" : ""}" data-collectable="${addable}" style="--fc:${fc}" data-team-detail="${team.id}">
       <div class="tc-top">
         <span class="tc-id">队伍 <b>#${esc(team.id)}</b></span>
         <span class="tc-power">${disp.known ? `<b class="${disp.negative ? "neg" : ""}"${disp.negative ? ' title="积分关卡数据，可能为负"' : ""}>${disp.text}</b><span>效能</span>` : '<b class="dim">未标注</b><span>效能</span>'}</span>
@@ -784,7 +786,7 @@ export function teamCardHtml(team, options = {}) {
         <span class="tc-stage">${showStage && stageLine ? `${icon("map", 11)} ${stageLine}` : ""}</span>
         <span class="tc-btns">
           <button class="btn btn-sm btn-ghost" type="button" data-team-detail="${team.id}">${icon("eye", 12)} 详情</button>
-          <button class="btn btn-sm btn-primary" type="button" data-add-team="${team.id}">${icon("plus", 12)} 加入序列</button>
+          <button class="btn btn-sm ${addable ? "btn-primary" : "btn-danger"}" type="button" data-add-team="${team.id}" title="${addable ? "加入靶机序列" : "该敌人不可收藏；尝试后服务器会报 error:2，程序不会中断"}">${icon("plus", 12)} ${addable ? "加入序列" : "尝试加入"}</button>
         </span>
       </div>
     </article>

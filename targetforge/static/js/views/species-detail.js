@@ -67,7 +67,7 @@ function renderPage(root, codexNo, firstPage, species) {
       ],
       title: species.name || `怪种 #${codexNo}`,
       badge: `#${String(species.codex_no || codexNo).padStart(3, "0")}`,
-      sub: `图鉴编号 ${esc(species.codex_no || codexNo)} · 共 <b class="mono-inline">${fmtNum(species.team_count)}</b> 支可收藏队伍，按怪组分页展示。点队伍看数值详情，或直接加入序列。`,
+      sub: `图鉴编号 ${esc(species.codex_no || codexNo)} · 共 <b class="mono-inline">${fmtNum(species.team_count)}</b> 支敌人队伍，按怪组分页展示。点队伍看数值详情，或直接加入序列。`,
       actions: `
         <button class="btn btn-ghost" type="button" data-nav-back>${icon("chevronLeft", 14)} 返回怪种列表</button>
       `,
@@ -94,7 +94,7 @@ function renderPage(root, codexNo, firstPage, species) {
     </div>
 
     <section class="section">
-      ${sectionHeadHtml("怪组列表", { hint: "同一怪种的多个可收藏队伍 · 数值各不相同", iconName: "users" })}
+      ${sectionHeadHtml("怪组列表", { hint: "同一怪种的多个敌人队伍 · 数值各不相同", iconName: "users" })}
       <div class="toolbar">
         <div class="input-wrap">
           <span class="in-ico">${icon("search", 14)}</span>
@@ -122,7 +122,7 @@ function renderPage(root, codexNo, firstPage, species) {
     if (!view.items.length) {
       listEl.innerHTML = emptyState({
         iconName: "users",
-        title: view.query ? "没有匹配的队伍" : "该怪种暂无可收藏队伍",
+        title: view.query ? "没有匹配的队伍" : "该怪种暂无敌人队伍",
         desc: view.query ? "换个关键词试试。" : "怪种可能只出现在不可收藏的队伍里。",
       });
       return;

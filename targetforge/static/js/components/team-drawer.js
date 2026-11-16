@@ -175,6 +175,8 @@ export function teamDetailHeadHtml(detail) {
   const support = isSupportTeam(detail);
   const reserve = isReserveTeam(detail);
   const flags = [];
+  if (detail.collectable === false) flags.push(`<span class="badge danger" title="按游戏机制不可收藏；尝试注入服务器会报 error:2">${icon("alert", 9)} 仅展示 / 不可加入</span>`);
+  else flags.push(`<span class="badge cyan">可加入靶机池</span>`);
   if (support) flags.push(`<span class="badge support">${icon("shield", 9)} 支援队伍</span>`);
   if (reserve) {
     const manual = detail.reserve_source === "manual";

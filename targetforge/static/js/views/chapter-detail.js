@@ -61,8 +61,8 @@ export async function render(root, { params }) {
         sub: isGray
           ? `${esc(chapter.subtitle || "灰域按区域分组")} · 点区域查看节点列表，再点节点查看节点内小怪；装甲突击（爬塔）单独入口。`
           : isOrphan
-            ? `没有固定关卡的 ${fmtNum(chapter.team_count)} 支可收藏队伍，直接按队伍列出；支持搜索与分页。`
-            : `${esc(chapter.subtitle || "")} 共 ${fmtNum(stages.length)} 个关卡、${fmtNum(chapter.team_count)} 支可收藏队伍、${fmtNum(chapter.species_count)} 个怪种。`,
+            ? `没有固定关卡的 ${fmtNum(chapter.team_count)} 支敌人队伍，直接按队伍列出；支持搜索与分页。`
+            : `${esc(chapter.subtitle || "")} 共 ${fmtNum(stages.length)} 个关卡、${fmtNum(chapter.team_count)} 支敌人队伍、${fmtNum(chapter.species_count)} 个怪种。`,
         actions: `
           <button class="btn btn-ghost" type="button" data-nav="/chapters">${icon("chevronLeft", 14)} 返回图鉴</button>
           ${isOrphan ? `<button class="btn btn-primary" type="button" data-act="add-orphan">${icon("plus", 14)} 本页全部加入序列</button>` : ""}
@@ -75,7 +75,7 @@ export async function render(root, { params }) {
                 ["radar", "区域数量", fmtNum(grayHome.mainRegions.length), "沙尘带 / 风暴带 / 硅状带 / 结晶带", "cyan"],
                 ["zap", "装甲突击", grayHome.armor ? "1" : "—", `爬塔关卡 · ${fmtNum(grayHome.armor?.stage_count || 0)} 个节点`, "gold"],
                 ["flag", "节点", fmtNum(grayHome.nodeTotal || chapter.stage_count), "全部节点（含装甲突击 / 特殊区域）", ""],
-                ["users", "可收藏队伍", fmtNum(chapter.team_count), "全部节点合计", ""],
+                ["users", "敌人队伍", fmtNum(chapter.team_count), "全部节点合计", ""],
                 ["crosshair", "怪种", fmtNum(chapter.species_count), "全部节点出现", ""],
               ]
                 .map(
@@ -84,12 +84,12 @@ export async function render(root, { params }) {
                 )
                 .join("")
             : isOrphan
-              ? `<div class="stat-tile"><div class="st-label">${icon("users", 12)} 可收藏队伍</div><div class="st-value amber">${fmtNum(chapter.team_count)}</div><div class="st-sub">直接按队伍列出</div></div>
+              ? `<div class="stat-tile"><div class="st-label">${icon("users", 12)} 敌人队伍</div><div class="st-value amber">${fmtNum(chapter.team_count)}</div><div class="st-sub">直接按队伍列出</div></div>
                  <div class="stat-tile"><div class="st-label">${icon("crosshair", 12)} 怪种</div><div class="st-value">${fmtNum(chapter.species_count)}</div><div class="st-sub">本章出现</div></div>
                  <div class="stat-tile"><div class="st-label">${icon("flag", 12)} 固定关卡</div><div class="st-value" style="color:var(--text-mute)">0</div><div class="st-sub">灰域 / 活动临时队伍</div></div>
                  <div class="stat-tile"><div class="st-label">${icon("layers", 12)} 浏览方式</div><div class="st-value" style="font-size:17px;color:var(--cyan)">搜索 + 分页</div><div class="st-sub">每页 ${ORPHAN_PAGE_SIZE} 支</div></div>`
               : `<div class="stat-tile"><div class="st-label">${icon("flag", 12)} 关卡数</div><div class="st-value amber">${fmtNum(stages.length)}</div><div class="st-sub">本章可浏览关卡</div></div>
-                 <div class="stat-tile"><div class="st-label">${icon("users", 12)} 可收藏队伍</div><div class="st-value">${fmtNum(chapter.team_count)}</div><div class="st-sub">本章各关卡合计</div></div>
+                 <div class="stat-tile"><div class="st-label">${icon("users", 12)} 敌人队伍</div><div class="st-value">${fmtNum(chapter.team_count)}</div><div class="st-sub">本章各关卡合计</div></div>
                  <div class="stat-tile"><div class="st-label">${icon("crosshair", 12)} 怪种</div><div class="st-value">${fmtNum(chapter.species_count)}</div><div class="st-sub">本章出现</div></div>
                  <div class="stat-tile"><div class="st-label">${icon("zap", 12)} 效能范围</div><div class="st-value" style="font-size:18px">${fmtNum(chapter.difficulty_min)}-${fmtNum(chapter.difficulty_max)}</div><div class="st-sub">关卡难度区间</div></div>`
         }
@@ -111,7 +111,7 @@ export async function render(root, { params }) {
                       <div class="rg-head"><span class="rg-name">${esc(region.title)}</span><span class="rg-go">${icon("chevronRight", 12)} 节点</span></div>
                       <div class="rg-stats">
                         <div><b>${fmtNum(region.stage_count)}</b><span>节点</span></div>
-                        <div><b>${fmtNum(region.team_count)}</b><span>可收藏队伍</span></div>
+                        <div><b>${fmtNum(region.team_count)}</b><span>敌人队伍</span></div>
                         <div><b>${fmtNum(region.species_count)}</b><span>怪种</span></div>
                       </div>
                     </button>`,
@@ -132,7 +132,7 @@ export async function render(root, { params }) {
                           <div class="rg-note">独立爬塔入口 · 共 ${fmtNum(grayHome.armor.stage_count)} 个节点</div>
                           <div class="rg-stats">
                             <div><b>${fmtNum(grayHome.armor.stage_count)}</b><span>节点</span></div>
-                            <div><b>${fmtNum(grayHome.armor.team_count)}</b><span>可收藏队伍</span></div>
+                            <div><b>${fmtNum(grayHome.armor.team_count)}</b><span>敌人队伍</span></div>
                             <div><b>${fmtNum(grayHome.armor.species_count)}</b><span>怪种</span></div>
                           </div>
                         </button>`
@@ -145,7 +145,7 @@ export async function render(root, { params }) {
                           <div class="rg-note">${esc(grayHome.special.note || "客户端无区域名的节点集合")}</div>
                           <div class="rg-stats">
                             <div><b>${fmtNum(grayHome.special.stage_count)}</b><span>节点</span></div>
-                            <div><b>${fmtNum(grayHome.special.team_count)}</b><span>可收藏队伍</span></div>
+                            <div><b>${fmtNum(grayHome.special.team_count)}</b><span>敌人队伍</span></div>
                             <div><b>${fmtNum(grayHome.special.species_count)}</b><span>怪种</span></div>
                           </div>
                         </button>`
@@ -156,7 +156,7 @@ export async function render(root, { params }) {
             </div>`
           : isOrphan
             ? `<section class="section">
-                ${sectionHeadHtml("队伍列表", { hint: "没有固定关卡的可收藏队伍 · 服务端搜索 + 分页", iconName: "users" })}
+                ${sectionHeadHtml("队伍列表", { hint: "没有固定关卡的敌人队伍 · 服务端搜索 + 分页", iconName: "users" })}
                 <div class="toolbar">
                   <div class="input-wrap">
                     <span class="in-ico">${icon("search", 14)}</span>
@@ -222,7 +222,7 @@ function initOrphanSection(root, chapterId, chapter) {
       listEl.innerHTML = emptyState({
         iconName: view.query || view.filter.mode !== "all" ? "search" : "users",
         title: view.query || view.filter.mode !== "all" ? "没有匹配的队伍" : "暂无队伍",
-        desc: view.query || view.filter.mode !== "all" ? "换个关键词或效能条件试试。" : "该章节没有可收藏队伍。",
+        desc: view.query || view.filter.mode !== "all" ? "换个关键词或效能条件试试。" : "该章节没有敌人队伍。",
       });
       return;
     }

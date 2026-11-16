@@ -160,7 +160,7 @@ export async function render(root, options = {}) {
       accent: "amber",
     },
     { label: "关卡", icon: "flag", value: catalogState === "ready" ? fmtNum(counts.stages) : "…", sub: "含活动 / 复刻 / 教学" },
-    { label: "收藏队伍", icon: "users", value: catalogState === "ready" ? fmtNum(counts.teams) : "…", sub: "仅可收藏队伍" },
+    { label: "敌人队伍", icon: "users", value: catalogState === "ready" ? fmtNum(counts.teams) : "…", sub: "含可收藏 / 不可收藏" },
     { label: "图鉴怪种", icon: "crosshair", value: catalogState === "ready" ? fmtNum(counts.species) : "…", sub: "含灰域 / 无固定关卡" },
     { label: "灰域地点", icon: "map", value: fmtNum(grayAreas), sub: "区域内的地点，不是区域", accent: "cyan" },
     { label: "当前靶机", icon: "target", value: currentTargets.length ? `${currentTargets.length}` : "0", sub: `上限 35 · ${current?.uid ? `uid ${current.uid}` : "未抓取"}` },
@@ -172,7 +172,7 @@ export async function render(root, options = {}) {
       crumbs: [{ label: "总览" }],
       title: "靶机工坊 · 总览",
       badge: "OVERVIEW",
-      sub: "浏览全部可收藏关卡与怪种，编排序列后通过 GFLH 协议注入「收藏标靶」。所有数据来自本机游戏文件，完全离线。",
+      sub: "浏览全部实际敌人队伍与靶机池；蓝框可加入，红框按游戏机制不可加入，仍保留尝试入口。所有数据来自本机 STC。",
       actions: `
         <button class="btn btn-ghost" type="button" data-act="refresh">${icon("refresh", 14)} 刷新状态</button>
         <button class="btn btn-cyan" type="button" data-nav="/capture">${icon("key", 14)} 登录抓取</button>
@@ -182,10 +182,10 @@ export async function render(root, options = {}) {
 
     <section class="hero">
       <div class="hero-left">
-        <div class="eyebrow">TARGET FORGE // 可收藏靶机编排</div>
-        <h1>选敌人，<span class="hl">编排靶机</span><br><span class="thin">把想要的怪组写进收藏标靶</span></h1>
+        <div class="eyebrow">TARGET FORGE // 敌人图鉴与靶机编排</div>
+        <h1>选敌人，<span class="hl">编排靶机</span><br><span class="thin">把可加入的靶机写进收藏标靶</span></h1>
         <p class="hero-desc">
-          覆盖 <b>${fmtNum(counts.stages || 2345)}</b> 个关卡 · <b>${fmtNum(counts.teams || 13700)}</b> 支可收藏队伍 · <b>${fmtNum(counts.species || 264)}</b> 个图鉴怪种。
+          覆盖 <b>${fmtNum(counts.stages || 3908)}</b> 个关卡 · <b>${fmtNum(counts.teams || 17788)}</b> 支敌人队伍 · <b>${fmtNum(counts.species || 264)}</b> 个图鉴怪种。
           拖拽排序、三种注入模式、演练预览与登录抓取向导，全程本地执行。
         </p>
         <div class="hero-actions">
@@ -196,7 +196,7 @@ export async function render(root, options = {}) {
         <div class="hero-stats">
           <div class="hero-stat"><b class="amber">${fmtNum(counts.chapters || 0)}</b><span>章节</span></div>
           <div class="hero-stat"><b>${fmtNum(counts.stages || 0)}</b><span>关卡</span></div>
-          <div class="hero-stat"><b>${fmtNum(counts.teams || 0)}</b><span>可收藏队伍</span></div>
+          <div class="hero-stat"><b>${fmtNum(counts.teams || 0)}</b><span>敌人队伍</span></div>
           <div class="hero-stat"><b class="cyan">${fmtNum(counts.species || 0)}</b><span>图鉴怪种</span></div>
           <div class="hero-stat"><b>${grayAreas}</b><span>灰域地点</span></div>
         </div>

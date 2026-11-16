@@ -315,20 +315,18 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.11.0**（当前发布）：**彻底移除运行时对 unit_model 的依赖**。catalog 构建直接读
-`dataMiner/stc/tables` 的 STC JSON 表；成员属性模型（类型锚点 + 标准等级曲线）预计算进
-`catalog.json`，队伍详情不再依赖 unit_model 或原始 STC 文件。发布包内 `unit_model/` 已删除。
+**v1.12.0**（当前发布）：图鉴改为「全部实际敌人 + 可收藏靶机池」双层模型，界面换用 Soft UI Evolution。
 
-- 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
-- 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；
-- 新增 ADB 自动检测（MuMu / 雷电 / 夜神 / BlueStacks 常见路径），可填 ADB 路径/串口；
-- 一键安装系统 CA、`adb reverse` + 设置代理、重启游戏；
-- 抓到的凭证写入 `creds_latest.json`，后续注入直接使用抓到的区服 base_url；
-- 模拟器抓包需要可选依赖：`pip install -r requirements-emulator.txt`（mitmproxy / cryptography）。
+- 蓝框 = `targettrain_cancollect=1` 的可加入靶机池；
+- 红框 = 实际出现在关卡/灰域、但游戏机制不允许收藏的敌人，仍保留「尝试加入」入口，
+  服务器会返回 `error:2`，程序不会中断；
+- 灰域节点增加按点位类型（常规 / 装甲 / 妖精 / BOSS / 爬塔 / 彩蛋）筛选；
+- 界面切换为亮色 Soft UI，新增蓝蝴蝶 + 黄黑白几何 Logo，整体字号放大；
+- 运行时彻底不依赖 `unit_model`，catalog 直接由 STC JSON 导出表构建，属性模型随 catalog 发布。
 
-本版仍包含 v1.9.10 的完整候选、11-3 枪骑兵修复、力场三列、灰域 BOSS 等。
-完整历史见 [版本历史](docs/CHANGELOG.md)，详细功能见 [详细功能说明](docs/FEATURES.md)，
-安全模型见 [SECURITY/](SECURITY/README.md)；文档总索引见 [docs/](docs/README.md)。
+**v1.11.0**：彻底移除运行时对 `unit_model` 的依赖；catalog 构建直接读
+`dataMiner/stc/tables` 的 STC JSON；成员属性模型（类型锚点 + 标准等级曲线）预计算进
+`catalog.json`，队伍详情不再依赖原始 STC 文件。
 
 ## 致谢
 

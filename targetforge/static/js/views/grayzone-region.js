@@ -27,6 +27,7 @@ const state = {
   page: 1,
   query: "",
   sort: "id_asc",
+  kind: "",
   total: 0,
   items: [],
   loading: false,
@@ -48,7 +49,22 @@ function normalizeNode(item) {
     has_boss: Boolean(item.has_boss),
     topSpecies: Array.isArray(item.top_species) ? item.top_species : Array.isArray(item.species) ? item.species : [],
     tags: Array.isArray(item.tags) ? item.tags : [],
+    pointKinds: Array.isArray(item.point_kinds) ? item.point_kinds : [],
+    spotTypes: item.spot_types && typeof item.spot_types === "object" ? item.spot_types : {},
   };
+}
+
+const POINT_KIND_LABELS = {
+  normal: "常规点", armor: "装甲点", fairy: "妖精点",
+  boss: "BOSS点", tower: "爬塔点", easter: "彩蛋点",
+};
+const POINT_KIND_ORDER = ["normal", "armor", "fairy", "boss", "tower", "easter"];
+
+function pointKindBarHtml() {
+  return `<div class="point-kind-bar" data-point-kind-bar title="按 STC spot.type 推导：1/2/3=常规，5=装甲，7=妖精，8=彩蛋；BOSS/爬塔按节点队伍与区域标记。可继续按实际数据调整。">
+    <button class="point-kind-chip ${state.kind === "" ? "is-active" : ""}" type="button" data-kind="">全部点位</button>
+    ${POINT_KIND_ORDER.map((kind) => `<button class="point-kind-chip ${state.kind === kind ? "is-active" : ""}" type="button" data-kind="${kind}"><span class="pk-dot"></span>${POINT_KIND_LABELS[kind]}</button>`).join("")}
+  </div>`;
 }
 
 function nodeRowHtml(node) {
@@ -58,6 +74,7 @@ function nodeRowHtml(node) {
       <span class="node-title">${esc(node.title || `#${node.id}`)}${node.has_boss ? `<span class="tag boss" title="节点内 BOSS 怪组数">${icon("alert", 9)} BOSS${node.boss_team_count > 1 ? `×${node.boss_team_count}` : ""}</span>` : ""}</span>
       <span class="node-loc">${icon("map", 10)} ${esc(node.location || "灰域节点")}</span>
       ${node.tags.length ? `<span class="node-tags">${node.tags.slice(0, 3).map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")}</span>` : ""}
+      ${node.pointKinds.length ? `<span class="node-tags">${node.pointKinds.map((kind) => `<span class="tag">${POINT_KIND_LABELS[kind] || esc(kind)}</span>`).join("")}</span>` : ""}
     </span>
     <span class="node-species">${
       species.length
@@ -86,10 +103,10 @@ function headHtml(region, total) {
     title: total ? `${title} · ${fmtNum(total)} 个节点` : title,
     badge: isArmor ? "TOWER · 爬塔关卡" : isSpecial ? "SPECIAL REGION" : "GRAY REGION",
     sub: isArmor
-      ? `装甲突击（爬塔关卡）共 ${fmtNum(total)} 个节点 · 点节点查看该节点可收藏队伍（含支援 / 机场推断）。`
+      ? `装甲突击（爬塔关卡）共 ${fmtNum(total)} 个节点 · 点节点查看该节点全部敌人队伍（蓝框可收藏，红框仅展示）。`
       : isSpecial
         ? `特殊区域（组 5/6 等客户端无区域名的节点集合）共 ${fmtNum(total)} 个节点 · 点节点查看该节点可收藏队伍。`
-        : `${esc(title)} 共 ${fmtNum(total)} 个节点 · 节点按地点（mission 前缀）分布，点节点查看该节点可收藏队伍（含支援 / 机场推断）。`,
+        : `${esc(title)} 共 ${fmtNum(total)} 个节点 · 节点可按点位类型筛选（按 STC spot.type / BOSS / 爬塔推导）；点节点查看该节点全部敌人队伍。`,
     actions: `<button class="btn btn-ghost" type="button" data-nav="/chapters/grayzone">${icon("chevronLeft", 14)} 返回灰域</button>`,
   });
 }
@@ -100,6 +117,7 @@ export async function render(root, { params }) {
   state.page = 1;
   state.query = "";
   state.sort = "id_asc";
+  state.kind = "";
   state.items = [];
   state.total = 0;
 
@@ -116,6 +134,7 @@ export async function render(root, { params }) {
       <span class="spacer"></span>
       <span class="tb-meta" data-node-meta>${icon("flag", 11)} 读取中…</span>
     </div>
+    ${pointKindBarHtml()}
     <div data-node-list>${skeletonRows(8)}</div>`;
 
   // 区域信息（标题 / 爬塔标记 / 特殊标记）
@@ -147,6 +166,14 @@ function bindEvents() {
     state.page = 1;
     loadNodes();
   });
+  rootEl.querySelectorAll("[data-point-kind-bar] [data-kind]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.kind = button.getAttribute("data-kind") || "";
+      state.page = 1;
+      rootEl.querySelectorAll("[data-point-kind-bar] [data-kind]").forEach((item) => item.classList.toggle("is-active", item === button));
+      loadNodes();
+    });
+  });
 }
 
 async function loadNodes() {
@@ -162,6 +189,7 @@ async function loadNodes() {
       limit: PAGE_SIZE,
       q: state.query,
       sort: state.sort,
+      kind: state.kind,
     });
     if (token !== reqToken) return;
     state.total = Number(data.total) || 0;

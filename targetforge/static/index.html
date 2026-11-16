@@ -3,43 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light">
 <title>靶机工坊 TargetForge</title>
 <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/soft-ui.css">
   <link rel="stylesheet" href="/static/css/auth.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 190'%3E%3Cg stroke='%23050b1a' stroke-width='6' stroke-linejoin='round'%3E%3Cpath fill='%2329b6f6' d='M95 86C86 62 68 40 46 27 36 21 26 22 24 30 21 42 28 60 42 73 56 86 76 97 90 100 94 101 96 94 95 86Z'/%3E%3Cpath fill='%2329b6f6' d='M105 86C114 62 132 40 154 27 164 21 174 22 176 30 179 42 172 60 158 73 144 86 124 97 110 100 106 101 104 94 105 86Z'/%3E%3Cpath fill='%231e88e5' d='M95 104C82 108 60 120 44 136 32 148 32 160 44 164 58 169 78 156 90 138 96 128 98 112 95 104Z'/%3E%3Cpath fill='%231e88e5' d='M105 104C118 108 140 120 156 136 168 148 168 160 156 164 142 169 122 156 110 138 104 128 102 112 105 104Z'/%3E%3C/g%3E%3Cellipse cx='100' cy='94' rx='7.2' ry='15' fill='%2314203c'/%3E%3Cpath d='M100 104C106 113 106 136 100 153 94 136 94 113 100 104Z' fill='%2314203c'/%3E%3Ccircle cx='100' cy='78' r='5.2' fill='%2314203c'/%3E%3Cpath d='M97 74C92 58 84 48 76 42M103 74C108 58 116 48 124 42' stroke='%23101a33' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="/static/img/targetforge-logo.svg">
 </head>
 <body>
 <div id="app">
   <!-- ============ 顶部状态条 ============ -->
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 200 190" fill="none">
-          <defs>
-            <linearGradient id="brandMorphoWing" x1="0.5" y1="0" x2="0.5" y2="1">
-              <stop offset="0" stop-color="#7df3ff"/>
-              <stop offset="0.35" stop-color="#29b6f6"/>
-              <stop offset="1" stop-color="#0d47a1"/>
-            </linearGradient>
-          </defs>
-          <g stroke="#050b1a" stroke-width="6" stroke-linejoin="round">
-            <path fill="url(#brandMorphoWing)" d="M95 86C86 62 68 40 46 27 36 21 26 22 24 30 21 42 28 60 42 73 56 86 76 97 90 100 94 101 96 94 95 86Z"/>
-            <path fill="url(#brandMorphoWing)" d="M105 86C114 62 132 40 154 27 164 21 174 22 176 30 179 42 172 60 158 73 144 86 124 97 110 100 106 101 104 94 105 86Z"/>
-            <path fill="#1e88e5" d="M95 104C82 108 60 120 44 136 32 148 32 160 44 164 58 169 78 156 90 138 96 128 98 112 95 104Z"/>
-            <path fill="#1e88e5" d="M105 104C118 108 140 120 156 136 168 148 168 160 156 164 142 169 122 156 110 138 104 128 102 112 105 104Z"/>
-          </g>
-          <path d="M33 36C38 40 43 46 48 52" stroke="#07142e" stroke-width="2" opacity=".55"/>
-          <path d="M167 36C162 40 157 46 152 52" stroke="#07142e" stroke-width="2" opacity=".55"/>
-          <ellipse cx="100" cy="94" rx="7.2" ry="15" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
-          <path d="M100 104C106 113 106 136 100 153 94 136 94 113 100 104Z" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
-          <circle cx="100" cy="78" r="5.2" fill="#14203c" stroke="#050b1a" stroke-width="1.4"/>
-          <path d="M97 74C92 58 84 48 76 42" stroke="#101a33" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-          <path d="M103 74C108 58 116 48 124 42" stroke="#101a33" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-          <circle cx="76" cy="42" r="2.6" fill="#0a1326"/>
-          <circle cx="124" cy="42" r="2.6" fill="#0a1326"/>
-        </svg>
-      </span>
+      <span class="brand-mark" aria-hidden="true"><img src="/static/img/targetforge-logo.svg" alt=""></span>
       <span class="brand-text">
         <span class="brand-title">靶机工坊 <em>TARGET FORGE</em></span>
         <span class="brand-sub">STC TARGET INJECTION · LOCAL</span>
@@ -156,6 +132,13 @@
     </nav>
 
     <main class="main">
+      
+      <div class="soft-announce" id="soft-announce">
+        <span class="sa-kicker">TARGET FORGE · 数据提示</span>
+        <b>红框敌人仅作展示</b>：游戏机制不允许加入靶机，可寻找接近配置的靶机替换。
+        仍保留「尝试加入」入口，服务器返回 <code>error:2</code>，程序不中断；不信可自己试。
+        <span class="sa-note">蓝框 = 可加入靶机池 · 红框 = 实际战斗队伍 / 不可加入</span>
+      </div>
       <div id="view" class="view"></div>
     </main>
 

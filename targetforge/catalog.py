@@ -183,6 +183,21 @@ SPECIAL_REGION_TITLE = "特殊区域"
 SPECIAL_REGION_NOTE = ("组5/6/未映射节点（已把「装甲突击」爬塔节点拆出）；"
                        "客户端无区域名，不编造")
 
+#: 灰域点位类型（按 STC spot.type / boss 队伍 / 爬塔区域推导）。
+#: 顺序即 UI 展示顺序；label 不宣称是客户端原文，而是数据可复核的分类名。
+GRAY_POINT_KINDS: tuple[tuple[str, str], ...] = (
+    ("normal", "常规点"),
+    ("armor", "装甲点"),
+    ("fairy", "妖精点"),
+    ("boss", "BOSS点"),
+    ("tower", "爬塔点"),
+    ("easter", "彩蛋点"),
+)
+GRAY_POINT_KIND_TITLES = dict(GRAY_POINT_KINDS)
+#: STC spot.type 归类：1/2/3 常规战斗/交通点；5=装甲；7=妖精/特殊；8=彩蛋/随机。
+GRAY_SPOT_TYPE_KIND = {1: "normal", 2: "normal", 3: "normal",
+                       5: "armor", 7: "fairy", 8: "easter"}
+
 #: mission 文本 key 前缀：``mission-{10000000 + mission_id}``
 MISSION_TEXT_BASE = 10_000_000
 
@@ -785,19 +800,38 @@ def _build_payload() -> dict:
             if current is None or priority < rank_priority.get(current["type"], 99):
                 mission_rank[mission_id] = dict(rank_payload)
 
-    # ---- 可收藏有效队伍 -------------------------------------------------
+    # ---- 全部敌人队伍（含不可收藏的战斗队伍） -------------------------
+    enemy_team_ids: set[int] = set()
+    for row in tables["spot"]:
+        team_id = _int(row.get("enemy_team_id"))
+        if team_id > 0 and slots_by_team.get(team_id):
+            enemy_team_ids.add(team_id)
+    for mission in missions.values():
+        raw = str(mission.get("boss_team_id") or "")
+        for token in re.split(r"[;,]", raw):
+            token = token.strip()
+            if token.lstrip("-").isdigit():
+                team_id = _int(token)
+                if team_id > 0 and slots_by_team.get(team_id):
+                    enemy_team_ids.add(team_id)
+
+    # 可收藏靶机池（targettrain_cancollect=1）；保留它用于收藏/注入流程
     collectable: set[int] = {
         team_id for team_id, row in teams_by_id.items()
         if _is_collectable(row.get("targettrain_cancollect")) and slots_by_team.get(team_id)
     }
+    # 图鉴/关卡展示需要全部实际敌人 + 靶机池 + 有槽位的支援队
+    all_team_ids = enemy_team_ids | collectable | {
+        team_id for team_id in slots_by_team if team_id > 0
+    }
 
-    # ---- 队伍 ↔ 关卡关联（spot ∪ boss_team_id） ------------------------
+    # ---- 队伍 ↔ 关卡关联（全部 spot ∪ boss_team_id） ------------------
     mission_teams: dict[int, set[int]] = defaultdict(set)
     team_missions: dict[int, set[int]] = defaultdict(set)
     for row in tables["spot"]:
         team_id = _int(row.get("enemy_team_id"))
         mission_id = _int(row.get("mission_id"))
-        if team_id > 0 and mission_id > 0 and team_id in collectable:
+        if team_id > 0 and mission_id > 0 and team_id in all_team_ids:
             mission_teams[mission_id].add(team_id)
             team_missions[team_id].add(mission_id)
     for mission_id, mission in missions.items():
@@ -807,7 +841,7 @@ def _build_payload() -> dict:
             if not token.lstrip("-").isdigit():
                 continue
             team_id = _int(token)
-            if team_id in collectable:
+            if team_id in all_team_ids:
                 mission_teams[mission_id].add(team_id)
                 team_missions[team_id].add(mission_id)
 
@@ -1109,8 +1143,8 @@ def _build_payload() -> dict:
         except (KeyError, ValueError):
             return None
 
-    for team_id in sorted(collectable):
-        team_row = teams_by_id[team_id]
+    for team_id in sorted(all_team_ids):
+        team_row = teams_by_id.get(team_id) or {}
         raw_slots = sorted(
             slots_by_team[team_id],
             key=lambda item: (_float(item.get("coordinator_x")),
@@ -1215,7 +1249,8 @@ def _build_payload() -> dict:
             "support_appearances": support_appearances,
             "reserve_appearances": sorted(reserve_team_missions.get(team_id, ())),
             "roles": roles,
-            "collectable": True,
+            "collectable": team_id in collectable,
+            "targettrain": team_id in collectable,
             "gray_zone": is_gray,
             "orphan": is_orphan,
             "rep_stage": rep_stage,
@@ -1513,6 +1548,12 @@ def _build_payload() -> dict:
             "species_count": len(area_species),
         })
     # 节点（= 有可收藏队伍的 mission），按区域归组；top_species 最多 4 个
+    gray_spot_types: dict[int, Counter] = defaultdict(Counter)
+    for row in tables["spot"]:
+        mission_id = _int(row.get("mission_id"))
+        mission = missions.get(mission_id) or {}
+        if _int(mission.get("campaign")) == -404:
+            gray_spot_types[mission_id][_int(row.get("type"))] += 1
     boss_team_ids = {record["id"] for record in team_records
                      if "BOSS" in (record.get("tags") or [])}
     nodes: list[dict] = []
@@ -1531,6 +1572,18 @@ def _build_payload() -> dict:
             top_species = [codex_no for codex_no, _count in
                            sorted(codex_counts.items(),
                                   key=lambda item: (-item[1], item[0]))[:4]]
+            type_counts = dict(sorted(gray_spot_types.get(mission_id, {}).items()))
+            kind_set: set[str] = set()
+            for spot_type in type_counts:
+                kind = GRAY_SPOT_TYPE_KIND.get(spot_type)
+                if kind:
+                    kind_set.add(kind)
+            if boss_count:
+                kind_set.add("boss")
+            if region_id == ARMOR_ASSAULT_REGION_ID:
+                kind_set.add("tower")
+            point_kinds = [kind for kind, _label in GRAY_POINT_KINDS
+                           if kind in kind_set]
             nodes.append({
                 "mission_id": mission_id,
                 "title": title,
@@ -1543,6 +1596,8 @@ def _build_payload() -> dict:
                 "has_boss": boss_count > 0,
                 "top_species": top_species,
                 "tags": list(stage.get("tags") or []),
+                "spot_types": type_counts,
+                "point_kinds": point_kinds,
             })
     # 真实区域（6 个：4 个区域 + 装甲突击爬塔 + 特殊区域）
     regions: list[dict] = []
@@ -2268,20 +2323,19 @@ class Catalog:
         return {"regions": self._regions, "areas": self._areas}
 
     def grayzone_nodes(self, region: str = "", *, q: str = "", offset: int = 0,
-                       limit: int = 50, sort: str = "id_asc") -> dict:
-        """灰域节点列表（区域 → 节点 → 节点内小怪）。
+                       limit: int = 50, sort: str = "id_asc",
+                       kind: str = "") -> dict:
+        """灰域节点列表（区域/点位类型 → 节点 → 节点内小怪）。
 
-        * ``region``：sand/storm/silicon/crystal/armor_assault/special 或中文标题
-          （沙尘带/…/装甲突击/特殊区域）；空 = 全部节点
+        * ``region``：sand/storm/silicon/crystal/armor_assault/special 或中文标题；
+          空 = 全部节点
+        * ``kind``：normal/armor/fairy/boss/tower/easter，按 STC spot type 推出的点位类型
         * ``q``：匹配节点 id / 标题 / 地点（不区分大小写）
-        * ``sort``：id_asc（默认）/ id_desc / difficulty_asc / difficulty_desc /
-          team_count_desc / species_count_desc
-        * 返回 ``{region_id, region_title, total, offset, limit, sort, items}``，
-          每项 = ``{mission_id,title,location,region_id,region_title,difficulty,
-          team_count,species_count,top_species:[{codex_no,name,icon},≤4],tags}``
+        ...
         """
         region = str(region or "").strip()
         query = str(q or "").strip().lower()
+        kind = str(kind or "").strip().lower()
         sort = str(sort or "id_asc").strip().lower()
         offset = max(0, _int(offset))
         limit = min(200, max(1, _int(limit, 50)))
@@ -2296,6 +2350,8 @@ class Catalog:
         selected: list[dict] = []
         for node in self._grayzone_nodes:
             if region_id and str(node.get("region_id")) != region_id:
+                continue
+            if kind and kind not in (node.get("point_kinds") or []):
                 continue
             if query:
                 haystack = (f"{node.get('mission_id')} {node.get('title') or ''} "
@@ -2353,9 +2409,13 @@ class Catalog:
                 "has_boss": bool(node.get("has_boss")),
                 "top_species": top_species,
                 "tags": list(node.get("tags") or []),
+                "point_kinds": list(node.get("point_kinds") or []),
+                "spot_types": dict(node.get("spot_types") or {}),
             })
         return {"region_id": region_id, "region_title": region_title,
                 "total": total, "offset": offset, "limit": limit, "sort": sort,
+                "point_kinds": [{"id": kind, "title": title}
+                                for kind, title in GRAY_POINT_KINDS],
                 "items": items}
 
     def grayzone_teams(self, area: str = "", offset: int = 0, limit: int = 60,

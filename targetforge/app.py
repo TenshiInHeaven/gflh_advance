@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -611,14 +611,15 @@ def api_teams(qs: dict | None = None) -> dict:
                         hint="可用：id_asc/id_desc/power_desc/power_asc/units_desc/units_asc/hp_desc/species_desc")
     offset = max(0, int(float(first("offset", "0") or 0)))
     limit = min(200, max(1, int(float(first("limit", "50") or 50))))
-    collectable_raw = first("collectable", "1").strip().lower()
+    collectable_raw = first("collectable", "").strip().lower()
+    collectable = None if not collectable_raw else collectable_raw not in ("0", "false", "no")
     power_known_raw = first("power_known", "").strip().lower()
     return get_catalog().team_list(
         q=first("q", ""),
         chapter=first("chapter", ""),
         species=species or None,
         role=role,
-        collectable=collectable_raw not in ("0", "false", "no"),
+        collectable=collectable,
         power_known=power_known_raw in ("1", "true", "yes") if power_known_raw else None,
         power_min=opt_int("power_min"),
         power_max=opt_int("power_max"),
@@ -990,6 +991,7 @@ def api_grayzone_nodes(qs: dict) -> dict:
     return get_catalog().grayzone_nodes(
         region=raw("region"),
         q=raw("q"),
+        kind=raw("kind"),
         offset=max(0, int(raw("offset", "0") or 0)),
         limit=min(200, max(1, int(raw("limit", "60") or 60))),
         sort=raw("sort", "id_asc").strip() or "id_asc",
@@ -1283,6 +1285,17 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+def _set_console_title(title: str) -> None:
+    """Windows 控制台标题：启动窗口里直接看到应用名 + 带 token 的网页地址。"""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleTitleW(str(title))
+    except Exception:  # noqa: BLE001 - 标题失败不能影响服务启动
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="靶机工坊 TargetForge 本地 Web 应用")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1322,6 +1335,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"   本地地址（含本次访问 token）: {url}")
     print(f"   数据目录: {DATA_DIR}")
     print(f"   访问 token 文件: {security.api_token_file()}")
+    _set_console_title(f"靶机工坊 TargetForge | {url}")
     if bootstrap.get("ok"):
         source_names = {"settings": "设置", "env": "环境变量",
                         "local_paths": "local_paths.json", "detected": "自动检测"}

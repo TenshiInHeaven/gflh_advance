@@ -72,7 +72,7 @@ export async function render(root, { params, query }) {
     crumbs,
     title: areaTitle,
     badge: "GRAY ZONE",
-    sub: `${regionNames.length ? `区域：${esc(regionNames.join(" / "))} · ` : ""}灰域地点内的可收藏队伍。灰域不逐节点列举关卡，这里按地点分页浏览，支持搜索队伍 id 与效能筛选/排序。`,
+    sub: `${regionNames.length ? `区域：${esc(regionNames.join(" / "))} · ` : ""}灰域地点内的敌人队伍。灰域不逐节点列举关卡，这里按地点分页浏览，支持搜索队伍 id 与效能筛选/排序。`,
     actions: `<button class="btn btn-primary" type="button" data-act="add-page" disabled>${icon("plus", 14)} 本页全部加入序列</button>`,
   }) + `
     <div class="toolbar">
@@ -125,7 +125,7 @@ export async function render(root, { params, query }) {
   const renderList = () => {
     const metaEl = root.querySelector("[data-gz-meta]");
     if (metaEl) {
-      metaEl.innerHTML = `${icon("users", 11)} 共 <b>${fmtNum(state.total)}</b> 支可收藏队伍 · 每页 ${PAGE_SIZE}`;
+      metaEl.innerHTML = `${icon("users", 11)} 共 <b>${fmtNum(state.total)}</b> 支敌人队伍 · 每页 ${PAGE_SIZE}`;
     }
     const pfMeta = root.querySelector("[data-pf-meta]");
     if (pfMeta) pfMeta.textContent = powerFilterMeta(state.filter, state.total, state.items.length);
@@ -133,11 +133,11 @@ export async function render(root, { params, query }) {
       const filtering = state.query || state.filter.mode !== "all";
       areaEl.innerHTML = emptyState({
         iconName: filtering ? "search" : "users",
-        title: filtering ? "没有匹配的队伍" : state.total === 0 ? "该地点暂无可收藏队伍" : "该地点暂无队伍",
+        title: filtering ? "没有匹配的队伍" : state.total === 0 ? "该地点暂无敌人队伍" : "该地点暂无队伍",
         desc: filtering
           ? "换个关键词或效能条件试试。"
           : state.total === 0
-            ? "该地点在 mission 表里有节点，但没有可收藏队伍，这里只作为地点展示；换一个地点看看。"
+            ? "该地点在 mission 表里有节点，但没有敌人队伍，这里只作为地点展示；换一个地点看看。"
             : "换一个灰域地点看看。",
       });
       return;

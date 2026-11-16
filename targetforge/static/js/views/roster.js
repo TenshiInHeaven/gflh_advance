@@ -193,8 +193,8 @@ function rowHtml(team) {
     ? `<b class="mono ${disp.negative ? "neg" : ""}" ${disp.negative ? 'title="积分关卡数据，可能为负"' : ""}>${disp.text}</b>`
     : `<span class="dim">未标注</span>`;
   const inSeq = (store.sequence?.draft || []).some((item) => Number(item.id) === Number(team.id));
-  return `<tr class="roster-row" data-team-detail="${esc(team.id)}" tabindex="0" aria-label="队伍 #${esc(team.id)}">
-    <td class="roster-id">#${esc(team.id)}</td>
+  return `<tr class="roster-row ${team.collectable === false ? "is-locked-row" : "is-collectable-row"}" data-team-detail="${esc(team.id)}" tabindex="0" aria-label="队伍 #${esc(team.id)}">
+    <td class="roster-id">#${esc(team.id)} ${team.collectable === false ? `<span class="badge danger">仅展示</span>` : `<span class="badge cyan">可加入</span>`}</td>
     <td class="num">${powerCell}</td>
     <td class="num roster-uh" title="单位数 / 总血量"><b>${fmtNum(team.units)}</b><span class="roster-hp"> / ${fmtNum(team.hp_total)}</span></td>
     <td>${team.faction ? `<span class="faction-chip ${factionClass(team.faction)}"><i></i>${esc(team.faction)}</span>` : "—"}</td>
@@ -345,7 +345,7 @@ function shellHtml() {
     crumbs: [{ label: "全怪组" }],
     title: "全怪组",
     badge: "ROSTER",
-    sub: "全部可收藏怪组总表：按编号 / 效能 / 单位数 / 总血 / 阵营 / 角色 / 怪种 / 出场章节浏览。支持多条件筛选（章节出现位置、怪种多选取「同时包含」、效能与单位数区间）与表头排序；机场刷新候选为推断数据，标「可能刷怪」徽标。收起右侧序列面板可获得更宽表格。",
+    sub: "全部敌人队伍总表：按编号 / 效能 / 单位数 / 总血 / 阵营 / 角色 / 怪种 / 出场章节浏览。支持多条件筛选（章节出现位置、怪种多选取「同时包含」、效能与单位数区间）与表头排序；机场刷新候选为推断数据，标「可能刷怪」徽标。收起右侧序列面板可获得更宽表格。",
   })}
   ${filterPanelHtml()}
   <div class="roster-table-wrap">

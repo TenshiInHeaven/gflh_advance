@@ -36,8 +36,8 @@ export async function addTeamById(raw) {
     return false;
   }
   if (detail && detail.collectable === false) {
-    toastErr("不可加入", `队伍 #${id} 不可收藏，无法加入收藏序列。`);
-    return false;
+    // 按用户要求不阻断：允许加入序列，交给执行阶段由服务器返回 error:2。
+    toastErr("仅展示队伍", `队伍 #${id} 按游戏机制不可收藏；已允许加入，执行时会由服务器报错。`);
   }
   try {
     const after = await addTeams([id]);

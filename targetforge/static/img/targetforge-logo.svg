@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="TargetForge 蓝色蝴蝶">
+  <defs>
+    <linearGradient id="tfBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#74e6ff"/>
+      <stop offset=".38" stop-color="#22b7ff"/>
+      <stop offset="1" stop-color="#1155e8"/>
+    </linearGradient>
+    <linearGradient id="tfDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1976ff"/>
+      <stop offset="1" stop-color="#0736b8"/>
+    </linearGradient>
+    <filter id="tfSoft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0b2a66" flood-opacity=".18"/>
+    </filter>
+  </defs>
+  <rect width="240" height="240" rx="52" fill="#ffffff"/>
+  <path d="M0 0h94v94H0z" fill="#ffc400"/>
+  <path d="M94 0h52v34H94zM94 60h34v34H94z" fill="#121212"/>
+  <path d="M240 146v-38h-40v72h40v-34z" fill="#ffc400"/>
+  <path d="M186 180h54v60h-54z" fill="#121212"/>
+  <g filter="url(#tfSoft)" stroke="#08111f" stroke-width="5" stroke-linejoin="round">
+    <path fill="url(#tfBlue)" d="M112 108C96 71 66 39 33 25 17 18 7 25 8 42c2 29 20 55 48 70 17 9 37 12 52 8 8-2 10-8 4-12Z"/>
+    <path fill="url(#tfBlue)" d="M128 108C144 71 174 39 207 25c16-7 26 0 25 17-2 29-20 55-48 70-17 9-37 12-52 8-8-2-10-8-4-12Z"/>
+    <path fill="url(#tfDeep)" d="M112 132c-25 8-52 28-68 52-9 14 2 25 18 17 24-12 44-34 53-57 4-10 2-14-3-12Z"/>
+    <path fill="url(#tfDeep)" d="M128 132c25 8 52 28 68 52 9 14-2 25-18 17-24-12-44-34-53-57-4-10-2-14 3-12Z"/>
+  </g>
+  <ellipse cx="120" cy="118" rx="8" ry="22" fill="#08111f"/>
+  <path d="M120 136c8 12 8 38 0 56-8-18-8-44 0-56Z" fill="#08111f"/>
+  <circle cx="120" cy="92" r="6" fill="#08111f"/>
+  <path d="M116 87c-7-16-16-27-27-35M124 87c7-16 16-27 27-35" fill="none" stroke="#08111f" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="87" cy="50" r="4" fill="#ffc400"/>
+  <circle cx="153" cy="50" r="4" fill="#ffc400"/>
+</svg>
