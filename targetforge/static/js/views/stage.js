@@ -327,14 +327,9 @@ function renderPage() {
     const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
 
     // ---- 段一：可能刷怪（固定/刷怪表内、不在场上；或推断候选）----
-    const blockedAll = (loaded.reserveTeams || []).filter((team) => {
-      if (isGrayNode) return Boolean(team.gray_zone);
-      if (isScoreStage) {
-        return Boolean(team.support || team.gray_zone
-          || (Array.isArray(team.roles) && team.roles.includes("support")));
-      }
-      return false;
-    });
+    // 灰域/积分关卡的“可能刷怪/机场支援候选”都只是 STC 提示，
+    // 不把它们推荐为实际出场；统一折叠到「已屏蔽（过滤）」。
+    const blockedAll = (loaded.reserveTeams || []).filter(() => isGrayNode || isScoreStage);
     const blockedIds = new Set(blockedAll.map((team) => Number(team.id)));
     const spawnSource = (loaded.spawnTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
     const absentSource = (loaded.absentTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
