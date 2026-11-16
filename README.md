@@ -3,7 +3,7 @@
 把《少女前线》里**任意「可收藏」的敌方队伍**，可视化地编排进游戏内「靶机专训 → 收藏标靶」（最多 35 条）。
 本项目是靶机工坊的应用本体：本地 Web 服务 + 数据层 + GFLH 登录抓取 / 注入模块 + 完整前端。
 
-> **本仓库是自包含发行版**：包含应用本体、精简数据解析层（`unit_model/` 子集）、
+> **本仓库是自包含发行版**：包含应用本体、STC JSON 只读数据层、
 > `scripts/gflh_target_train.py` 以及预构建的 `catalog.json` / 小怪头像；**不再需要另行克隆 GF Forge 主仓库**。
 > 账号凭证、日志与运行状态不随仓库分发；游戏客户端仅用于「刷新数据 / 抓包注入」，纯浏览可直接使用内置数据。
 > 仓库体积约 **43MB**（其中预构建数据约 39MB）。
@@ -67,7 +67,7 @@
 |---|---|
 | Windows 10/11 | 抓包 / 游戏控制 / winreg 代理设置目前是 Windows 实现 |
 | Python 3.10+（推荐 3.14） | 运行 `python -m targetforge`；核心依赖 `gflzirc==0.4.4`，已锁定在 `requirements.lock` |
-| 内置数据层 | `unit_model/`（STC 解析最小集）+ `project_paths.py` + `scripts/gflh_target_train.py` + 预构建 `dataMiner/derived/{catalog.json,icons}`；无需 GF Forge 主仓库 |
+| 内置数据层 | 预构建 `catalog.json`（含属性模型）+ `targetforge/stc_json.py`（直接读 STC JSON 导出表）+ `project_paths.py` + `scripts/gflh_target_train.py`；运行时不依赖 `unit_model` |
 | 本机游戏客户端（可选） | 《少女前线》PC 版（Steam appid **3347970**）。**注入/刷新数据时必须**；纯浏览可不用。首次启动会要求选择客户端目录（自动检测 / 浏览文件夹），之后可在「登录抓取」页修改 |
 | 端口 | 应用 **8765**；抓包代理默认 **18080**，可在「登录抓取 → 抓包端口」配置（8080 常被其它程序占用，不建议用） |
 | 安卓模拟器抓包（可选） | 需要 Python 包 `mitmproxy` + `cryptography`，执行 `pip install -r requirements-emulator.txt`；还需要模拟器 ADB 可连接、可 root 装系统 CA。**只使用 PC/国服模式时不需要** |
@@ -272,7 +272,9 @@ gflh_advance/
   local_paths.example.json     本机游戏目录示例（复制为 local_paths.json，或首次启动向导写入）
   docs/screenshots/            README 用截图
   project_paths.py             仓库根 / 游戏目录解析（内置精简数据层）
-  unit_model/                  精简 STC 解析层（core: stc/enemy/paths + stc-mapping）
+  targetforge/stc_json.py    直接读取 STC JSON 导出表（运行时不依赖 unit_model）
+  targetforge/enemy_stats.py STC 属性计算（catalog 无 stat_model 时兜底）
+  dataMiner/derived/         预构建 catalog/icons；成员属性模型随 catalog 发布
   scripts/gflh_target_train.py 靶机编号规划 / payload / 本地状态
   dataMiner/derived/
     client_text.json           名称文本（构建 catalog 用）
@@ -313,9 +315,9 @@ gflh_advance/
 
 ## 当前版本
 
-**v1.10.9**（当前发布）：国服复活版抓包增加明确提示：抓 sign 必须**大退（退出登录）后重新登录**；
-如果一键重启后游戏直接回主界面，说明复用了缓存登录态，只重启不会产生登录包；登录抓取页、
-一键配置提示和 README 都会提示用户切换帐号/退出登录。
+**v1.11.0**（当前发布）：**彻底移除运行时对 unit_model 的依赖**。catalog 构建直接读
+`dataMiner/stc/tables` 的 STC JSON 表；成员属性模型（类型锚点 + 标准等级曲线）预计算进
+`catalog.json`，队伍详情不再依赖 unit_model 或原始 STC 文件。发布包内 `unit_model/` 已删除。
 
 - 登录抓取页新增「PC / 安卓模拟器」模式与区服选择；
 - 模拟器模式使用 mitmproxy + CA 抓 HTTPS，自动识别 `uid/sign/base_url`，不改系统代理；

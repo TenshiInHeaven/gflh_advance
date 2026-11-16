@@ -1,9 +1,0 @@
-{
-    "name": "breakout_talk",
-    "fields": [
-        "id",
-        "trigger",
-        "weight",
-        "line"
-    ]
-}

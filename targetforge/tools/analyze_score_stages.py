@@ -91,11 +91,12 @@ def _load_client_text() -> dict:
 
 def _load_tables() -> dict:
     try:
-        from unit_model.core import stc
+        from targetforge.stc_json import StcJson
+        stc = StcJson()
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(
-            f"[error] 无法导入 unit_model.core.stc：{exc}\n"
-            "        请在仓库根目录运行，并确认 local_paths.json 指向本机游戏目录。") from exc
+            f"[error] 无法读取 STC JSON 表：{exc}\n"
+            "        请确认 dataMiner/stc/tables 存在（由客户端 STC 导出）。") from exc
 
     def table(name: str) -> list[dict]:
         try:

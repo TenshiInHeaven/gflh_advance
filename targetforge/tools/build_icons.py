@@ -120,11 +120,12 @@ def codes_from_catalog() -> list[str]:
 def codes_from_stc() -> list[str]:
     """没有 catalog.json 时直接从 STC 现算（可收藏且有编制的队伍用到的 code）。"""
     try:
-        from unit_model.core import stc
+        from targetforge.stc_json import StcJson
+        stc = StcJson()
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(
-            f"读不到 catalog.json，也导入不了 unit_model.core.stc：{exc}\n"
-            "先在仓库根目录跑 `python -c \"from targetforge import catalog; catalog.build()\"`，"
+            f"读不到 catalog.json，也读不了 dataMiner/stc/tables：{exc}\n"
+            "先运行 `python -c \"from targetforge import catalog; catalog.build()\"`，"
             "或用 --codes-file 指定 code 清单。") from exc
     from collections import defaultdict
 

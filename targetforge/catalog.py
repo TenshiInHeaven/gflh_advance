@@ -454,23 +454,17 @@ def _source_mtime_ns() -> int:
                 pass
     except OSError:
         pass
+    # STC JSON 表目录：重新导出/更新表后应触发 catalog 重建
+    table_dir = Path(__file__).resolve().parents[1] / "dataMiner" / "stc" / "tables"
     try:
-        from unit_model.core import stc
-
-        stc_dir = stc.paths.stc_dir()
-        mapping_dir = stc.mapping_dir()
-    except Exception:  # noqa: BLE001 - 数据缺失时退化为只比文本/CSV
-        return latest
-    for directory, pattern in ((stc_dir, "*.stc"), (mapping_dir, "*.json")):
+        files = list(table_dir.glob("*.json")) + list(table_dir.glob("*.json.gz"))
+    except OSError:
+        files = []
+    for path in files:
         try:
-            files = directory.glob(pattern)
+            latest = max(latest, path.stat().st_mtime_ns)
         except OSError:
-            continue
-        for path in files:
-            try:
-                latest = max(latest, path.stat().st_mtime_ns)
-            except OSError:
-                pass
+            pass
     return latest
 
 
@@ -539,25 +533,30 @@ def _load_text() -> dict[str, str]:
 
 
 def _load_stc_tables() -> dict[str, Any]:
-    """一次性读取需要的 STC 表（stc 模块内部按表缓存，重复调用便宜）。"""
+    """一次性读取需要的 STC 表。
+
+    v1.10.10 起直接读导出的 ``dataMiner/stc/tables/*.json``，
+    不再依赖 ``unit_model.core.stc``（unit_model 只是 STAR 解析器，不是数据源）。
+    """
     try:
-        from unit_model.core import stc
-    except Exception as exc:  # noqa: BLE001 - 数据缺失/依赖缺失都给出可操作提示
+        from targetforge.stc_json import StcJson
+        stc = StcJson()
+    except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
-            f"无法导入 unit_model.core.stc：{exc}；请在仓库根目录用系统 python 运行，"
-            "并确认 local_paths.json 指向本机游戏目录") from exc
+            f"无法读取 STC JSON 表：{exc}；请确认 dataMiner/stc/tables 存在") from exc
 
     def table(name: str) -> list[dict]:
         try:
             return stc.table(name)
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"解析 STC 表 {name} 失败：{exc}") from exc
+            raise RuntimeError(f"读取 STC 表 {name} 失败：{exc}") from exc
 
     return {
         "stc_module": stc,
         "enemy_team": table("enemy_team"),
         "enemy_in_team": table("enemy_in_team"),
         "enemy_character_type": table("enemy_character_type"),
+        "enemy_standard_attribute": table("enemy_standard_attribute"),
         "enemy_illustration": table("enemy_illustration"),
         "mission": table("mission"),
         "spot": table("spot"),
@@ -675,9 +674,9 @@ def _build_payload() -> dict:
     model_rows = _load_model_rows()
 
     try:
-        from unit_model.core import enemy as enemy_mod
+        from targetforge import enemy_stats as enemy_mod
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"无法导入 unit_model.core.enemy：{exc}") from exc
+        raise RuntimeError(f"无法导入 STC 属性表：{exc}") from exc
 
     # ---- 基础索引 -----------------------------------------------------
     teams_by_id: dict[int, dict] = {}
@@ -1901,8 +1900,39 @@ def _build_payload() -> dict:
         "types": type_info,
         "species": species_items,
         "score_campaigns": sorted(score_campaigns),
+        "stat_model": _build_stat_model(type_rows, tables["enemy_standard_attribute"]),
     }
     return payload
+
+
+def _build_stat_model(type_rows: dict[int, dict], standard_rows: list[dict]) -> dict:
+    """把属性计算所需的两张 STC 表压进 catalog。
+
+    运行时不依赖 unit_model，也不需要重新读原始 STC：
+    成员详情用这里缓存的类型锚点/基础属性和标准等级曲线。
+    """
+    from targetforge.enemy_stats import FLAT_ATTRS, LEVEL_ATTRS  # noqa: F401 - 保留常量文档/兼容
+    types: dict[str, dict] = {}
+    for type_id, row in type_rows.items():
+        try:
+            raw_level = int(row.get("level") or 100)
+        except (TypeError, ValueError):
+            raw_level = 100
+        anchor = raw_level % 10000 if raw_level >= 1000 else raw_level
+        values = {}
+        for key in STAT_KEYS:
+            values[key] = _json_num(_float(row.get(key)))
+        types[str(type_id)] = {"anchor": anchor, "values": values}
+    standard: dict[str, dict] = {}
+    for row in standard_rows:
+        try:
+            level = int(row.get("level") or 0)
+        except (TypeError, ValueError):
+            continue
+        standard[str(level)] = {
+            key: _json_num(_float(row.get(key))) for key in STAT_KEYS
+        }
+    return {"version": "stc-json", "types": types, "standard": standard}
 
 
 def _source_file_info(path: Path) -> dict:
@@ -2046,6 +2076,8 @@ class Catalog:
         self._types: dict[int, dict] = {
             int(key): value for key, value in (payload.get("types") or {}).items()
         }
+        # v1.11：把属性模型随 catalog 一起发布，运行时不依赖 unit_model / 原始 STC
+        self._stat_model: dict = payload.get("stat_model") or {}
         self._species_items: list[dict] = list(payload.get("species") or [])
         self._species_by_codex: dict[int, dict] = {
             int(item["codex_no"]): item for item in self._species_items
@@ -3071,7 +3103,7 @@ class Catalog:
         return out
 
     def _members_detail(self, record: dict) -> list[dict]:
-        from unit_model.core import enemy as enemy_mod
+        from targetforge import enemy_stats as enemy_mod
 
         slots = record.get("members") or []
         counts: dict[int, int] = defaultdict(int)
@@ -3088,8 +3120,10 @@ class Catalog:
             y = slot[6]
             info = self._types.get(type_id) or {}
             try:
-                scaled = enemy_mod.enemy_attributes(type_id, level, scale_by_level=True)
-                base = enemy_mod.enemy_attributes(type_id, None)
+                scaled = enemy_mod.enemy_attributes(type_id, level, scale_by_level=True,
+                                                    model=self._stat_model)
+                base = enemy_mod.enemy_attributes(type_id, None,
+                                                   model=self._stat_model)
                 stats = {key: _stat_num(scaled.get(key)) for key in STAT_KEYS}
                 base_stats = {key: _stat_num(base.get(key)) for key in STAT_KEYS}
                 # def=99999 是"无防护"哨兵值（不是真实力场值），不参与等级缩放展示

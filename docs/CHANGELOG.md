@@ -2,6 +2,17 @@
 
 > README 只保留当前版本特性；这里是按版本倒序的完整历史（旧版本细节可能已过时）。
 
+## v1.11.0（2026-11-16）
+
+- **彻底移除运行时 unit_model 依赖**：
+  - `catalog.py` 直接读取 `dataMiner/stc/tables/*.json` 导出表（`targetforge/stc_json.py`）；
+  - 成员属性计算 `targetforge/enemy_stats.py` 直接使用 STC 类型表 + 标准等级表；
+  - 属性模型（类型锚点/基础属性 + 标准等级曲线）预计算进 `catalog.json`，队伍详情不再需要
+    原始 STC 或 unit_model；
+  - 发布仓库中的 `unit_model/` 目录已删除；
+  - `build_icons.py` / `analyze_score_stages.py` 改为读 STC JSON 表。
+- 修复删除 unit_model 后 `/api/teams/<id>` 返回 500 的问题，队伍详情恢复正常。
+
 ## v1.10.9（2026-11-16）
 
 - 国服复活版（安卓模拟器）抓包提示：

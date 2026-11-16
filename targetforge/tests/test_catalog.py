@@ -1300,6 +1300,8 @@ class AppIntegrationTest(unittest.TestCase):
         self.assertTrue((app.ICON_DIR / icon).is_file())
 
 
+@unittest.skipUnless((Path(__file__).resolve().parents[2] / "dataMiner" / "stc" / "tables").is_dir(),
+                     "需要 dataMiner/stc/tables 导出表")
 class ScoreAnalysisToolTest(unittest.TestCase):
     """tools/analyze_score_stages.py：结算链分析器自检（真 STC）。"""
 
