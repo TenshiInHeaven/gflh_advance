@@ -971,3 +971,39 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .tc-foot { margin-top: 10px !important; }
 .team-card .sp-icon { width: 20px !important; height: 20px !important; }
 .team-card .btn { font-size: 12.5px !important; }
+
+/* capture page / help light surfaces */
+.port-config, .capture-port-config {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.08) !important;
+  border-left-color: #0b57d0 !important;
+  border-radius: 14px !important;
+  color: #4c5054 !important;
+  box-shadow: 0 8px 20px rgba(39, 34, 22, 0.04) !important;
+}
+.pc-head, .pc-head .pc-title { color: #17181a !important; }
+.pc-head .pc-tip, .pc-hint, .data-dir-line { color: #767b80 !important; }
+.data-dir-line b { color: #17181a !important; }
+.tut-card {
+  background: #fffdf8 !important;
+  border-color: rgba(22, 22, 22, 0.08) !important;
+  color: #4c5054 !important;
+}
+.tut-card.cyan { background: #f0f8ff !important; border-color: #c9e4ff !important; }
+.tut-card.amber { background: #fff8de !important; border-color: #ecd58f !important; }
+.tut-card.red { background: #fff3f4 !important; border-color: #f0c6cb !important; }
+.tut-card-title { color: #17181a !important; }
+.tut-card p, .tut-card li { color: #4c5054 !important; }
+.tut-code { color: #7a5b00 !important; background: #fff2c2 !important; border-radius: 5px; padding: 1px 4px; }
+.faq-item {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.08) !important;
+  border-radius: 16px !important;
+}
+.faq-item.open { background: #fffdf7 !important; border-color: #e7c766 !important; }
+.faq-q { color: #17181a !important; font-size: 14px !important; }
+.faq-q:hover { color: #0b57d0 !important; }
+.faq-q .fq-mark { color: #7a5b00 !important; background: #fff1bf !important; border-color: #ecd58f !important; }
+.faq-a { color: #4c5054 !important; font-size: 13px !important; }
+.faq-a b { color: #17181a !important; }
+.faq-a li { color: #4c5054 !important; }
