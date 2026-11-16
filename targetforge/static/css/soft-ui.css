@@ -1022,3 +1022,6 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .node-blocked-strip { margin-top: 16px; }
 .node-blocked-list { margin-top: 10px; }
 .node-blocked-list .node-list { margin-top: 8px; }
+
+.node-section-label { margin: 4px 0 8px; font-size: 12px; color: #777b7f; font-weight: 650; }
+.node-section-label b { color: #17181a; }

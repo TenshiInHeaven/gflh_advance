@@ -347,10 +347,10 @@ function renderPage() {
     const blockedIds = new Set(blockedAll.map((team) => Number(team.id)));
     const spawnSource = (loaded.spawnTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
     const absentSource = (loaded.absentTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
-    const blockedAbsentIds = new Set((loaded.absentTeams || []).map((team) => Number(team.id)));
-    // 一级：原关卡实际非红框队伍 + 本关候选小怪；二级：同系列表外/无关怪组。
-    const blockedLevel1 = blockedAll.filter((team) => !blockedAbsentIds.has(Number(team.id)));
-    const blockedLevel2 = blockedAll.filter((team) => blockedAbsentIds.has(Number(team.id)));
+    // 灰域标记的怪组才是原关卡一级候选；其余一律放二级，避免想打特定
+    // 怪组时被非本关的无关怪组混入。
+    const blockedLevel1 = blockedAll.filter((team) => team.gray_zone === true);
+    const blockedLevel2 = blockedAll.filter((team) => team.gray_zone !== true);
     const blockedExpanded = state.blockedOpen || (filtering && blockedAll.length > 0);
     const blockedShown1 = blockedExpanded ? blockedLevel1.slice(0, state.reserveVisible) : [];
     const blockedShown2 = blockedExpanded ? blockedLevel2.slice(0, state.reserveVisible) : [];
@@ -390,11 +390,11 @@ function renderPage() {
           blockedExpanded
             ? `<div class="reserve-grid-wrap">
                  ${blockedLevel1.length ? `<div class="blocked-level">
-                   <div class="blocked-level-title">一级屏蔽 · 原关卡候选 <b>${blockedLevel1.length}</b></div>
+                   <div class="blocked-level-title">一级屏蔽 · 灰域标记候选 <b>${blockedLevel1.length}</b></div>
                    <div class="team-grid reserve-grid">${blockedShown1.map((team) => teamCardHtml(team)).join("")}</div>
                  </div>` : ""}
                  ${blockedLevel2.length ? `<div class="blocked-level">
-                   <div class="blocked-level-title">二级屏蔽 · 其他无关怪组 <b>${blockedLevel2.length}</b></div>
+                   <div class="blocked-level-title">二级屏蔽 · 非灰域标记 / 其他无关怪组 <b>${blockedLevel2.length}</b></div>
                    <div class="team-grid reserve-grid">${blockedShown2.map((team) => teamCardHtml(team)).join("")}</div>
                  </div>` : ""}
                  <div class="reserve-foot"><span class="reserve-foot-hint">${esc(blockedHint)}</span></div>

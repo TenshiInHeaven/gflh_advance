@@ -496,3 +496,6 @@
 :root[data-theme="dark"] .blocked-level-title { color: #ffdc6a; }
 :root[data-theme="dark"] .blocked-level-title b { color: #ff9a9f; }
 :root[data-theme="dark"] .blocked-stage-list { background: #15191f; border-color: rgba(255,255,255,.08); }
+
+:root[data-theme="dark"] .node-section-label { color: #9ba0a7; }
+:root[data-theme="dark"] .node-section-label b { color: #f1eee7; }

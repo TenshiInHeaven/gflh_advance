@@ -246,12 +246,12 @@ async function loadNodes() {
     if (headHost) {
       const regionForHead = state.region || { id: state.regionId, title: data.region_title || state.regionId };
       const wrapper = document.createElement("div");
-      wrapper.innerHTML = headHtml(regionForHead, state.total);
+      wrapper.innerHTML = headHtml(regionForHead, state.total + state.blockedTotal);
       const newHead = wrapper.firstElementChild;
       if (newHead) headHost.replaceWith(newHead);
     }
     if (metaEl) {
-      metaEl.innerHTML = `${icon("flag", 11)} 共 <b>${fmtNum(state.total)}</b> 个节点 · 第 ${state.page} / ${Math.max(1, Math.ceil(state.total / PAGE_SIZE))} 页`;
+      metaEl.innerHTML = `${icon("flag", 11)} 共 <b>${fmtNum(state.total + state.blockedTotal)}</b> 个节点 · 正常 <b>${fmtNum(state.total)}</b> · 已屏蔽 <b>${fmtNum(state.blockedTotal)}</b> · 第 ${state.page} / ${Math.max(1, Math.ceil(state.total / PAGE_SIZE))} 页`;
     }
     if (!state.items.length && !state.blockedItems.length) {
       listEl.innerHTML = emptyState({
@@ -265,8 +265,8 @@ async function loadNodes() {
       ? `<section class="reserve-strip blocked-stages-strip node-blocked-strip">
           <button class="reserve-toggle" type="button" data-node-blocked-toggle aria-expanded="false">
             <span class="reserve-flag blocked">${icon("filter", 11)} 已屏蔽</span>
-            <span class="reserve-toggle-title">无收藏队伍的节点 <b>${fmtNum(state.blockedTotal)}</b> 个 <span class="help-dot" title="这些节点目前没有可收藏队伍，默认折叠；仍会服从当前搜索、排序和点位类型筛选。">?</span></span>
-            <span class="reserve-toggle-hint">默认折叠 · 遵守当前筛选条件 · 仍可点开查看红框队伍</span>
+            <span class="reserve-toggle-title">含非红框队伍的节点 <b>${fmtNum(state.blockedTotal)}</b> 个 <span class="help-dot" title="这些节点含非红框/可收藏队伍，默认屏蔽；仍会服从当前搜索、排序和点位类型筛选。">?</span></span>
+            <span class="reserve-toggle-hint">含非红框/可收藏队伍 · 遵守当前筛选 · 纯红框节点保留正常列表</span>
             <span class="reserve-toggle-action">展开</span>
           </button>
           <div class="node-blocked-list" hidden>
@@ -274,7 +274,8 @@ async function loadNodes() {
           </div>
         </section>`
       : "";
-    listEl.innerHTML = `<div class="node-list">${state.items.map((node) => nodeRowHtml(node)).join("")}</div>
+    listEl.innerHTML = `<div class="node-section-label">正常节点 · 纯红框（无可收藏队伍） <b>${fmtNum(state.total)}</b></div>
+      <div class="node-list">${state.items.map((node) => nodeRowHtml(node)).join("")}</div>
       ${renderPager({ page: state.page, total: state.total, pageSize: PAGE_SIZE })}
       ${blockedSection}`;
     bindPager(listEl, {

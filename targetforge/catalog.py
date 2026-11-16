@@ -2357,11 +2357,13 @@ class Catalog:
         for node in self._grayzone_nodes:
             if region_id and str(node.get("region_id")) != region_id:
                 continue
+            # 关卡级口径：含非红框/可收藏队伍的关卡属于「已屏蔽」；
+            # 纯红框、没有可收藏队伍的关卡保留在正常关卡列表。
             if blocked_mode in ("1", "only", "yes", "blocked"):
-                if _int(node.get("collectable_team_count")) > 0:
+                if _int(node.get("collectable_team_count")) <= 0:
                     continue
             elif blocked_mode in ("0", "hide", "no"):
-                if _int(node.get("collectable_team_count")) <= 0:
+                if _int(node.get("collectable_team_count")) > 0:
                     continue
             if kind and kind not in (node.get("point_kinds") or []):
                 continue
@@ -2416,6 +2418,8 @@ class Catalog:
                     node_region_id, {}).get("title") or ""),
                 "difficulty": _int(node.get("difficulty")),
                 "team_count": _int(node.get("team_count")),
+                "collectable_team_count": _int(node.get("collectable_team_count")),
+                "noncollectable_team_count": _int(node.get("noncollectable_team_count")),
                 "species_count": _int(node.get("species_count")),
                 "boss_team_count": _int(node.get("boss_team_count")),
                 "has_boss": bool(node.get("has_boss")),
