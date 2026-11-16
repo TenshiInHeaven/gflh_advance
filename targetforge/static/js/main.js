@@ -41,6 +41,7 @@ import * as roster from "./views/roster.js";
 import * as teamPage from "./views/team-page.js";
 import * as sequencePage from "./views/sequence-page.js";
 import * as capture from "./views/capture.js";
+import * as bridge from "./views/bridge.js";
 import * as tutorialPage from "./views/tutorial-page.js";
 
 const ROUTES = [
@@ -57,6 +58,7 @@ const ROUTES = [
   { pattern: /^\/teams\/([^/]+)$/, view: teamPage, nav: "chapters", viewId: "team", param: "id", title: "队伍详情" },
   { pattern: /^\/sequence$/, view: sequencePage, nav: "sequence", viewId: "sequence", title: "序列编排" },
   { pattern: /^\/capture$/, view: capture, nav: "capture", viewId: "capture", title: "登录抓取" },
+  { pattern: /^\/bridge$/, view: bridge, nav: "bridge", viewId: "bridge", title: "本地桥接" },
   { pattern: /^\/tutorial$/, view: tutorialPage, nav: "tutorial", viewId: "tutorial", title: "使用教程" },
 ];
 

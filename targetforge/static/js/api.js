@@ -171,6 +171,9 @@ export const api = {
   cancelJob: (jobId) => post(`/api/jobs/${encodeURIComponent(jobId)}/cancel`),
 
   captureStatus: () => get("/api/capture/status"),
+  bridgeStatus: () => get("/api/bridge/status"),
+  bridgeStart: (body = {}) => post("/api/bridge/start", body),
+  bridgeStop: (body = {}) => post("/api/bridge/stop", body),
   captureRegions: () => get("/api/capture/regions"),
   captureCa: () => get("/api/capture/ca"),
   credProfiles: () => get("/api/cred-profiles"),

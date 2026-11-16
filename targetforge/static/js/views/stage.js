@@ -27,7 +27,7 @@ import {
 } from "../components/power-filter.js";
 import { esc, fmtNum, navigate, bindSearch, isSupportTeam, supportCountOf, isReserveTeam, reserveCountOf, powerDisplay } from "../util.js";
 
-const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter(), reserveOpen: false, reserveVisible: 24, absentOpen: true };
+const state = { page: 1, pageSize: 24, query: "", faction: "", filter: defaultPowerFilter(), reserveOpen: false, reserveVisible: 24, absentOpen: true, blockedOpen: false };
 let rootEl = null;
 let loaded = null;
 let filteredTeams = [];
@@ -134,6 +134,7 @@ function renderPage() {
     grayRegion = null;
   }
   const isGrayNode = Boolean(stage.gray_zone) || stage.category === "grayzone" || stage.chapter_id === "grayzone";
+  const isScoreStage = Boolean(stage.settlement && stage.settlement.type === "score");
   const grayCrumbs = [
     { label: "关卡图鉴", nav: "/chapters" },
     { label: "灰域探查", nav: "/chapters/grayzone" },
@@ -326,8 +327,23 @@ function renderPage() {
     const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
 
     // ---- 段一：可能刷怪（固定/刷怪表内、不在场上；或推断候选）----
-    const spawnAll = applyFilters(loaded.spawnTeams);
-    const spawnTotal = loaded.spawnTeams.length;
+    const blockedAll = (loaded.reserveTeams || []).filter((team) => {
+      if (isGrayNode) return Boolean(team.gray_zone);
+      if (isScoreStage) {
+        return Boolean(team.support || team.gray_zone
+          || (Array.isArray(team.roles) && team.roles.includes("support")));
+      }
+      return false;
+    });
+    const blockedIds = new Set(blockedAll.map((team) => Number(team.id)));
+    const spawnSource = (loaded.spawnTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
+    const absentSource = (loaded.absentTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
+    const blockedExpanded = state.blockedOpen || (filtering && blockedAll.length > 0);
+    const blockedShown = blockedExpanded ? blockedAll.slice(0, state.reserveVisible) : [];
+    const blockedTitle = `已屏蔽（过滤） <b>${blockedAll.length}</b> 支`;
+    const blockedHint = "STC数据给出这些是可能出现的，被标识为灰域（或机场支援的）怪组，但灰域/积分关卡中并没有他们的出现可能，因此在该类关卡下，不推荐该类怪组出现以防产生困扰，但也可从全怪组中抓取";
+    const spawnAll = applyFilters(spawnSource);
+    const spawnTotal = spawnSource.length;
     const spawnExpanded = state.reserveOpen || (filtering && spawnAll.length > 0);
     const shown = spawnExpanded ? spawnAll.slice(0, state.reserveVisible) : [];
     const remain = Math.max(0, spawnAll.length - shown.length);
@@ -340,13 +356,31 @@ function renderPage() {
       : "以上为推断候选，不是确定出场；同样可加入序列，卡面带「可能刷怪（推断）」徽标。";
 
     // ---- 段二：实际未出现（仅 manual；紧凑行列表）----
-    const absentAll = applyFilters(loaded.absentTeams);
-    const absentTotal = loaded.absentTeams.length;
+    const absentAll = applyFilters(absentSource);
+    const absentTotal = absentSource.length;
     const absentExpanded = state.absentOpen || (filtering && absentAll.length > 0);
     const absentTitle = `实际未出现 <b>${filtering ? absentAll.length : absentTotal}</b> 支${filtering && absentAll.length !== absentTotal ? `（共 ${absentTotal}）` : ""}`;
     const absentHint = "同系列可收藏，但固定怪组表/刷怪表中没有；表格列出（含怪种与代表出处），仅供查看/收藏";
 
     reserveAreaEl.innerHTML = `
+      ${blockedAll.length ? `
+      <section class="reserve-strip blocked-strip" data-blocked-strip>
+        <button class="reserve-toggle ${blockedExpanded ? "open" : ""}" type="button" data-blocked-toggle
+          aria-expanded="${blockedExpanded}" title="${esc(blockedHint)}">
+          <span class="reserve-flag blocked">${icon("filter", 11)} 已屏蔽</span>
+          <span class="reserve-toggle-title">${blockedTitle} <span class="help-dot" title="${esc(blockedHint)}">?</span></span>
+          <span class="reserve-toggle-hint">灰域 / 积分关卡未证实出现，默认过滤；全怪组仍可抓取</span>
+          <span class="reserve-toggle-action">${icon(blockedExpanded ? "chevronUp" : "chevronDown", 13)} ${blockedExpanded ? "收起" : "展开"}</span>
+        </button>
+        ${
+          blockedExpanded
+            ? `<div class="reserve-grid-wrap">
+                 <div class="team-grid reserve-grid">${blockedShown.map((team) => teamCardHtml(team)).join("")}</div>
+                 <div class="reserve-foot"><span class="reserve-foot-hint">${esc(blockedHint)}</span></div>
+               </div>`
+            : ""
+        }
+      </section>` : ""}
       ${spawnTotal ? `
       <section class="reserve-strip" data-reserve-strip>
         <button class="reserve-toggle ${spawnExpanded ? "open" : ""}" type="button" data-reserve-toggle
@@ -395,6 +429,11 @@ function renderPage() {
         }
       </section>` : ""}`;
 
+    reserveAreaEl.querySelector("[data-blocked-toggle]")?.addEventListener("click", () => {
+      state.blockedOpen = !state.blockedOpen;
+      state.reserveVisible = 24;
+      renderReserveStrip();
+    });
     reserveAreaEl.querySelector("[data-reserve-toggle]")?.addEventListener("click", () => {
       state.reserveOpen = !state.reserveOpen;
       state.reserveVisible = 24;

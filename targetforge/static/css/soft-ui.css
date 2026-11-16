@@ -741,3 +741,87 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .team-card, .species-card, .node-row, .stat-tile, .rf-tag-chip, .btn {
   will-change: transform;
 }
+
+/* ---------- local target bridge (experimental) ---------- */
+.bridge-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 9px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  border-radius: 20px;
+  background: linear-gradient(115deg, #fff1f1, #fffdf7 62%, #fff8df);
+  border: 1px solid #f0c5c8;
+  color: #5a3438;
+  font-size: 13px;
+  line-height: 1.7;
+  box-shadow: 0 10px 26px rgba(160, 40, 50, .06);
+}
+.bridge-warning b { color: #a11d2a; }
+.bridge-warning .help-dot { width: 20px; height: 20px; flex: none; font-size: 12px; }
+.help-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid #c4b89f;
+  background: #fffdf7;
+  color: #776b53;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: help;
+  vertical-align: 1px;
+}
+.bridge-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 16px; }
+.bridge-field { display: grid; gap: 7px; margin-bottom: 13px; color: #62666a; font-size: 12px; }
+.bridge-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 92px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(22, 22, 22, .1);
+  background: #fff;
+  color: #17181a;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.bridge-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 6px; }
+.bridge-note { margin-top: 12px; color: #8b8f91; font-size: 11.5px; }
+.bridge-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bridge-status > div {
+  padding: 10px 12px;
+  background: #f8f3e8;
+  border: 1px solid #eee5d5;
+  border-radius: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #777b7f;
+}
+.bridge-status b { color: #17181a; font-family: var(--font-mono); }
+.bridge-log {
+  margin: 0;
+  padding: 12px;
+  min-height: 150px;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 14px;
+  background: #fffdf8;
+  border: 1px solid #ece5d7;
+  color: #3d4247;
+  font-size: 11px;
+  line-height: 1.65;
+}
+@media (max-width: 1100px) { .bridge-grid { grid-template-columns: 1fr; } }
+
+/* ---------- blocked / filtered reserve candidates ---------- */
+.blocked-strip { border-color: rgba(180, 146, 40, .22) !important; }
+.reserve-flag.blocked { background: rgba(245, 185, 0, .18); color: #7a5a00; border-color: rgba(245,185,0,.35); }
+.blocked-strip .help-dot { margin-left: 3px; }
+.blocked-strip .reserve-toggle-hint { color: #8a7740; }

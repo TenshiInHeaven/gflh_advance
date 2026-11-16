@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -779,6 +779,41 @@ def api_capture_stop() -> dict:
         return emucapture.stop()
     return _gflh_module().capture_stop()
 
+def api_bridge_status() -> dict:
+    try:
+        from targetforge import local_bridge
+        return local_bridge.status()
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "读取桥接状态失败", detail=str(exc)) from exc
+
+
+def api_bridge_start(body: dict) -> dict:
+    if _gflh_module().capture_status().get("state") in ("starting", "running", "stopped", "error"):
+        raise HttpError(409, "请先关闭 PC 抓包",
+                        hint="桥接和普通抓包不能同时占用系统代理。")
+    if emucapture.is_active():
+        raise HttpError(409, "请先停止模拟器抓包", hint="桥接只用于 PC。")
+    targets = body.get("targets") or []
+    try:
+        from targetforge import local_bridge
+        return local_bridge.start(
+            targets=[int(item) for item in targets],
+            mode=str(body.get("mode") or "inject"),
+            port=int(body.get("port") or 18080),
+            restart_game=bool(body.get("restart_game", True)),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "启动桥接失败", detail=str(exc),
+                        hint="检查 mitmproxy 是否可用；失败时系统代理会自动恢复。") from exc
+
+
+def api_bridge_stop(body: dict) -> dict:
+    try:
+        from targetforge import local_bridge
+        return local_bridge.stop(restart_game=bool(body.get("restart_game", True)))
+    except Exception as exc:  # noqa: BLE001
+        raise HttpError(500, "停止桥接失败", detail=str(exc)) from exc
+
 
 def api_capture_regions() -> dict:
     return {"regions": regions.list_regions()}
@@ -1048,6 +1083,7 @@ GET_ROUTES = [
     (re.compile(r"^/api/execute/preview$"), lambda ctx: api_execute_preview(ctx["json"] if ctx["method"] == "POST" else {})),
     (re.compile(r"^/api/jobs/(?P<jid>[0-9a-f]+)$"), lambda ctx: _job_get(ctx["match"].group("jid"))),
     (re.compile(r"^/api/capture/status$"), lambda ctx: api_capture_status()),
+    (re.compile(r"^/api/bridge/status$"), lambda ctx: api_bridge_status()),
     (re.compile(r"^/api/capture/regions$"), lambda ctx: api_capture_regions()),
     (re.compile(r"^/api/capture/ca$"), lambda ctx: api_capture_ca()),
     (re.compile(r"^/api/emulator/detect$"), lambda ctx: api_emulator_detect()),
@@ -1066,6 +1102,8 @@ POST_ROUTES = [
     (re.compile(r"^/api/execute$"), lambda ctx: api_execute(ctx["json"])),
     (re.compile(r"^/api/jobs/(?P<jid>[0-9a-f]+)/cancel$"), lambda ctx: _job_cancel(ctx["match"].group("jid"))),
     (re.compile(r"^/api/capture/start$"), lambda ctx: api_capture_start(ctx["json"])),
+    (re.compile(r"^/api/bridge/start$"), lambda ctx: api_bridge_start(ctx["json"])),
+    (re.compile(r"^/api/bridge/stop$"), lambda ctx: api_bridge_stop(ctx["json"])),
     (re.compile(r"^/api/capture/stop$"), lambda ctx: api_capture_stop()),
     (re.compile(r"^/api/emulator/setup$"), lambda ctx: api_emulator_setup(ctx["json"])),
     (re.compile(r"^/api/target-history$"), lambda ctx: api_target_history_post(ctx["json"])),

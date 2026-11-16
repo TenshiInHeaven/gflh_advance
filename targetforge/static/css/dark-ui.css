@@ -407,3 +407,20 @@
 :root[data-theme="dark"] .nav-item.is-active { background: transparent !important; color: #121212 !important; box-shadow: none !important; }
 :root[data-theme="dark"] .nav-item.is-active .nav-ico { color: #121212 !important; }
 :root[data-theme="dark"] .nav-item.is-active .nav-count { background: rgba(0,0,0,.14) !important; color: #121212 !important; }
+
+:root[data-theme="dark"] .bridge-warning {
+  background: linear-gradient(115deg, rgba(80, 28, 34, .65), #1b2028 62%, rgba(53, 44, 20, .7));
+  border-color: #61343b; color: #e4c8c8;
+}
+:root[data-theme="dark"] .bridge-warning b { color: #ff9a9f; }
+:root[data-theme="dark"] .help-dot { background: #1b2028; border-color: #5b6270; color: #c9c5bd; }
+:root[data-theme="dark"] .bridge-field { color: #9ba0a7; }
+:root[data-theme="dark"] .bridge-field textarea { background: #15191f; border-color: rgba(255,255,255,.1); color: #f1eee7; }
+:root[data-theme="dark"] .bridge-note { color: #8d9299; }
+:root[data-theme="dark"] .bridge-status > div { background: #242a33; border-color: #343c48; color: #9ba0a7; }
+:root[data-theme="dark"] .bridge-status b { color: #f1eee7; }
+:root[data-theme="dark"] .bridge-log { background: #101419; border-color: rgba(255,255,255,.08); color: #c9d4e2; }
+
+:root[data-theme="dark"] .blocked-strip { border-color: rgba(255, 196, 0, .22) !important; }
+:root[data-theme="dark"] .reserve-flag.blocked { background: rgba(255,196,0,.13); color: #ffd75e; border-color: rgba(255,196,0,.3); }
+:root[data-theme="dark"] .blocked-strip .reserve-toggle-hint { color: #b7a45f; }
