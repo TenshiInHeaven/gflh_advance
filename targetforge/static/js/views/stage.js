@@ -125,7 +125,14 @@ export async function render(root, { params }) {
 
 function renderPage() {
   const stage = loaded.stage || {};
-  const teams = loaded.allTeams || [];
+  const allStageTeams = loaded.allTeams || [];
+  // 灰域节点的非红框（可收藏/可临时靶机）统一归入「已屏蔽（过滤）」；
+  // 红框是实际战斗队伍，保留在正常列表。
+  const blockedActual = allStageTeams.filter(
+    (team) => team.collectable !== false && Boolean(stage.gray_zone || stage.category === "grayzone" || stage.chapter_id === "grayzone"),
+  );
+  const blockedActualIds = new Set(blockedActual.map((team) => Number(team.id)));
+  const teams = allStageTeams.filter((team) => !blockedActualIds.has(Number(team.id)));
   // 灰域节点：面包屑 灰域探查 / 区域 / 节点
   let grayRegion = null;
   try {
@@ -143,7 +150,7 @@ function renderPage() {
       : []),
     { label: stage.title || `#${stage.id}` },
   ];
-  const enemyCount = loaded.enemyTeams?.length ?? teams.length;
+  const enemyCount = teams.filter((team) => !isSupportTeam(team)).length;
   const supportCount = loaded.supportCount ?? 0;
   const reserveCount = loaded.reserveCount ?? 0;
   const manualReserve = loaded.manualReserve;
@@ -317,7 +324,7 @@ function renderPage() {
 
   const renderReserveStrip = () => {
     if (!reserveAreaEl) return;
-    if (!loaded.reserveTeams.length) {
+    if (!loaded.reserveTeams.length && !blockedActual.length) {
       reserveAreaEl.innerHTML = "";
       return;
     }
@@ -327,14 +334,26 @@ function renderPage() {
     const inStageCount = Number(loaded.reserveMeta?.in_stage_count || 0);
 
     // ---- 段一：可能刷怪（固定/刷怪表内、不在场上；或推断候选）----
-    // 灰域/积分关卡的“可能刷怪/机场支援候选”都只是 STC 提示，
-    // 不把它们推荐为实际出场；统一折叠到「已屏蔽（过滤）」。
-    const blockedAll = (loaded.reserveTeams || []).filter(() => isGrayNode || isScoreStage);
+    // 灰域：所有非红框实际队伍 + 非红框候选进入已屏蔽；
+    // 积分关卡：未证实的非红框支援/机场候选进入已屏蔽。
+    const blockedReserve = (isGrayNode || isScoreStage)
+      ? (loaded.reserveTeams || []).filter((team) => team.collectable !== false)
+      : [];
+    const blockedById = new Map();
+    for (const team of [...blockedActual, ...blockedReserve]) {
+      blockedById.set(Number(team.id), team);
+    }
+    const blockedAll = [...blockedById.values()];
     const blockedIds = new Set(blockedAll.map((team) => Number(team.id)));
     const spawnSource = (loaded.spawnTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
     const absentSource = (loaded.absentTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
+    const blockedAbsentIds = new Set((loaded.absentTeams || []).map((team) => Number(team.id)));
+    // 一级：原关卡实际非红框队伍 + 本关候选小怪；二级：同系列表外/无关怪组。
+    const blockedLevel1 = blockedAll.filter((team) => !blockedAbsentIds.has(Number(team.id)));
+    const blockedLevel2 = blockedAll.filter((team) => blockedAbsentIds.has(Number(team.id)));
     const blockedExpanded = state.blockedOpen || (filtering && blockedAll.length > 0);
-    const blockedShown = blockedExpanded ? blockedAll.slice(0, state.reserveVisible) : [];
+    const blockedShown1 = blockedExpanded ? blockedLevel1.slice(0, state.reserveVisible) : [];
+    const blockedShown2 = blockedExpanded ? blockedLevel2.slice(0, state.reserveVisible) : [];
     const blockedTitle = `已屏蔽（过滤） <b>${blockedAll.length}</b> 支`;
     const blockedHint = "STC数据给出这些是可能出现的，被标识为灰域（或机场支援的）怪组，但灰域/积分关卡中并没有他们的出现可能，因此在该类关卡下，不推荐该类怪组出现以防产生困扰，但也可从全怪组中抓取";
     const spawnAll = applyFilters(spawnSource);
@@ -370,7 +389,14 @@ function renderPage() {
         ${
           blockedExpanded
             ? `<div class="reserve-grid-wrap">
-                 <div class="team-grid reserve-grid">${blockedShown.map((team) => teamCardHtml(team)).join("")}</div>
+                 ${blockedLevel1.length ? `<div class="blocked-level">
+                   <div class="blocked-level-title">一级屏蔽 · 原关卡候选 <b>${blockedLevel1.length}</b></div>
+                   <div class="team-grid reserve-grid">${blockedShown1.map((team) => teamCardHtml(team)).join("")}</div>
+                 </div>` : ""}
+                 ${blockedLevel2.length ? `<div class="blocked-level">
+                   <div class="blocked-level-title">二级屏蔽 · 其他无关怪组 <b>${blockedLevel2.length}</b></div>
+                   <div class="team-grid reserve-grid">${blockedShown2.map((team) => teamCardHtml(team)).join("")}</div>
+                 </div>` : ""}
                  <div class="reserve-foot"><span class="reserve-foot-hint">${esc(blockedHint)}</span></div>
                </div>`
             : ""

@@ -492,3 +492,7 @@
 :root[data-theme="dark"] .faq-q .fq-mark { color: #ffdc6a !important; background: #3a3218 !important; border-color: #625522 !important; }
 :root[data-theme="dark"] .faq-a { color: #b5b1a9 !important; }
 :root[data-theme="dark"] .faq-a b { color: #f1eee7 !important; }
+
+:root[data-theme="dark"] .blocked-level-title { color: #ffdc6a; }
+:root[data-theme="dark"] .blocked-level-title b { color: #ff9a9f; }
+:root[data-theme="dark"] .blocked-stage-list { background: #15191f; border-color: rgba(255,255,255,.08); }

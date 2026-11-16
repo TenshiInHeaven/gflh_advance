@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.16.0"
+VERSION = "1.17.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -1057,6 +1057,7 @@ def api_grayzone_nodes(qs: dict) -> dict:
         offset=max(0, int(raw("offset", "0") or 0)),
         limit=min(200, max(1, int(raw("limit", "60") or 60))),
         sort=raw("sort", "id_asc").strip() or "id_asc",
+        blocked=raw("blocked"),
     )
 
 

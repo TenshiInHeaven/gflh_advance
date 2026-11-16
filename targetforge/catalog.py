@@ -235,6 +235,7 @@ SIMULATION_ID_RANGES: tuple[tuple[int, int], ...] = ((1101, 1106), (1701, 1745))
 STAGE_LIST_KEYS = (
     "id", "title", "code", "difficulty", "recommend_level",
     "team_count", "support_team_count", "reserve_team_count",
+    "collectable_team_count", "noncollectable_team_count",
     "species_count", "tags", "order", "settlement",
 )
 
@@ -1459,6 +1460,8 @@ def _build_payload() -> dict:
             "difficulty": difficulty,
             "recommend_level": recommend_level,
             "team_count": len(team_ids),
+            "collectable_team_count": sum(1 for tid in team_ids if tid in collectable),
+            "noncollectable_team_count": sum(1 for tid in team_ids if tid not in collectable),
             "support_team_count": len(support_mission_teams.get(mission_id, [])),
             "reserve_team_count": len(stage_reserve_teams.get(mission_id, [])),
             "species_count": len(species_union),
@@ -1591,6 +1594,8 @@ def _build_payload() -> dict:
                 "region_id": region_id,
                 "difficulty": _int(stage.get("difficulty")),
                 "team_count": len(team_ids),
+                "collectable_team_count": sum(1 for tid in team_ids if tid in collectable),
+                "noncollectable_team_count": sum(1 for tid in team_ids if tid not in collectable),
                 "species_count": len(codex_counts),
                 "boss_team_count": boss_count,
                 "has_boss": boss_count > 0,
@@ -2324,7 +2329,7 @@ class Catalog:
 
     def grayzone_nodes(self, region: str = "", *, q: str = "", offset: int = 0,
                        limit: int = 50, sort: str = "id_asc",
-                       kind: str = "") -> dict:
+                       kind: str = "", blocked: str = "") -> dict:
         """灰域节点列表（区域/点位类型 → 节点 → 节点内小怪）。
 
         * ``region``：sand/storm/silicon/crystal/armor_assault/special 或中文标题；
@@ -2347,10 +2352,17 @@ class Catalog:
                 return {"region_id": region, "region_title": "", "total": 0,
                         "offset": offset, "limit": limit, "sort": sort, "items": []}
             region_title = str(self._region_by_id.get(region_id, {}).get("title") or "")
+        blocked_mode = str(blocked or "").strip().lower()
         selected: list[dict] = []
         for node in self._grayzone_nodes:
             if region_id and str(node.get("region_id")) != region_id:
                 continue
+            if blocked_mode in ("1", "only", "yes", "blocked"):
+                if _int(node.get("collectable_team_count")) > 0:
+                    continue
+            elif blocked_mode in ("0", "hide", "no"):
+                if _int(node.get("collectable_team_count")) <= 0:
+                    continue
             if kind and kind not in (node.get("point_kinds") or []):
                 continue
             if query:

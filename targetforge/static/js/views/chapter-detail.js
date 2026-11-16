@@ -40,6 +40,8 @@ export async function render(root, { params }) {
     const isGray = chapter.category === "grayzone";
     const isOrphan = chapter.category === "orphan" || Array.isArray(data.teams);
     const stages = data.stages || [];
+    const visibleStages = stages.filter((stage) => Number(stage.collectable_team_count) > 0);
+    const blockedStages = stages.filter((stage) => !(Number(stage.collectable_team_count) > 0));
     let grayMeta = { regions: [], areas: [], hasRegions: false };
     if (isGray) {
       try {
@@ -171,14 +173,32 @@ export async function render(root, { params }) {
             : `<section class="section">
                 ${sectionHeadHtml("关卡列表", { hint: `难度 ${fmtNum(chapter.difficulty_min)} ~ ${fmtNum(chapter.difficulty_max)} · 点关卡查看队伍`, iconName: "flag" })}
                 ${
-                  stages.length
-                    ? `<div class="stage-list">${stages.map((stage) => stageRowHtmlLocal(stage, chapter)).join("")}</div>`
-                    : emptyState({ iconName: "flag", title: "本章暂无关卡", desc: "该章节没有可浏览的关卡数据，换一个章节试试。" })
+                  visibleStages.length
+                    ? `<div class="stage-list">${visibleStages.map((stage) => stageRowHtmlLocal(stage, chapter)).join("")}</div>`
+                    : emptyState({ iconName: "flag", title: "本章暂无可直接收藏的关卡", desc: "没有可收藏队伍关卡已折叠到下方「已屏蔽的关卡」。" })
                 }
+                ${blockedStages.length ? `<section class="reserve-strip blocked-stages-strip">
+                  <button class="reserve-toggle" type="button" data-blocked-stages-toggle aria-expanded="false">
+                    <span class="reserve-flag blocked">${icon("filter", 11)} 已屏蔽</span>
+                    <span class="reserve-toggle-title">已屏蔽的关卡 <b>${blockedStages.length}</b> 个 <span class="help-dot" title="这些关卡没有可收藏队伍，默认折叠；仍可点开关卡查看红框队伍。">?</span></span>
+                    <span class="reserve-toggle-hint">没有可收藏队伍 · 默认折叠，不混入正常关卡列表</span>
+                    <span class="reserve-toggle-action">展开</span>
+                  </button>
+                  <div class="blocked-stage-list" hidden>${blockedStages.map((stage) => stageRowHtmlLocal(stage, chapter)).join("")}</div>
+                </section>` : ""}
               </section>`
       }
     `;
 
+    root.querySelector("[data-blocked-stages-toggle]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      const list = root.querySelector(".blocked-stage-list");
+      const open = list ? list.hasAttribute("hidden") : false;
+      if (list) list.toggleAttribute("hidden", !open);
+      button.setAttribute("aria-expanded", String(open));
+      const action = button.querySelector(".reserve-toggle-action");
+      if (action) action.textContent = open ? "收起" : "展开";
+    });
     root.querySelectorAll("[data-stage-detail]").forEach((row) => {
       row.addEventListener("click", () => {
         try {

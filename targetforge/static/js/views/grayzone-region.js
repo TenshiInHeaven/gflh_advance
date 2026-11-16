@@ -29,7 +29,9 @@ const state = {
   sort: "id_asc",
   kind: "",
   total: 0,
+  blockedTotal: 0,
   items: [],
+  blockedItems: [],
   loading: false,
 };
 let rootEl = null;
@@ -70,6 +72,7 @@ function normalizeNode(item) {
     region_title: item.region_title ?? "",
     difficulty: Number(item.difficulty) || 0,
     team_count: Number(item.team_count) || 0,
+    collectable_team_count: Number(item.collectable_team_count) || 0,
     species_count: Number(item.species_count) || 0,
     boss_team_count: Number(item.boss_team_count) || 0,
     has_boss: Boolean(item.has_boss),
@@ -211,17 +214,31 @@ async function loadNodes() {
   if (!listEl) return;
   listEl.innerHTML = skeletonRows(8);
   try {
-    const data = await api.grayzoneNodes({
-      region: state.regionId,
-      offset: (state.page - 1) * PAGE_SIZE,
-      limit: PAGE_SIZE,
-      q: state.query,
-      sort: state.sort,
-      kind: state.kind,
-    });
+    const [data, blockedData] = await Promise.all([
+      api.grayzoneNodes({
+        region: state.regionId,
+        offset: (state.page - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        q: state.query,
+        sort: state.sort,
+        kind: state.kind,
+        blocked: "0",
+      }),
+      api.grayzoneNodes({
+        region: state.regionId,
+        offset: 0,
+        limit: 200,
+        q: state.query,
+        sort: state.sort,
+        kind: state.kind,
+        blocked: "1",
+      }),
+    ]);
     if (token !== reqToken) return;
     state.total = Number(data.total) || 0;
     state.items = (data.items || []).map(normalizeNode);
+    state.blockedTotal = Number(blockedData.total) || 0;
+    state.blockedItems = (blockedData.items || []).map(normalizeNode);
     if (!state.region?.title && data.region_title) state.region = { ...(state.region || {}), id: state.regionId, title: data.region_title };
 
     // 头部标题带实际节点数
@@ -236,7 +253,7 @@ async function loadNodes() {
     if (metaEl) {
       metaEl.innerHTML = `${icon("flag", 11)} 共 <b>${fmtNum(state.total)}</b> 个节点 · 第 ${state.page} / ${Math.max(1, Math.ceil(state.total / PAGE_SIZE))} 页`;
     }
-    if (!state.items.length) {
+    if (!state.items.length && !state.blockedItems.length) {
       listEl.innerHTML = emptyState({
         iconName: state.query ? "search" : "flag",
         title: state.query ? "没有匹配的节点" : "该区域暂无节点",
@@ -244,8 +261,22 @@ async function loadNodes() {
       });
       return;
     }
+    const blockedSection = state.blockedItems.length
+      ? `<section class="reserve-strip blocked-stages-strip node-blocked-strip">
+          <button class="reserve-toggle" type="button" data-node-blocked-toggle aria-expanded="false">
+            <span class="reserve-flag blocked">${icon("filter", 11)} 已屏蔽</span>
+            <span class="reserve-toggle-title">无收藏队伍的节点 <b>${fmtNum(state.blockedTotal)}</b> 个 <span class="help-dot" title="这些节点目前没有可收藏队伍，默认折叠；仍会服从当前搜索、排序和点位类型筛选。">?</span></span>
+            <span class="reserve-toggle-hint">默认折叠 · 遵守当前筛选条件 · 仍可点开查看红框队伍</span>
+            <span class="reserve-toggle-action">展开</span>
+          </button>
+          <div class="node-blocked-list" hidden>
+            <div class="node-list">${state.blockedItems.map((node) => nodeRowHtml(node)).join("")}</div>
+          </div>
+        </section>`
+      : "";
     listEl.innerHTML = `<div class="node-list">${state.items.map((node) => nodeRowHtml(node)).join("")}</div>
-      ${renderPager({ page: state.page, total: state.total, pageSize: PAGE_SIZE })}`;
+      ${renderPager({ page: state.page, total: state.total, pageSize: PAGE_SIZE })}
+      ${blockedSection}`;
     bindPager(listEl, {
       page: state.page,
       total: state.total,
@@ -256,9 +287,18 @@ async function loadNodes() {
         listEl.scrollIntoView({ behavior: "smooth", block: "start" });
       },
     });
+    listEl.querySelector("[data-node-blocked-toggle]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      const list = listEl.querySelector(".node-blocked-list");
+      const open = list ? list.hasAttribute("hidden") : false;
+      if (list) list.toggleAttribute("hidden", !open);
+      button.setAttribute("aria-expanded", String(open));
+      const action = button.querySelector(".reserve-toggle-action");
+      if (action) action.textContent = open ? "收起" : "展开";
+    });
     listEl.querySelectorAll("[data-node-id]").forEach((row) => {
       row.addEventListener("click", () => {
-        const node = state.items.find((item) => String(item.id) === String(row.dataset.nodeId));
+        const node = [...state.items, ...state.blockedItems].find((item) => String(item.id) === String(row.dataset.nodeId));
         try {
           sessionStorage.setItem(
             "tf:gray-region",
