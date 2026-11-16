@@ -35,6 +35,32 @@ const state = {
 let rootEl = null;
 let reqToken = 0;
 
+function savedStateKey(regionId) {
+  return `tf:grayzone-region.state.v1:${regionId}`;
+}
+
+function readSavedState(regionId) {
+  try {
+    const raw = sessionStorage.getItem(savedStateKey(regionId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveState() {
+  try {
+    sessionStorage.setItem(savedStateKey(state.regionId), JSON.stringify({
+      page: state.page,
+      query: state.query,
+      sort: state.sort,
+      kind: state.kind,
+    }));
+  } catch {
+    /* ignore */
+  }
+}
+
 function normalizeNode(item) {
   return {
     id: item.mission_id ?? item.stage_id ?? item.id ?? "",
@@ -114,10 +140,11 @@ function headHtml(region, total) {
 export async function render(root, { params }) {
   rootEl = root;
   state.regionId = String(params.region || "").trim();
-  state.page = 1;
-  state.query = "";
-  state.sort = "id_asc";
-  state.kind = "";
+  const saved = readSavedState(state.regionId);
+  state.page = Math.max(1, Number(saved?.page) || 1);
+  state.query = typeof saved?.query === "string" ? saved.query : "";
+  state.sort = SORT_OPTIONS.some(([value]) => value === saved?.sort) ? saved.sort : "id_asc";
+  state.kind = typeof saved?.kind === "string" ? saved.kind : "";
   state.items = [];
   state.total = 0;
 
@@ -126,7 +153,7 @@ export async function render(root, { params }) {
     `<div class="toolbar">
       <div class="input-wrap">
         <span class="in-ico">${icon("search", 14)}</span>
-        <input type="text" placeholder="搜索节点标题 / 地点 / 编号…" data-node-search />
+        <input type="text" placeholder="搜索节点标题 / 地点 / 编号…" data-node-search value="${esc(state.query)}" />
       </div>
       <select class="rf-select" data-node-sort>${SORT_OPTIONS.map(
         ([value, label]) => `<option value="${value}" ${value === state.sort ? "selected" : ""}>${label}</option>`,
@@ -177,6 +204,7 @@ function bindEvents() {
 }
 
 async function loadNodes() {
+  saveState();
   const token = ++reqToken;
   const listEl = rootEl.querySelector("[data-node-list]");
   const metaEl = rootEl.querySelector("[data-node-meta]");

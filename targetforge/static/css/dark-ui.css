@@ -459,3 +459,16 @@
 :root[data-theme="dark"] .seq-big-item:hover { background: #202a38 !important; border-color: rgba(124,201,255,.4) !important; }
 :root[data-theme="dark"] .seq-big-item .seq-idx, :root[data-theme="dark"] .seq-big-item .seq-idx b { background: #152c42 !important; border-color: #2c567a !important; color: #8ecfff !important; }
 :root[data-theme="dark"] .seq-big-item .seq-team-id, :root[data-theme="dark"] .seq-big-item b { color: #f1eee7 !important; }
+
+:root[data-theme="dark"] .sp-menu { background: #15191f !important; border-color: rgba(255,255,255,.1) !important; box-shadow: 0 16px 40px rgba(0,0,0,.35) !important; }
+:root[data-theme="dark"] .sp-opt { color: #c9c5bd !important; }
+:root[data-theme="dark"] .sp-opt:hover { background: #2a313b !important; }
+:root[data-theme="dark"] .sp-opt.selected { background: #3a3218 !important; color: #ffdc6a !important; }
+:root[data-theme="dark"] .stage-list { background: #15191f !important; border-color: rgba(255,255,255,.08) !important; }
+:root[data-theme="dark"] .stage-row { background: #15191f !important; border-bottom-color: rgba(255,255,255,.08) !important; color: #c9c5bd !important; }
+:root[data-theme="dark"] .stage-row:hover { background: #202833 !important; }
+:root[data-theme="dark"] .stage-name b { color: #f1eee7 !important; }
+:root[data-theme="dark"] .stage-name span { color: #8d9299 !important; }
+:root[data-theme="dark"] .stage-code { color: #8ecfff !important; }
+:root[data-theme="dark"] .stage-counts { color: #a0a5ac !important; }
+:root[data-theme="dark"] .stage-counts b { color: #f1eee7 !important; }

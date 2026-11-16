@@ -903,3 +903,71 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .seq-big-item .seq-idx, .seq-big-item .seq-idx b { color: #0b57d0 !important; background: #eef5ff !important; border-color: #cfe4ff !important; }
 .seq-big-item .seq-team-id, .seq-big-item b { color: #17181a !important; }
 .seq-big-item .seq-line2, .seq-big-item .seq-meta { color: #6f7479 !important; }
+
+/* ---------- requested readability fixes ---------- */
+/* roster table: bigger text + bigger species icons */
+.roster-table { font-size: 14.5px !important; }
+.roster-table th { font-size: 12.5px !important; letter-spacing: .3px; }
+.roster-row td { padding-top: 12px !important; padding-bottom: 12px !important; }
+.roster-id { font-size: 14px !important; }
+.roster-hp { font-size: 12.5px !important; }
+.roster-table .rs-ico .sp-icon,
+.roster-table .roster-species .sp-icon {
+  width: 22px !important;
+  height: 22px !important;
+}
+.roster-table .rs-ico .species-icon,
+.roster-table .roster-species .species-icon { width: 92% !important; height: 92% !important; }
+.roster-table .rs-ico .sp-silhouette,
+.roster-table .roster-species .sp-silhouette { width: 88% !important; height: 88% !important; }
+.roster-table .badge, .roster-table .tag { font-size: 11px !important; padding: 2px 7px !important; }
+.view[data-view="roster"] .toolbar { font-size: 13px; }
+
+/* species picker dropdown must follow light mode */
+.sp-menu {
+  background: #fff !important;
+  border: 1px solid rgba(22, 22, 22, 0.1) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 40px rgba(39, 34, 22, 0.14) !important;
+  overflow: hidden;
+}
+.sp-opt { color: #34383c !important; border-radius: 9px; }
+.sp-opt:hover { background: #fff5d9 !important; }
+.sp-opt.selected { background: #fff0c4 !important; color: #17181a !important; }
+.sp-opt-code { color: #8b8f91 !important; }
+.sp-menu-empty { color: #8b8f91 !important; }
+
+/* chapter stage list: light rows, not gray blocks */
+.stage-list {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 26px rgba(39, 34, 22, 0.05) !important;
+}
+.stage-row {
+  background: #fff !important;
+  border-bottom-color: rgba(22, 22, 22, 0.07) !important;
+  color: #34383c !important;
+}
+.stage-row:hover { background: #fffaf0 !important; }
+.stage-name b { color: #17181a !important; font-size: 14.5px !important; }
+.stage-name span { color: #8b8f91 !important; }
+.stage-code { color: #0b57d0 !important; font-size: 13px !important; }
+.stage-counts { color: #6f7479 !important; font-size: 12px !important; }
+.stage-counts b { color: #17181a !important; }
+.stage-row-arrow { color: #9a9d9a !important; }
+.stage-tags .tag { font-size: 10.5px; }
+
+/* stage team cards: larger readable values and more vertical breathing room */
+.team-card { padding: 20px 20px 17px !important; border-radius: 22px !important; }
+.tc-id { font-size: 12.5px !important; }
+.tc-id b { font-size: 15px !important; }
+.tc-power b { font-size: 20px !important; }
+.tc-power span { font-size: 11px !important; }
+.tc-meta { font-size: 13px !important; gap: 9px 13px !important; }
+.tc-species, .tc-members { font-size: 12.5px !important; }
+.mem-chip { font-size: 12px !important; padding: 4px 7px !important; }
+.tc-stage { font-size: 12.5px !important; }
+.tc-foot { margin-top: 10px !important; }
+.team-card .sp-icon { width: 20px !important; height: 20px !important; }
+.team-card .btn { font-size: 12.5px !important; }
