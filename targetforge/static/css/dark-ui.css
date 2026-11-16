@@ -299,3 +299,86 @@
 .theme-toggle .theme-icon-moon { display: block; }
 :root[data-theme="dark"] .theme-toggle .theme-icon-sun { display: block; }
 :root[data-theme="dark"] .theme-toggle .theme-icon-moon { display: none; }
+
+/* ---------- homepage / species dark surfaces ---------- */
+:root[data-theme="dark"] .hero {
+  background: linear-gradient(115deg, rgba(40, 34, 18, 0.72) 0%, #161a20 48%, rgba(18, 38, 56, 0.78) 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28) !important;
+}
+:root[data-theme="dark"] .hero h1 { color: #f4f1ea !important; }
+:root[data-theme="dark"] .hero h1 .thin { color: #a0a5ac !important; }
+:root[data-theme="dark"] .hero-desc { color: #b5b1a9 !important; }
+:root[data-theme="dark"] .hero-desc b { color: #f1eee7 !important; }
+:root[data-theme="dark"] .hero-stats { border-top-color: rgba(255, 255, 255, 0.1) !important; }
+:root[data-theme="dark"] .hero-stat b { color: #f1eee7 !important; }
+:root[data-theme="dark"] .hero-stat b.amber { color: #ffd75e !important; }
+:root[data-theme="dark"] .hero-stat b.cyan { color: #8ecfff !important; }
+:root[data-theme="dark"] .hero-stat span { color: #8d9299 !important; }
+:root[data-theme="dark"] .hero .eyebrow { color: #ffd75e !important; }
+:root[data-theme="dark"] .hero .radar svg { filter: none; opacity: 1; }
+
+:root[data-theme="dark"] .stat-tile {
+  background: #1a1e24 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2) !important;
+}
+:root[data-theme="dark"] .stat-tile .st-value { color: #f1eee7 !important; }
+:root[data-theme="dark"] .stat-tile .st-label,
+:root[data-theme="dark"] .stat-tile .st-sub { color: #8d9299 !important; }
+:root[data-theme="dark"] .stat-tile .st-value.amber { color: #ffd75e !important; }
+:root[data-theme="dark"] .stat-tile .st-value.cyan { color: #8ecfff !important; }
+
+:root[data-theme="dark"] .species-card {
+  background: #1a1e24 !important;
+  border-color: rgba(82, 185, 255, 0.22) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22) !important;
+}
+:root[data-theme="dark"] .species-card:hover { border-color: rgba(124, 201, 255, 0.55) !important; box-shadow: 0 17px 34px rgba(0, 0, 0, 0.3) !important; }
+:root[data-theme="dark"] .sp-name { color: #f1eee7 !important; }
+:root[data-theme="dark"] .sp-codex { color: #8d9299 !important; }
+:root[data-theme="dark"] .sp-teams { color: #a0a5ac !important; }
+:root[data-theme="dark"] .sp-teams b { color: #8ecfff !important; }
+:root[data-theme="dark"] .sp-icon { background: #202a38 !important; border-color: rgba(82, 185, 255, 0.25) !important; }
+:root[data-theme="dark"] .sp-arrow { color: #8d9299 !important; }
+:root[data-theme="dark"] .species-card:hover .sp-arrow { color: #ffd75e !important; }
+
+:root[data-theme="dark"] .quick-card,
+:root[data-theme="dark"] .flow-step,
+:root[data-theme="dark"] .status-card,
+:root[data-theme="dark"] .status-row {
+  background: #1a1e24 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #c9c5bd !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18) !important;
+}
+:root[data-theme="dark"] .quick-card .qc-title,
+:root[data-theme="dark"] .flow-step h4,
+:root[data-theme="dark"] .status-card h3 { color: #f1eee7 !important; }
+:root[data-theme="dark"] .quick-card .qc-desc,
+:root[data-theme="dark"] .flow-step p { color: #8d9299 !important; }
+
+:root[data-theme="dark"] .flow,
+:root[data-theme="dark"] .roster-table-wrap,
+:root[data-theme="dark"] .capture-mode-card,
+:root[data-theme="dark"] .target-history-item,
+:root[data-theme="dark"] .add-by-id,
+:root[data-theme="dark"] .sp-input-wrap {
+  background: #15191f !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #c9c5bd !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2) !important;
+}
+:root[data-theme="dark"] .add-by-id input,
+:root[data-theme="dark"] .sp-input-wrap input { color: #f1eee7 !important; }
+:root[data-theme="dark"] .roster-actions { background: transparent !important; }
+:root[data-theme="dark"] .port-input { background: #15191f !important; border-color: rgba(255, 255, 255, 0.1) !important; color: #f1eee7 !important; }
+:root[data-theme="dark"] .target-history-item b,
+:root[data-theme="dark"] .capture-mode-card b { color: #f1eee7 !important; }
+
+:root[data-theme="dark"] .terminal { background: #050b18 !important; border-color: rgba(255, 255, 255, 0.08) !important; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3) !important; }
+:root[data-theme="dark"] .terminal-head { background: #0a1222 !important; border-bottom-color: rgba(255, 255, 255, 0.08) !important; }
+:root[data-theme="dark"] .terminal-foot { background: #050b18 !important; border-top-color: rgba(255, 255, 255, 0.08) !important; }
+:root[data-theme="dark"] .terminal-body .log-text,
+:root[data-theme="dark"] .log-text { color: #b6cbe6 !important; }
+:root[data-theme="dark"] .log-time { color: #5c7194 !important; }

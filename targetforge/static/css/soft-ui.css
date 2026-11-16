@@ -456,3 +456,142 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .roster-row.is-locked-row:hover { background: #fff4f4 !important; }
 .roster-row.is-collectable-row .roster-id .badge { opacity: .8; }
 .roster-id .badge { margin-left: 5px; font-size: 9.5px; padding: 1px 6px; vertical-align: 1px; }
+
+/* ---------- homepage / species: light surfaces (no dark cards on paper bg) ---------- */
+.hero {
+  background: linear-gradient(115deg, #fff4cf 0%, #fffdf7 48%, #eaf6ff 100%) !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 26px !important;
+  box-shadow: 0 20px 46px rgba(39, 34, 22, 0.09) !important;
+}
+.hero::before {
+  background:
+    linear-gradient(90deg, rgba(22, 22, 22, 0.035) 1px, transparent 1px) 0 0 / 160px 100%,
+    radial-gradient(560px 300px at 84% 50%, rgba(31, 143, 255, 0.09), transparent 70%),
+    radial-gradient(420px 260px at 8% 0%, rgba(255, 196, 0, 0.11), transparent 70%) !important;
+}
+.hero::after { display: none !important; }
+.hero h1 { color: #151515 !important; }
+.hero h1 .thin { color: #77746b !important; }
+.hero-desc { color: #5c6064 !important; }
+.hero-desc b { color: #151515 !important; }
+.hero-stats { border-top-color: rgba(22, 22, 22, 0.09) !important; }
+.hero-stat b { color: #151515 !important; }
+.hero-stat b.amber { color: #a57400 !important; }
+.hero-stat b.cyan { color: #0b57d0 !important; }
+.hero-stat span { color: #7d807d !important; }
+.hero .eyebrow { color: #9a7300 !important; }
+.hero .radar svg { filter: invert(0.88) hue-rotate(180deg) saturate(0.75); opacity: .82; }
+
+.stat-tile {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 24px rgba(39, 34, 22, 0.06) !important;
+}
+.stat-tile::after { display: none !important; }
+.stat-tile:hover { border-color: rgba(21, 87, 214, 0.28) !important; box-shadow: 0 16px 32px rgba(30, 60, 130, 0.1) !important; }
+.stat-tile .st-value { color: #151515 !important; }
+.stat-tile .st-label, .stat-tile .st-sub { color: #7d807d !important; }
+.stat-tile .st-value.amber { color: #a57400 !important; }
+.stat-tile .st-value.cyan { color: #0b57d0 !important; }
+
+.species-card {
+  background: #fff !important;
+  border-color: rgba(21, 87, 214, 0.16) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 26px rgba(39, 34, 22, 0.06) !important;
+  padding: 15px 16px !important;
+}
+.species-card::after { display: none !important; }
+.species-card:hover {
+  border-color: rgba(21, 87, 214, 0.42) !important;
+  box-shadow: 0 17px 34px rgba(30, 60, 130, 0.12) !important;
+}
+.sp-name { color: #17181a !important; font-size: 15px !important; }
+.sp-codex { color: #8b8f91 !important; }
+.sp-teams { color: #676c71 !important; }
+.sp-teams b { color: #0b57d0 !important; }
+.sp-icon {
+  background: #eef5ff !important;
+  border-color: rgba(21, 87, 214, 0.2) !important;
+  box-shadow: none !important;
+}
+.sp-icon .species-icon { filter: none !important; }
+.sp-arrow { color: #9a9d9a !important; }
+.species-card:hover .sp-arrow { color: #0b57d0 !important; }
+
+.quick-card, .flow-step, .status-card, .status-row {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  color: #34383c !important;
+  box-shadow: 0 8px 22px rgba(39, 34, 22, 0.05) !important;
+}
+.flow-step:hover, .quick-card:hover { background: #fffdf5 !important; }
+.quick-card .qc-title, .flow-step h4 { color: #17181a !important; }
+.quick-card .qc-desc, .flow-step p { color: #7d807d !important; }
+.status-card h3 { color: #17181a !important; }
+
+/* radars keep the vivid butterfly; only the decorative ring is allowed to be faint */
+.hero .radar svg { filter: none !important; opacity: 1 !important; }
+.hero-right::before {
+  content: "";
+  position: absolute;
+  width: 330px;
+  height: 330px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(31, 143, 255, 0.12), rgba(31, 143, 255, 0.04) 48%, transparent 68%);
+  pointer-events: none;
+}
+.sp-tags .tag,
+.sp-tags .tag.amber {
+  background: #fff4c7 !important;
+  color: #7b5b00 !important;
+  border-color: #efd58b !important;
+}
+
+/* ---------- remaining dark panels in light mode ---------- */
+.flow {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 26px rgba(39, 34, 22, 0.06) !important;
+  overflow: hidden;
+}
+.flow-step { background: transparent !important; box-shadow: none !important; }
+.flow-step::after { background: rgba(22, 22, 22, 0.1) !important; }
+.add-by-id, .sp-input-wrap {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.1) !important;
+  color: #1c1e20 !important;
+  box-shadow: 0 4px 12px rgba(39, 34, 22, 0.04) !important;
+}
+.add-by-id input, .sp-input-wrap input { color: #1c1e20 !important; }
+.roster-table-wrap {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 14px 34px rgba(39, 34, 22, 0.07) !important;
+  overflow: hidden;
+}
+.roster-actions { background: transparent !important; }
+.capture-mode-card, .target-history-item {
+  background: #fff !important;
+  border-color: rgba(22, 22, 22, 0.07) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 26px rgba(39, 34, 22, 0.06) !important;
+  color: #34383c !important;
+}
+.port-input { background: #fff !important; border-color: rgba(22, 22, 22, 0.1) !important; color: #1c1e20 !important; }
+.target-history-item b, .capture-mode-card b { color: #17181a !important; }
+
+/* terminal as a light console in light mode */
+.terminal { background: #fffdf8 !important; border-color: rgba(22, 22, 22, 0.08) !important; box-shadow: 0 12px 28px rgba(39, 34, 22, 0.06) !important; }
+.terminal-head { background: #f7f2e7 !important; border-bottom-color: rgba(22, 22, 22, 0.08) !important; }
+.terminal-foot { background: #fffdf8 !important; border-top-color: rgba(22, 22, 22, 0.08) !important; }
+.terminal-body, .terminal-body .log-text, .log-text { color: #30353a !important; }
+.log-time { color: #8b8f91 !important; }
+.log-line:hover { background: #fff8e8 !important; }
+.log-level.info { color: #0b57d0 !important; }
+.log-idle .li-title { color: #34383c !important; }
+.log-idle .li-line { color: #7d807d !important; }
