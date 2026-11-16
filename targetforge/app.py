@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.14.2"
+VERSION = "1.15.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -808,9 +808,6 @@ def api_bridge_start(body: dict) -> dict:
             raise HttpError(400, "桥接目标不存在",
                             detail=",".join(str(item) for item in unknown),
                             hint="请从全怪组复制存在且带完整 STC 数据的 team_id。")
-        if len(kinds) > 1:
-            raise HttpError(400, "红框和蓝框桥接目标不能混用",
-                            hint="红框必须单独使用桥接；蓝框可以桥接，但表示临时加入。请分两次桥接会话。")
     try:
         from targetforge import local_bridge
         return local_bridge.start(
@@ -818,6 +815,10 @@ def api_bridge_start(body: dict) -> dict:
             mode=str(body.get("mode") or "inject"),
             port=int(body.get("port") or 18080),
             restart_game=bool(body.get("restart_game", True)),
+            client=str(body.get("client") or "pc"),
+            adb_path=str(body.get("adb_path") or ""),
+            serial=str(body.get("serial") or ""),
+            package=str(body.get("package") or "com.sunborn.girlsfrontline.pt"),
         )
     except Exception as exc:  # noqa: BLE001
         raise HttpError(500, "启动桥接失败", detail=str(exc),

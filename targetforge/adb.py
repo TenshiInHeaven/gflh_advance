@@ -156,6 +156,23 @@ def set_proxy(exe: str, serial: str, host: str = "127.0.0.1", port: int = 8084) 
         return {"ok": False, "error": str(exc)}
 
 
+
+def get_proxy(exe: str, serial: str) -> dict:
+    try:
+        r = _run(exe, ["-s", serial, "shell", "settings", "get", "global", "http_proxy"], timeout=10)
+        return {"ok": r.returncode == 0, "value": (r.stdout or "").strip(),
+                "error": (r.stderr or "").strip()[:200]}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def remove_reverse(exe: str, serial: str, port: int = 8084) -> dict:
+    try:
+        r = _run(exe, ["-s", serial, "reverse", "--remove", f"tcp:{port}"], timeout=10)
+        return {"ok": r.returncode == 0, "error": (r.stderr or "").strip()[:200]}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"ok": False, "error": str(exc)}
+
 def clear_proxy(exe: str, serial: str) -> dict:
     try:
         r = _run(exe, ["-s", serial, "shell", "settings", "put", "global", "http_proxy", ":0"], timeout=10)

@@ -1,10 +1,11 @@
 """本地靶机桥接（实验）：只改客户端 Index 响应，不写服务器。
 
-安全边界：
-* 只修改 ``Index/index`` 的 ``targettrain_collect_user_info``；
-* 保留服务器真实收藏，仅追加本地临时目标；
-* 不调用 addCollect，不持久化服务器数据；
-* 停止桥接时恢复系统代理并重启游戏，注入条目随客户端内存消失。
+支持：
+* pc：Windows 系统代理 + PC 客户端；
+* emulator：mitmproxy + adb reverse + 模拟器全局 http_proxy。
+
+安全边界：只追加 targettrain 收藏条目，不调用 addCollect，不持久化服务器数据；
+停止桥接时恢复代理/模拟器网络并重启客户端。
 """
 from __future__ import annotations
 
@@ -28,17 +29,7 @@ LOG_FILE = BRIDGE_DIR / "inject_proxy.log"
 STDOUT_FILE = BRIDGE_DIR / "bridge_stdout.log"
 DEFAULT_PORT = 18080
 DEFAULT_TARGETS = [7301601]
-
-
-def _state() -> dict:
-    return {
-        "state": "idle",
-        "pid": 0,
-        "port": DEFAULT_PORT,
-        "mode": "inject",
-        "targets": [],
-        "log": "",
-    }
+DEFAULT_PACKAGE = "com.sunborn.girlsfrontline.pt"
 
 
 def _read_json(path: Path, default):
@@ -78,7 +69,7 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def _read_proxy() -> dict:
+def _read_windows_proxy() -> dict:
     import winreg
 
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
@@ -95,7 +86,7 @@ def _read_proxy() -> dict:
         winreg.CloseKey(key)
 
 
-def _write_proxy(values: dict) -> None:
+def _write_windows_proxy(values: dict) -> None:
     import winreg
 
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
@@ -111,57 +102,63 @@ def _write_proxy(values: dict) -> None:
         winreg.CloseKey(key)
     try:
         import ctypes
-        ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)  # INTERNET_OPTION_SETTINGS_CHANGED
-        ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)  # INTERNET_OPTION_REFRESH
+        ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
+        ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)
     except Exception:
         pass
 
 
-def _set_proxy(port: int) -> None:
+def _set_windows_proxy(port: int) -> None:
     import gflzirc
-
     gflzirc.set_windows_proxy(True, f"127.0.0.1:{port}")
 
 
-def _restore_proxy() -> None:
-    backup = _read_json(BACKUP_FILE, None)
-    if isinstance(backup, dict):
-        _write_proxy(backup)
+def _restore_windows_proxy(values: dict) -> None:
+    if isinstance(values, dict):
+        _write_windows_proxy(values)
+    else:
         try:
-            BACKUP_FILE.unlink()
-        except OSError:
+            import gflzirc
+            gflzirc.set_windows_proxy(False)
+        except Exception:
             pass
-        return
-    try:
-        import gflzirc
-        gflzirc.set_windows_proxy(False)
-    except Exception:
-        pass
 
 
-def _tail(text: str, lines: int = 80) -> str:
+def _detect_emulator() -> dict:
+    from targetforge import adb
+    detected = adb.detect()
+    default = detected.get("default") or {}
+    path = str(default.get("path") or "")
+    serial = str(detected.get("default_serial") or "")
+    return {"path": path, "serial": serial}
+
+
+def _tail(path: Path, lines: int = 80) -> str:
     try:
-        return "\n".join(Path(text).read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
     except OSError:
         return ""
 
 
 def status() -> dict:
-    state = _state()
     pid = _read_json(PID_FILE, 0)
     try:
         pid = int(pid)
     except (TypeError, ValueError):
         pid = 0
-    state["pid"] = pid
-    state["targets"] = _targets()
-    state["mode"] = (_read_json(MODE_FILE, "inject") or "inject")
-    if pid and _pid_alive(pid):
-        state["state"] = "running"
-    elif pid:
-        state["state"] = "stale"
-    state["log"] = _tail(LOG_FILE, 100)
-    return state
+    backup = _read_json(BACKUP_FILE, {}) or {}
+    return {
+        "state": "running" if pid and _pid_alive(pid) else ("stale" if pid else "idle"),
+        "pid": pid,
+        "port": int(backup.get("port") or DEFAULT_PORT),
+        "mode": str(backup.get("mode") or "inject"),
+        "client": str(backup.get("client") or "pc"),
+        "targets": _targets(),
+        "log": _tail(LOG_FILE, 100),
+        "package": str(backup.get("package") or DEFAULT_PACKAGE),
+        "adb_path": str(backup.get("adb_path") or ""),
+        "serial": str(backup.get("serial") or ""),
+    }
 
 
 def set_targets(targets: list[int]) -> list[int]:
@@ -182,64 +179,96 @@ def set_targets(targets: list[int]) -> list[int]:
     return clean
 
 
+def _start_mitm(port: int) -> subprocess.Popen:
+    runner = "from mitmproxy.tools.main import mitmdump\nmitmdump()\n"
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    stdout = STDOUT_FILE.open("a", encoding="utf-8")
+    return subprocess.Popen(
+        [sys.executable, "-c", runner, "-s", str(ADDON), "-p", str(port),
+         "--set", "block_global=false", "--ignore-hosts", ".*:443"],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        stdout=stdout, stderr=subprocess.STDOUT, env=env,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def _wait_port(port: int) -> None:
+    for _ in range(50):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                return
+        except OSError:
+            time.sleep(0.2)
+    raise RuntimeError("mitmproxy 未能在端口启动")
+
+
 def start(targets: list[int] | None = None, mode: str = "inject",
-          port: int = DEFAULT_PORT, restart_game: bool = True) -> dict:
+          port: int = DEFAULT_PORT, restart_game: bool = True,
+          client: str = "pc", adb_path: str = "", serial: str = "",
+          package: str = DEFAULT_PACKAGE) -> dict:
     current = status()
     if current["state"] == "running":
         stop(restart_game=False)
     if targets is not None:
         set_targets(targets)
     mode = "inject" if str(mode).lower() == "inject" else "roundtrip"
+    client = "emulator" if str(client).lower() == "emulator" else "pc"
+    package = str(package or DEFAULT_PACKAGE).strip()
     MODE_FILE.write_text(mode, encoding="utf-8")
-    PORT = int(port)
-    try:
-        PORT_FILE = BRIDGE_DIR / "bridge_port.txt"
-        PORT_FILE.write_text(str(PORT), encoding="utf-8")
-    except OSError:
-        pass
 
-    previous = _read_proxy()
-    BACKUP_FILE.write_text(json.dumps(previous, ensure_ascii=False), encoding="utf-8")
+    emu = {"path": str(adb_path or ""), "serial": str(serial or "")}
+    if client == "emulator":
+        if not emu["path"] or not emu["serial"]:
+            detected = _detect_emulator()
+            emu["path"] = emu["path"] or detected["path"]
+            emu["serial"] = emu["serial"] or detected["serial"]
+        if not emu["path"] or not emu["serial"]:
+            raise RuntimeError("未检测到 ADB 或模拟器设备")
+
+    backup = {
+        "client": client,
+        "port": int(port),
+        "mode": mode,
+        "package": package,
+        "adb_path": emu["path"],
+        "serial": emu["serial"],
+        "windows": _read_windows_proxy() if client == "pc" else None,
+        "emulator_proxy": None,
+    }
+    if client == "emulator":
+        from targetforge import adb
+        backup["emulator_proxy"] = adb.get_proxy(emu["path"], emu["serial"]).get("value", "")
+    BACKUP_FILE.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
     LOG_FILE.write_text("", encoding="utf-8")
     STDOUT_FILE.write_text("", encoding="utf-8")
 
-    runner = (
-        "from mitmproxy.tools.main import mitmdump\n"
-        "mitmdump()\n"
-    )
-    env = dict(os.environ)
-    env["PYTHONIOENCODING"] = "utf-8"
-    stdout = STDOUT_FILE.open("a", encoding="utf-8")
-    proc = subprocess.Popen(
-        [sys.executable, "-c", runner, "-s", str(ADDON), "-p", str(PORT),
-         "--set", "block_global=false", "--ignore-hosts", ".*:443"],
-        cwd=str(Path(__file__).resolve().parents[1]),
-        stdout=stdout, stderr=subprocess.STDOUT, env=env,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    proc = _start_mitm(int(port))
     PID_FILE.write_text(str(proc.pid), encoding="utf-8")
     try:
-        for _ in range(50):
-            try:
-                with socket.create_connection(("127.0.0.1", PORT), timeout=0.3):
-                    break
-            except OSError:
-                time.sleep(0.2)
+        _wait_port(int(port))
+        if client == "pc":
+            _set_windows_proxy(int(port))
+            if restart_game:
+                from targetforge import gflh
+                result = gflh.restart_game(wait_ready=True)
+                if result.get("error"):
+                    raise RuntimeError(str(result["error"]))
         else:
-            raise RuntimeError("mitmproxy 未能在端口启动")
-        _set_proxy(PORT)
-        if restart_game:
-            from targetforge import gflh
-            result = gflh.restart_game(wait_ready=True)
-            if result.get("error"):
-                raise RuntimeError(str(result["error"]))
+            from targetforge import adb
+            reversed_ = adb.reverse(emu["path"], emu["serial"], int(port))
+            proxied = adb.set_proxy(emu["path"], emu["serial"], "127.0.0.1", int(port))
+            if not reversed_.get("ok") or not proxied.get("ok"):
+                raise RuntimeError(reversed_.get("error") or proxied.get("error") or "模拟器代理设置失败")
+            if restart_game and package:
+                adb.restart_game(emu["path"], emu["serial"], package)
         return status()
     except Exception:
         try:
             proc.kill()
         except Exception:
             pass
-        _restore_proxy()
+        _cleanup(backup)
         try:
             PID_FILE.unlink()
         except OSError:
@@ -247,7 +276,30 @@ def start(targets: list[int] | None = None, mode: str = "inject",
         raise
 
 
+def _cleanup(backup: dict) -> None:
+    client = str(backup.get("client") or "pc")
+    if client == "emulator":
+        try:
+            from targetforge import adb
+            path = str(backup.get("adb_path") or "")
+            serial = str(backup.get("serial") or "")
+            port = int(backup.get("port") or DEFAULT_PORT)
+            if path and serial:
+                previous = str(backup.get("emulator_proxy") or "")
+                if previous and previous not in (":0", "null", "None"):
+                    # 恢复原有代理值（若原本不是当前桥接值）
+                    adb.set_proxy(path, serial, *previous.rsplit(":", 1))
+                else:
+                    adb.clear_proxy(path, serial)
+                adb.remove_reverse(path, serial, port)
+        except Exception:
+            pass
+    else:
+        _restore_windows_proxy(backup.get("windows"))
+
+
 def stop(restart_game: bool = True) -> dict:
+    backup = _read_json(BACKUP_FILE, {}) or {}
     pid = _read_json(PID_FILE, 0)
     try:
         pid = int(pid)
@@ -264,11 +316,23 @@ def stop(restart_game: bool = True) -> dict:
         PID_FILE.unlink()
     except OSError:
         pass
-    _restore_proxy()
+    _cleanup(backup)
+    try:
+        BACKUP_FILE.unlink()
+    except OSError:
+        pass
     if restart_game:
         try:
-            from targetforge import gflh
-            gflh.restart_game(wait_ready=True)
+            if str(backup.get("client") or "pc") == "emulator":
+                from targetforge import adb
+                path = str(backup.get("adb_path") or "")
+                serial = str(backup.get("serial") or "")
+                package = str(backup.get("package") or DEFAULT_PACKAGE)
+                if path and serial and package:
+                    adb.restart_game(path, serial, package)
+            else:
+                from targetforge import gflh
+                gflh.restart_game(wait_ready=True)
         except Exception:
             pass
     return status()

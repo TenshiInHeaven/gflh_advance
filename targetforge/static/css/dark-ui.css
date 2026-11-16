@@ -433,3 +433,29 @@
 :root[data-theme="dark"] .bridge-rule.red { background: #351f23; color: #ffb4b8; border-color: #6b323a; }
 :root[data-theme="dark"] .bridge-rule.error { background: #3a2024; color: #ff9a9f; border-color: #7a3941; }
 :root[data-theme="dark"] .bridge-rule.warn { background: #3a3218; color: #ffdc6a; border-color: #625522; }
+
+:root[data-theme="dark"] .bridge-field input { background: #15191f; border-color: rgba(255,255,255,.1); color: #f1eee7; }
+
+:root[data-theme="dark"] .seq-summary-panel,
+:root[data-theme="dark"] .summary-box {
+  background: #1a1e24 !important;
+  border-color: rgba(255,255,255,.08) !important;
+  box-shadow: 0 10px 28px rgba(0,0,0,.22) !important;
+  color: #c9c5bd !important;
+}
+:root[data-theme="dark"] .summary-big b,
+:root[data-theme="dark"] .summary-row span { color: #a0a5ac !important; }
+:root[data-theme="dark"] .summary-row b { color: #f1eee7 !important; }
+:root[data-theme="dark"] .mode-option { background: #1f242c !important; border-color: rgba(255,255,255,.1) !important; color: #c9c5bd !important; }
+:root[data-theme="dark"] .mode-option.active { background: #3a3218 !important; border-color: #625522 !important; }
+:root[data-theme="dark"] .mode-option .mo-title { color: #f1eee7 !important; }
+:root[data-theme="dark"] .mode-option .mo-desc { color: #8d9299 !important; }
+:root[data-theme="dark"] .check-row { background: #242a33 !important; border-color: #343c48 !important; color: #a0a5ac !important; }
+:root[data-theme="dark"] .nav-highlight { background: #ffc400 !important; }
+:root[data-theme="dark"] .nav-item.active, :root[data-theme="dark"] .nav-item.is-active { color: #121212 !important; }
+:root[data-theme="dark"] .nav-item.active .nav-ico, :root[data-theme="dark"] .nav-item.is-active .nav-ico { color: #121212 !important; }
+
+:root[data-theme="dark"] .seq-big-item { background: linear-gradient(160deg, #1b2433, #171d27) !important; border-color: rgba(82,185,255,.2) !important; color: #c9c5bd !important; }
+:root[data-theme="dark"] .seq-big-item:hover { background: #202a38 !important; border-color: rgba(124,201,255,.4) !important; }
+:root[data-theme="dark"] .seq-big-item .seq-idx, :root[data-theme="dark"] .seq-big-item .seq-idx b { background: #152c42 !important; border-color: #2c567a !important; color: #8ecfff !important; }
+:root[data-theme="dark"] .seq-big-item .seq-team-id, :root[data-theme="dark"] .seq-big-item b { color: #f1eee7 !important; }

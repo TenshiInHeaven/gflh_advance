@@ -14,6 +14,8 @@ const state = {
   status: null,
   targets: "",
   mode: "inject",
+  client: "pc",
+  package: "com.sunborn.girlsfrontline.pt",
   timer: null,
   busy: false,
   targetInfo: new Map(),
@@ -68,14 +70,14 @@ function targetKindsHtml() {
     return `<span class="bridge-target-chip ${cls}"><b>#${esc(id)}</b><span>${label}</span></span>`;
   }).join("");
   let rule = "";
-  if (state.mixed) {
-    rule = `<div class="bridge-rule error">红框和蓝框桥接目标不能混用：请分开两次桥接。红框必须桥接；蓝框可以桥接，表示临时加入。</div>`;
-  } else if ([...state.targetInfo.values()].some((item) => item.collectable === true)
-             && !state.unknown.length) {
-    rule = `<div class="bridge-rule blue">这些是正常可收藏的蓝框目标：走桥接等于“临时加入”，停止桥接后会清空。</div>`;
-  } else if ([...state.targetInfo.values()].some((item) => item.collectable === false)
-             && !state.unknown.length) {
-    rule = `<div class="bridge-rule red">这些是红框目标：正常 addCollect 不会接受，必须通过桥接临时加入。</div>`;
+  const hasBlue = [...state.targetInfo.values()].some((item) => item.collectable === true);
+  const hasRed = [...state.targetInfo.values()].some((item) => item.collectable === false);
+  if (hasRed && hasBlue) {
+    rule = `<div class="bridge-rule red">红框 + 蓝框混接：只要包含红框，整组都只能作为临时桥接，不能做任何服务器管理操作；停止桥接并重启后清空。</div>`;
+  } else if (hasRed && !state.unknown.length) {
+    rule = `<div class="bridge-rule red">红框目标：正常 addCollect 不会接受，只能通过桥接临时加入。</div>`;
+  } else if (hasBlue && !state.unknown.length) {
+    rule = `<div class="bridge-rule blue">蓝框目标走桥接 = 临时加入（向下兼容）；停止桥接并重启后清空。</div>`;
   }
   if (state.unknown.length) {
     rule += `<div class="bridge-rule warn">未知/无 STC 数据的编号：${state.unknown.map((id) => `#${id}`).join("、")}</div>`;
@@ -90,6 +92,7 @@ function renderBody(root) {
     <div class="bridge-warning">
       <span class="help-dot" title="实验功能：仅修改客户端 Index/index 响应，不写服务器">?</span>
       <b>实验功能 · 仅测试账号使用</b>
+      红框和蓝框可以混接，但只要包含红框，整组都只能作为<strong>临时桥接</strong>。
       桥接靶机只能<strong>直接进入战斗</strong>：不能删除、锁定、管理或用于任何服务器写入操作。
       关闭桥接并重启游戏后，桥接靶机会清空。若进入战斗闪退，立即点击“停止桥接并恢复代理”。
     </div>
@@ -108,8 +111,22 @@ function renderBody(root) {
             <option value="inject" ${state.mode === "inject" ? "selected" : ""}>注入模式（追加目标）</option>
           </select>
         </label>
+        <div class="bridge-field-row">
+          <label class="bridge-field">
+            <span>客户端</span>
+            <select data-bridge-client class="rf-select">
+              <option value="pc" ${state.client !== "emulator" ? "selected" : ""}>PC 客户端</option>
+              <option value="emulator" ${state.client === "emulator" ? "selected" : ""}>安卓模拟器（ADB）</option>
+            </select>
+          </label>
+          <label class="bridge-field">
+            <span>模拟器包名</span>
+            <input data-bridge-package type="text" value="${esc(state.package)}" placeholder="com.sunborn.girlsfrontline.pt" />
+          </label>
+        </div>
+        <p class="bridge-note">模拟器模式会通过 ADB 自动检测设备、adb reverse 和全局 http_proxy；HTTPS 仍然直通。</p>
         <div class="bridge-actions">
-          <button class="btn btn-primary" data-bridge-start ${state.busy || state.mixed ? "disabled" : ""}>${icon("play", 13)} 启动桥接并重启游戏</button>
+          <button class="btn btn-primary" data-bridge-start ${state.busy ? "disabled" : ""}>${icon("play", 13)} 启动桥接并重启游戏</button>
           <button class="btn btn-danger" data-bridge-stop ${state.busy ? "disabled" : ""}>${icon("close", 13)} 停止桥接并恢复代理</button>
         </div>
         <p class="bridge-note">启动前请先关闭普通抓包和模拟器抓包。HTTPS 会直通，不安装证书。</p>
@@ -143,6 +160,12 @@ function renderBody(root) {
   root.querySelector("[data-bridge-mode]")?.addEventListener("change", (event) => {
     state.mode = event.target.value;
   });
+  root.querySelector("[data-bridge-client]")?.addEventListener("change", (event) => {
+    state.client = event.target.value;
+  });
+  root.querySelector("[data-bridge-package]")?.addEventListener("input", (event) => {
+    state.package = event.target.value;
+  });
   root.querySelector("[data-bridge-start]")?.addEventListener("click", () => startBridge(root));
   root.querySelector("[data-bridge-stop]")?.addEventListener("click", () => stopBridge(root));
   if (parseTargetIds().length) {
@@ -158,6 +181,8 @@ async function refresh(root) {
     state.status = await api.bridgeStatus();
     if (!state.targets && (state.status.targets || []).length) state.targets = targetsText(state.status);
     if (state.status.mode) state.mode = state.status.mode === "roundtrip" ? "roundtrip" : "inject";
+    if (state.status.client) state.client = state.status.client === "emulator" ? "emulator" : "pc";
+    if (state.status.package) state.package = state.status.package;
     const log = root.querySelector("[data-bridge-log]");
     if (log) log.textContent = state.status.log || "还没有桥接日志。";
     const host = root.querySelector("[data-bridge-body]");
@@ -175,10 +200,6 @@ function parseTargets() {
 async function startBridge(root) {
   if (state.busy) return;
   await classifyTargets();
-  if (state.mixed) {
-    toastErr("红框和蓝框不能混用", "请分开两次桥接：红框必须桥接；蓝框可以桥接，但表示临时加入。");
-    return;
-  }
   state.busy = true;
   const button = root.querySelector("[data-bridge-start]");
   setBusy(button, true, "启动中…");
@@ -186,6 +207,8 @@ async function startBridge(root) {
     state.status = await api.bridgeStart({
       targets: parseTargets(),
       mode: state.mode,
+      client: state.client,
+      package: state.package,
       restart_game: true,
     });
     state.targets = targetsText(state.status);
