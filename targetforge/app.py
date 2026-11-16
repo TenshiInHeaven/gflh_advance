@@ -25,7 +25,7 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 MAX_TARGETS = 35
-VERSION = "1.12.2"
+VERSION = "1.13.0"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -613,13 +613,22 @@ def api_teams(qs: dict | None = None) -> dict:
     limit = min(200, max(1, int(float(first("limit", "50") or 50))))
     collectable_raw = first("collectable", "").strip().lower()
     collectable = None if not collectable_raw else collectable_raw not in ("0", "false", "no")
+    boss_raw = first("has_boss", "").strip().lower()
+    has_boss = None if not boss_raw else boss_raw in ("1", "true", "yes")
     power_known_raw = first("power_known", "").strip().lower()
+    hp_min = first("hp_min", "").strip()
+    hp_max = first("hp_max", "").strip()
     return get_catalog().team_list(
         q=first("q", ""),
         chapter=first("chapter", ""),
         species=species or None,
         role=role,
         collectable=collectable,
+        faction=first("faction", "").strip(),
+        team_ids=first("team_ids", "").strip(),
+        has_boss=has_boss,
+        hp_min=hp_min or None,
+        hp_max=hp_max or None,
         power_known=power_known_raw in ("1", "true", "yes") if power_known_raw else None,
         power_min=opt_int("power_min"),
         power_max=opt_int("power_max"),

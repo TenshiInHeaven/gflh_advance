@@ -595,3 +595,149 @@ pre, code { color: #222; background: #f5f0e5; border-radius: 8px; }
 .log-level.info { color: #0b57d0 !important; }
 .log-idle .li-title { color: #34383c !important; }
 .log-idle .li-line { color: #7d807d !important; }
+
+/* ---------- roster Taobao-style tag filters ---------- */
+.roster-filter-card {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(22, 22, 22, 0.07);
+  border-radius: 24px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 30px rgba(39, 34, 22, 0.06);
+  margin-bottom: 16px;
+}
+.roster-filter-card .rf-row { gap: 10px; }
+.rf-top-row { align-items: center; }
+.rf-mini-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #7d807d;
+  white-space: nowrap;
+}
+.rf-mini-field input {
+  width: 170px;
+  min-height: 34px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.rf-tag-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  padding: 13px 0 4px;
+  border-top: 1px solid rgba(22, 22, 22, 0.06);
+  margin-top: 12px;
+}
+.rf-tag-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.rf-tag-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #7d807d;
+  font-size: 11px;
+  margin-right: 2px;
+}
+.rf-tag-chip {
+  border: 1px solid rgba(22, 22, 22, 0.1);
+  border-radius: 999px;
+  background: #fff;
+  color: #45494e;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 13px;
+  transition: all .16s ease;
+}
+.rf-tag-chip:hover { border-color: rgba(21, 87, 214, 0.42); color: #0b57d0; transform: translateY(-1px); }
+.rf-tag-chip.is-active {
+  background: #141414;
+  border-color: #141414;
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(20, 20, 20, 0.16);
+}
+.rf-picked-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding-top: 12px;
+  margin-top: 8px;
+  border-top: 1px dashed rgba(22, 22, 22, 0.1);
+  min-height: 34px;
+}
+.rf-picked-empty { color: #92958f; font-size: 11.5px; }
+.rf-picked-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 999px;
+  background: #fff4c7;
+  border: 1px solid #efd58b;
+  color: #635015;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.rf-picked-chip button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #7d6a2a;
+  font-size: 13px;
+  line-height: 1;
+}
+.rf-picked-chip button:hover { background: rgba(0, 0, 0, .12); color: #141414; }
+.rf-clear-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  border: 1px solid rgba(217, 45, 63, .22);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #b11f2c;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #fff4f5;
+}
+.rf-clear-all:hover { background: #ffe8ea; }
+.roster-filters { background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+
+/* ---------- smooth sidebar / page transitions ---------- */
+.nav { position: relative; }
+.nav-highlight {
+  display: block !important;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 0;
+  border-radius: 14px !important;
+  background: #ffc400 !important;
+  border: 0 !important;
+  box-shadow: 0 8px 20px rgba(245, 185, 0, 0.24) !important;
+  transition: transform .28s cubic-bezier(.22,.61,.36,1), height .28s cubic-bezier(.22,.61,.36,1), opacity .2s ease !important;
+  pointer-events: none;
+}
+.nav-highlight::before { display: none !important; }
+.nav-item { z-index: 1; transition: background .2s ease, color .2s ease, transform .2s ease; }
+.nav-item.is-active {
+  background: transparent !important;
+  color: #121212 !important;
+  box-shadow: none !important;
+}
+.nav-item.is-active .nav-ico { color: #121212 !important; }
+.nav-item.is-active .nav-count { background: rgba(0, 0, 0, .14) !important; color: #121212 !important; }
+.nav-item:hover { transform: translateX(2px); }
+.nav-item.is-active:hover { transform: none; }
+
+@keyframes tfViewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.view.route-in { animation: tfViewIn .32s cubic-bezier(.22,.61,.36,1); }
+.team-card, .species-card, .node-row, .stat-tile, .rf-tag-chip, .btn {
+  will-change: transform;
+}

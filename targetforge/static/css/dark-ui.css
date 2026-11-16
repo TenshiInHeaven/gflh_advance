@@ -382,3 +382,28 @@
 :root[data-theme="dark"] .terminal-body .log-text,
 :root[data-theme="dark"] .log-text { color: #b6cbe6 !important; }
 :root[data-theme="dark"] .log-time { color: #5c7194 !important; }
+
+/* roster filter / nav highlight dark */
+:root[data-theme="dark"] .roster-filter-card {
+  background: rgba(26, 30, 36, .96);
+  border-color: rgba(255, 255, 255, .08);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .22);
+}
+:root[data-theme="dark"] .rf-mini-field { color: #8d9299; }
+:root[data-theme="dark"] .rf-tag-groups { border-top-color: rgba(255,255,255,.08); }
+:root[data-theme="dark"] .rf-tag-label { color: #8d9299; }
+:root[data-theme="dark"] .rf-tag-chip {
+  background: #1f242c; border-color: rgba(255,255,255,.1); color: #c9c5bd;
+}
+:root[data-theme="dark"] .rf-tag-chip:hover { border-color: rgba(124,201,255,.5); color: #8ecfff; }
+:root[data-theme="dark"] .rf-tag-chip.is-active { background: #ffc400; color: #121212; border-color: #ffc400; }
+:root[data-theme="dark"] .rf-picked-row { border-top-color: rgba(255,255,255,.1); }
+:root[data-theme="dark"] .rf-picked-empty { color: #8d9299; }
+:root[data-theme="dark"] .rf-picked-chip { background: #3a3218; border-color: #625522; color: #ffdc6a; }
+:root[data-theme="dark"] .rf-picked-chip button { color: #d6bd69; }
+:root[data-theme="dark"] .rf-picked-chip button:hover { background: rgba(255,255,255,.1); color: #fff; }
+:root[data-theme="dark"] .rf-clear-all { background: #3a2024; border-color: #6b323a; color: #ff9a9f; }
+:root[data-theme="dark"] .rf-clear-all:hover { background: #49262b; }
+:root[data-theme="dark"] .nav-item.is-active { background: transparent !important; color: #121212 !important; box-shadow: none !important; }
+:root[data-theme="dark"] .nav-item.is-active .nav-ico { color: #121212 !important; }
+:root[data-theme="dark"] .nav-item.is-active .nav-count { background: rgba(0,0,0,.14) !important; color: #121212 !important; }

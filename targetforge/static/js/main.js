@@ -555,6 +555,12 @@ export async function renderRoute() {
   if (mainEl) mainEl.scrollTop = 0;
   try {
     await route.view.render(el, { params, query });
+    if (token === routeToken) {
+      el.classList.remove("route-in");
+      void el.offsetWidth;
+      el.classList.add("route-in");
+      window.setTimeout(() => el.classList.remove("route-in"), 400);
+    }
   } catch (err) {
     if (token !== routeToken) return;
     handleViewError(el, err, () => renderRoute());

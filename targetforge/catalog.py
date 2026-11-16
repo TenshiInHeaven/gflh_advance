@@ -2621,6 +2621,8 @@ class Catalog:
     # -- 全怪组总表（v1.6） -------------------------------------------
     def team_list(self, *, q: str = "", chapter: str = "", species: Any = None,
                   role: str = "any", collectable: Any = True,
+                  faction: str = "", team_ids: Any = None,
+                  has_boss: Any = None, hp_min: Any = None, hp_max: Any = None,
                   power_known: Any = None, power_min: Any = None,
                   power_max: Any = None, units_min: Any = None,
                   units_max: Any = None, sort: str = "id_asc",
@@ -2633,6 +2635,8 @@ class Catalog:
         * ``species``：codex_no 列表（list 或逗号串），**AND**（队伍包含全部指定怪种）
         * ``role``：enemy / support / reserve / any
         * ``collectable``：默认 True（只返回可收藏队伍）；False 时返回不可收藏的支援队伍
+        * ``faction`` / ``team_ids``（逗号或空白分隔的精确 ID）
+        * ``has_boss``（True/False；None=不筛） / ``hp_min`` / ``hp_max``
         * ``power_known`` / ``power_min`` / ``power_max`` / ``units_min`` / ``units_max``
         * ``sort``：id_asc / id_desc / power_desc / power_asc / units_desc / units_asc /
           hp_desc / species_desc（稳定排序，同值按 id 升序；效能未知在效能排序时排最后）
@@ -2640,6 +2644,7 @@ class Catalog:
         """
         query = str(q or "").strip().lower()
         chapter = str(chapter or "").strip()
+        faction = str(faction or "").strip()
         role = str(role or "any").strip().lower()
         if role not in ("any", "enemy", "support", "reserve"):
             role = "any"
@@ -2647,6 +2652,12 @@ class Catalog:
         species_needed = self._normalize_species(species)
         known = _optional_bool(power_known)
         collectable_flag = _optional_bool(collectable)
+        boss_flag = _optional_bool(has_boss)
+        raw_ids = team_ids if isinstance(team_ids, (list, tuple, set)) else re.split(r"[,;\s]+", str(team_ids or ""))
+        id_set = {int(str(item).strip()) for item in raw_ids
+                  if str(item).strip().lstrip("-").isdigit()}
+        hp_low = None if hp_min is None or str(hp_min).strip() == "" else _float(hp_min)
+        hp_high = None if hp_max is None or str(hp_max).strip() == "" else _float(hp_max)
         low = None if power_min is None or str(power_min).strip() == "" else _float(power_min)
         high = None if power_max is None or str(power_max).strip() == "" else _float(power_max)
         units_low = None if units_min is None or str(units_min).strip() == "" else _int(units_min)
@@ -2655,8 +2666,8 @@ class Catalog:
         limit = min(200, max(1, _int(limit, 50)))
 
         if collectable_flag is False:
-            base: dict[int, dict] = self._support_records
-            candidates: list[int] = sorted(base)
+            base: dict[int, dict] = self._teams
+            candidates: list[int] = self._team_ids
         else:
             base = self._teams
             candidates = self._team_ids
@@ -2666,6 +2677,17 @@ class Catalog:
             record = base[team_id]
             if (collectable_flag is not None
                     and bool(record.get("collectable", True)) != collectable_flag):
+                continue
+            if id_set and team_id not in id_set:
+                continue
+            if faction and str(record.get("faction") or "") != faction:
+                continue
+            if boss_flag is not None and (("BOSS" in (record.get("tags") or [])) != boss_flag):
+                continue
+            hp_total = _float(record.get("hp_total"))
+            if hp_low is not None and hp_total < hp_low:
+                continue
+            if hp_high is not None and hp_total > hp_high:
                 continue
             if chapter:
                 if chapter == "orphan":

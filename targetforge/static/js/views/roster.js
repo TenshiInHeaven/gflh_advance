@@ -20,8 +20,6 @@ const COL_WIDTHS_KEY = "roster.colWidths.v1";
 const SORT_OPTIONS = [
   ["id_asc", "序号 ↑"],
   ["id_desc", "序号 ↓"],
-  ["power_desc", "效能 ↓"],
-  ["power_asc", "效能 ↑"],
   ["units_desc", "单位数 ↓"],
   ["units_asc", "单位数 ↑"],
   ["hp_desc", "总血 ↓"],
@@ -29,7 +27,6 @@ const SORT_OPTIONS = [
 ];
 const SORT_COLS = {
   id: { desc: "id_desc", asc: "id_asc" },
-  power: { desc: "power_desc", asc: "power_asc" },
   units: { desc: "units_desc", asc: "units_asc" },
   hp: { desc: "hp_desc", asc: "id_asc" },
   species: { desc: "species_desc", asc: "id_asc" },
@@ -40,12 +37,16 @@ const defaultFilters = () => ({
   chapter: "",
   role: "",
   species: new Map(),
+  faction: "",
+  boss: "",
+  collectable: "",
+  teamIds: "",
+  hpMin: "",
+  hpMax: "",
   unitsMin: "",
   unitsMax: "",
-  powerMin: "",
-  powerMax: "",
-  powerKnown: false,
 });
+const ROSTER_STATE_KEY = "tf:roster.state.v1";
 
 const state = {
   page: 1,
@@ -60,6 +61,46 @@ const state = {
 let rootEl = null;
 let reqToken = 0;
 let outsideClickBound = false;
+let rosterScrollBound = false;
+
+function rosterScroller() {
+  return rootEl ? rootEl.closest(".main") : null;
+}
+
+function readRosterState() {
+  try {
+    const raw = sessionStorage.getItem(ROSTER_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRosterState() {
+  if (!rootEl) return;
+  try {
+    const data = {
+      filters: {
+        ...state.filters,
+        species: [...state.filters.species.values()],
+      },
+      page: state.page,
+      limit: state.limit,
+      sort: state.sort,
+    };
+    sessionStorage.setItem(ROSTER_STATE_KEY, JSON.stringify(data));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function clearRosterState() {
+  try {
+    sessionStorage.removeItem(ROSTER_STATE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function chapterOptionsHtml() {
   const groups = state.chapters || [];
@@ -129,9 +170,12 @@ function buildQuery() {
     chapter: f.chapter,
     species: [...f.species.keys()].join(","),
     role: f.role,
-    power_known: f.powerKnown ? "1" : "",
-    power_min: f.powerMin,
-    power_max: f.powerMax,
+    faction: f.faction,
+    has_boss: f.boss,
+    collectable: f.collectable,
+    team_ids: f.teamIds.trim(),
+    hp_min: f.hpMin,
+    hp_max: f.hpMax,
     units_min: f.unitsMin,
     units_max: f.unitsMax,
     sort: state.sort,
@@ -294,7 +338,7 @@ function tableHeadHtml() {
   };
   return `<thead><tr>
     ${sortCell("id", "编号", 0)}
-    ${sortCell("power", "效能", 1)}
+    <th scope="col">效能${handle(1)}</th>
     ${sortCell("units", "单位/总血", 2)}
     <th scope="col">阵营${handle(3)}</th>
     <th scope="col">角色${handle(4)}</th>
@@ -304,13 +348,46 @@ function tableHeadHtml() {
   </tr></thead>`;
 }
 
+function tagChip(value, label, active, attr) {
+  return `<button class="rf-tag-chip ${active ? "is-active" : ""}" type="button" ${attr}="${esc(value)}">${esc(label)}</button>`;
+}
+
+function activeFilterChipsHtml() {
+  const f = state.filters;
+  const chips = [];
+  const add = (kind, key, label) => chips.push(
+    `<span class="rf-picked-chip"><span>${esc(label)}</span><button type="button" data-roster-clear="${kind}" data-clear-key="${esc(key)}" aria-label="移除">×</button></span>`,
+  );
+  if (f.q.trim()) add("q", "q", `搜索：${f.q.trim()}`);
+  if (f.teamIds.trim()) add("teamIds", "teamIds", `编号：${f.teamIds.trim()}`);
+  if (f.chapter) add("chapter", "chapter", `章节：${f.chapter}`);
+  if (f.role) add("role", "role", `角色：${f.role}`);
+  if (f.faction) add("faction", "faction", `阵营：${f.faction}`);
+  if (f.boss === "1") add("boss", "boss", "只含 BOSS");
+  if (f.boss === "0") add("boss", "boss", "不含 BOSS");
+  if (f.collectable === "1") add("collectable", "collectable", "可作靶机");
+  if (f.collectable === "0") add("collectable", "collectable", "仅展示");
+  if (f.hpMin || f.hpMax) add("hp", "hp", `总血：${f.hpMin || "0"} ~ ${f.hpMax || "∞"}`);
+  if (f.unitsMin || f.unitsMax) add("units", "units", `单位数：${f.unitsMin || "0"} ~ ${f.unitsMax || "∞"}`);
+  [...f.species.values()].forEach((item) => chips.push(
+    `<span class="rf-picked-chip"><span>${esc(item.name || `#${item.codex_no}`)}</span><button type="button" data-roster-clear="species" data-clear-key="${item.codex_no}" aria-label="移除">×</button></span>`,
+  ));
+  if (!chips.length) return `<span class="rf-picked-empty">还没有筛选 tag。选怪种、阵营或条件后会自动出现在这里。</span>`;
+  return `${chips.join("")}<button class="rf-clear-all" type="button" data-roster-clear-all>${icon("close", 11)} 一键清除全部</button>`;
+}
+
 function filterPanelHtml() {
-  return `<div class="roster-filters">
-    <div class="rf-row">
+  const f = state.filters;
+  const factions = ["铁血", "军方", "帕拉蒂斯", "其它"];
+  return `<div class="roster-filter-card">
+    <div class="rf-row rf-top-row">
       <div class="input-wrap rf-search">
         <span class="in-ico">${icon("search", 14)}</span>
-        <input type="text" placeholder="搜索编号 / 阵营 / 怪种名…" data-roster-q value="${esc(state.filters.q)}" />
+        <input type="text" placeholder="搜索编号 / 名称 / 怪种…" data-roster-q value="${esc(f.q)}" />
       </div>
+      <label class="rf-mini-field">队伍编号
+        <input type="text" placeholder="如 7301601,6630191" data-roster-team-ids value="${esc(f.teamIds)}" />
+      </label>
       <select class="rf-select" data-roster-chapter>${chapterOptionsHtml()}</select>
       <select class="rf-select" data-roster-role>${roleOptionsHtml()}</select>
       <select class="rf-select" data-roster-sort>${SORT_OPTIONS.map(
@@ -321,22 +398,44 @@ function filterPanelHtml() {
       ).join("")}</select>
       <button class="btn btn-ghost btn-sm" type="button" data-roster-reset>${icon("rotate", 12)} 重置</button>
     </div>
+
+    <div class="rf-tag-groups">
+      <div class="rf-tag-group">
+        <span class="rf-tag-label">${icon("shield", 11)} 阵营</span>
+        ${tagChip("", "全部", !f.faction, "data-roster-faction")}
+        ${factions.map((faction) => tagChip(faction, faction, f.faction === faction, "data-roster-faction")).join("")}
+      </div>
+      <div class="rf-tag-group">
+        <span class="rf-tag-label">${icon("alert", 11)} BOSS</span>
+        ${tagChip("", "全部", !f.boss, "data-roster-boss")}
+        ${tagChip("1", "含 BOSS", f.boss === "1", "data-roster-boss")}
+        ${tagChip("0", "不含 BOSS", f.boss === "0", "data-roster-boss")}
+      </div>
+      <div class="rf-tag-group">
+        <span class="rf-tag-label">${icon("plus", 11)} 靶机</span>
+        ${tagChip("", "全部", !f.collectable, "data-roster-collect")}
+        ${tagChip("1", "可作靶机", f.collectable === "1", "data-roster-collect")}
+        ${tagChip("0", "仅展示", f.collectable === "0", "data-roster-collect")}
+      </div>
+    </div>
+
     <div class="rf-row rf-row-2">
       <div class="species-picker" data-sp-picker>
         <div class="sp-picked" data-sp-picked>${pickedSpeciesHtml()}</div>
         <div class="sp-input-wrap">
           <span class="in-ico">${icon("filter", 12)}</span>
-          <input type="text" placeholder="搜索怪种加入筛选（多选 = 同时包含）" data-sp-search autocomplete="off" />
+          <input type="text" placeholder="搜索怪种 tag 加入筛选（多选 = 同时包含）" data-sp-search autocomplete="off" />
         </div>
         <div class="sp-menu" data-sp-menu>${speciesMenuHtml()}</div>
       </div>
       <div class="rf-ranges">
-        <label class="rf-range">单位数 <input type="number" min="0" placeholder="min" data-roster-units-min value="${esc(state.filters.unitsMin)}" /> – <input type="number" min="0" placeholder="max" data-roster-units-max value="${esc(state.filters.unitsMax)}" /></label>
-        <label class="rf-range">效能 <input type="number" placeholder="min" data-roster-power-min value="${esc(state.filters.powerMin)}" /> – <input type="number" placeholder="max" data-roster-power-max value="${esc(state.filters.powerMax)}" /></label>
-        <label class="rf-check" title="效能为 0 表示客户端未标注（常规队伍），勾选后只显示有标注的队伍"><input type="checkbox" data-roster-known ${state.filters.powerKnown ? "checked" : ""} /> 只看有标注</label>
+        <label class="rf-range">单位数 <input type="number" min="0" placeholder="min" data-roster-units-min value="${esc(f.unitsMin)}" /> – <input type="number" min="0" placeholder="max" data-roster-units-max value="${esc(f.unitsMax)}" /></label>
+        <label class="rf-range">总血量 <input type="number" min="0" placeholder="min" data-roster-hp-min value="${esc(f.hpMin)}" /> – <input type="number" min="0" placeholder="max" data-roster-hp-max value="${esc(f.hpMax)}" /></label>
         <span class="rf-meta" data-roster-meta>${icon("list", 12)} 共 — 支怪组</span>
       </div>
     </div>
+
+    <div class="rf-picked-row" data-roster-picked>${activeFilterChipsHtml()}</div>
   </div>`;
 }
 
@@ -345,7 +444,7 @@ function shellHtml() {
     crumbs: [{ label: "全怪组" }],
     title: "全怪组",
     badge: "ROSTER",
-    sub: "全部敌人队伍总表：按编号 / 效能 / 单位数 / 总血 / 阵营 / 角色 / 怪种 / 出场章节浏览。支持多条件筛选（章节出现位置、怪种多选取「同时包含」、效能与单位数区间）与表头排序；机场刷新候选为推断数据，标「可能刷怪」徽标。收起右侧序列面板可获得更宽表格。",
+    sub: "全部敌人队伍总表：按编号 / 怪种 tag / 阵营 / BOSS / 可作靶机 / 总血量 / 单位数 / 出场章节筛选与排序。筛选条件会在返回本页时保留，可一键清除。机场候选为推断数据，标「可能刷怪」。",
   })}
   ${filterPanelHtml()}
   <div class="roster-table-wrap">
@@ -368,16 +467,28 @@ function emptyHtml() {
   return `<div class="roster-empty">${emptyState({
     iconName: "search",
     title: "没有符合条件的怪组",
-    desc: "试试放宽关键词、章节、怪种多选、效能或单位数筛选，或点击重置。",
+    desc: "试试放宽关键词、编号、阵营、BOSS、靶机、怪种、总血量或单位数筛选，或点击一键清除。",
   })}<div class="roster-empty-actions"><button class="btn btn-sm btn-cyan" type="button" data-roster-reset>${icon("rotate", 12)} 重置筛选条件</button></div></div>`;
 }
 
 export async function render(root) {
   rootEl = root;
-  state.page = 1;
-  state.limit = 50;
-  state.sort = "id_asc";
+  const saved = readRosterState();
+  state.page = Math.max(1, Number(saved?.page) || 1);
+  state.limit = PAGE_SIZES.includes(Number(saved?.limit)) ? Number(saved.limit) : 50;
+  state.sort = SORT_OPTIONS.some(([value]) => value === saved?.sort) ? saved.sort : "id_asc";
   state.filters = defaultFilters();
+  if (saved?.filters && typeof saved.filters === "object") {
+    for (const key of ["q", "chapter", "role", "faction", "boss", "collectable", "teamIds", "hpMin", "hpMax", "unitsMin", "unitsMax"]) {
+      if (typeof saved.filters[key] === "string") state.filters[key] = saved.filters[key];
+    }
+    if (Array.isArray(saved.filters.species)) {
+      for (const item of saved.filters.species) {
+        const codex = Number(item?.codex_no);
+        if (Number.isFinite(codex)) state.filters.species.set(codex, item);
+      }
+    }
+  }
   state.total = 0;
   root.innerHTML = `<div data-roster-body>${shellHtml()}</div>`;
 
@@ -406,6 +517,12 @@ export async function render(root) {
   const savedWidths = loadColWidths();
   if (savedWidths) applyColWidths(savedWidths);
   await loadTeams();
+  if (saved && Number(saved.scroll) > 0) {
+    requestAnimationFrame(() => {
+      const scroller = rosterScroller();
+      if (scroller) scroller.scrollTop = Number(saved.scroll) || 0;
+    });
+  }
 }
 
 function bindEvents() {
@@ -415,17 +532,34 @@ function bindEvents() {
   bindSearch(root.querySelector("[data-roster-q]"), (value) => {
     state.filters.q = value;
     state.page = 1;
+    refreshFilterUi();
     loadTeams();
   });
+
+  const teamIdInput = root.querySelector("[data-roster-team-ids]");
+  if (teamIdInput) {
+    let timer = null;
+    teamIdInput.addEventListener("input", () => {
+      state.filters.teamIds = teamIdInput.value.trim();
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.page = 1;
+        refreshFilterUi();
+        loadTeams();
+      }, 380);
+    });
+  }
 
   root.querySelector("[data-roster-chapter]")?.addEventListener("change", (event) => {
     state.filters.chapter = event.target.value;
     state.page = 1;
+    refreshFilterUi();
     loadTeams();
   });
   root.querySelector("[data-roster-role]")?.addEventListener("change", (event) => {
     state.filters.role = event.target.value;
     state.page = 1;
+    refreshFilterUi();
     loadTeams();
   });
   root.querySelector("[data-roster-sort]")?.addEventListener("change", (event) => {
@@ -438,17 +572,12 @@ function bindEvents() {
     state.page = 1;
     loadTeams();
   });
-  root.querySelector("[data-roster-known]")?.addEventListener("change", (event) => {
-    state.filters.powerKnown = Boolean(event.target.checked);
-    state.page = 1;
-    loadTeams();
-  });
 
   const numericFields = [
     ["[data-roster-units-min]", "unitsMin"],
     ["[data-roster-units-max]", "unitsMax"],
-    ["[data-roster-power-min]", "powerMin"],
-    ["[data-roster-power-max]", "powerMax"],
+    ["[data-roster-hp-min]", "hpMin"],
+    ["[data-roster-hp-max]", "hpMax"],
   ];
   numericFields.forEach(([selector, key]) => {
     const input = root.querySelector(selector);
@@ -459,32 +588,98 @@ function bindEvents() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.page = 1;
+        refreshFilterUi();
         loadTeams();
       }, 420);
     });
   });
 
   root.querySelectorAll("[data-roster-reset]").forEach((button) => {
+    button.addEventListener("click", () => resetFilters());
+  });
+
+  // Taobao-style tag choices
+  root.querySelectorAll("[data-roster-faction]").forEach((button) => {
     button.addEventListener("click", () => {
-      resetFilters();
+      state.filters.faction = button.dataset.rosterFaction || "";
+      state.page = 1;
+      refreshFilterUi();
+      loadTeams();
+    });
+  });
+  root.querySelectorAll("[data-roster-boss]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filters.boss = button.dataset.rosterBoss || "";
+      state.page = 1;
+      refreshFilterUi();
+      loadTeams();
+    });
+  });
+  root.querySelectorAll("[data-roster-collect]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filters.collectable = button.dataset.rosterCollect || "";
+      state.page = 1;
+      refreshFilterUi();
+      loadTeams();
     });
   });
 
-  // 表头点击排序
+  // Remove one tag / clear all tags
+  root.querySelector("[data-roster-picked]")?.addEventListener("click", (event) => {
+    const clearAll = event.target.closest("[data-roster-clear-all]");
+    if (clearAll) {
+      resetFilters();
+      return;
+    }
+    const clear = event.target.closest("[data-roster-clear]");
+    if (!clear) return;
+    const kind = clear.dataset.rosterClear;
+    if (kind === "species") {
+      state.filters.species.delete(Number(clear.dataset.clearKey));
+    } else if (kind === "hp") {
+      state.filters.hpMin = "";
+      state.filters.hpMax = "";
+      syncInput("[data-roster-hp-min]", "");
+      syncInput("[data-roster-hp-max]", "");
+    } else if (kind === "units") {
+      state.filters.unitsMin = "";
+      state.filters.unitsMax = "";
+      syncInput("[data-roster-units-min]", "");
+      syncInput("[data-roster-units-max]", "");
+    } else if (kind === "q") {
+      state.filters.q = "";
+      syncInput("[data-roster-q]", "");
+    } else if (kind === "teamIds") {
+      state.filters.teamIds = "";
+      syncInput("[data-roster-team-ids]", "");
+    } else if (kind === "chapter") {
+      state.filters.chapter = "";
+      syncInput("[data-roster-chapter]", "");
+    } else if (kind === "role") {
+      state.filters.role = "";
+      syncInput("[data-roster-role]", "");
+    } else {
+      state.filters[kind] = "";
+    }
+    state.page = 1;
+    refreshFilterUi();
+    loadTeams();
+  });
+
+  // Table header sorting
   root.querySelectorAll("th[data-sort-col]").forEach((th) => {
     th.addEventListener("click", () => {
       const col = th.dataset.sortCol;
       const cfg = SORT_COLS[col];
       if (!cfg) return;
       state.sort = state.sort === cfg.desc ? cfg.asc : cfg.desc;
-      const sortSelect = root.querySelector("[data-roster-sort]");
-      if (sortSelect) sortSelect.value = state.sort;
+      syncInput("[data-roster-sort]", state.sort);
       state.page = 1;
       loadTeams();
     });
   });
 
-  // 怪种多选
+  // Species picker
   const spInput = root.querySelector("[data-sp-search]");
   const spMenu = root.querySelector("[data-sp-menu]");
   const spPicker = root.querySelector("[data-sp-picker]");
@@ -500,8 +695,7 @@ function bindEvents() {
   spInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      const first = spMenu?.querySelector("[data-sp-opt]");
-      if (first) first.click();
+      spMenu?.querySelector("[data-sp-opt]")?.click();
     } else if (event.key === "Escape") {
       spMenu?.classList.remove("open");
     }
@@ -514,9 +708,8 @@ function bindEvents() {
       if (!item) return;
       if (state.filters.species.has(codex)) state.filters.species.delete(codex);
       else state.filters.species.set(codex, item);
-      const searchInput = root.querySelector("[data-sp-search]");
-      if (searchInput) searchInput.value = "";
-      refreshSpeciesUi();
+      if (spInput) spInput.value = "";
+      refreshFilterUi();
       state.page = 1;
       loadTeams();
       return;
@@ -525,7 +718,7 @@ function bindEvents() {
     if (remove) {
       event.stopPropagation();
       state.filters.species.delete(Number(remove.dataset.spRemove));
-      refreshSpeciesUi();
+      refreshFilterUi();
       state.page = 1;
       loadTeams();
     }
@@ -539,37 +732,71 @@ function bindEvents() {
     });
   }
 
+  // Remember the scroll position for "back to roster".
+  if (!rosterScrollBound) {
+    const scroller = rosterScroller();
+    if (scroller) {
+      let scrollTimer = null;
+      scroller.addEventListener("scroll", () => {
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => {
+          try {
+            const raw = sessionStorage.getItem(ROSTER_STATE_KEY);
+            const data = raw ? JSON.parse(raw) : {};
+            data.scroll = scroller.scrollTop;
+            sessionStorage.setItem(ROSTER_STATE_KEY, JSON.stringify(data));
+          } catch {
+            /* ignore */
+          }
+        }, 180);
+      }, { passive: true });
+      rosterScrollBound = true;
+    }
+  }
+
   bindPagerDelegation();
 }
 
-function refreshSpeciesUi() {
-  const picked = rootEl.querySelector("[data-sp-picked]");
-  if (picked) picked.innerHTML = pickedSpeciesHtml();
-  const menu = rootEl.querySelector("[data-sp-menu]");
-  if (menu) menu.innerHTML = speciesMenuHtml(rootEl.querySelector("[data-sp-search]")?.value || "");
+function syncInput(selector, value) {
+  const el = rootEl?.querySelector(selector);
+  if (el) el.value = value;
+}
+
+function refreshFilterUi() {
+  const picked = rootEl?.querySelector("[data-roster-picked]");
+  if (picked) picked.innerHTML = activeFilterChipsHtml();
+  const speciesPicked = rootEl?.querySelector("[data-sp-picked]");
+  if (speciesPicked) speciesPicked.innerHTML = pickedSpeciesHtml();
+  const menu = rootEl?.querySelector("[data-sp-menu]");
+  if (menu) menu.innerHTML = speciesMenuHtml(rootEl?.querySelector("[data-sp-search]")?.value || "");
+  rootEl?.querySelectorAll("[data-roster-faction]").forEach((button) => {
+    button.classList.toggle("is-active", (button.dataset.rosterFaction || "") === state.filters.faction);
+  });
+  rootEl?.querySelectorAll("[data-roster-boss]").forEach((button) => {
+    button.classList.toggle("is-active", (button.dataset.rosterBoss || "") === state.filters.boss);
+  });
+  rootEl?.querySelectorAll("[data-roster-collect]").forEach((button) => {
+    button.classList.toggle("is-active", (button.dataset.rosterCollect || "") === state.filters.collectable);
+  });
 }
 
 function resetFilters() {
+  clearRosterState();
   state.filters = defaultFilters();
   state.sort = "id_asc";
   state.page = 1;
   const root = rootEl;
   if (!root) return;
-  const sync = (selector, value) => {
-    const el = root.querySelector(selector);
-    if (el) el.value = value;
-  };
-  sync("[data-roster-q]", "");
-  sync("[data-roster-chapter]", "");
-  sync("[data-roster-role]", "");
-  sync("[data-roster-sort]", state.sort);
-  sync("[data-roster-units-min]", "");
-  sync("[data-roster-units-max]", "");
-  sync("[data-roster-power-min]", "");
-  sync("[data-roster-power-max]", "");
-  const known = root.querySelector("[data-roster-known]");
-  if (known) known.checked = false;
-  refreshSpeciesUi();
+  syncInput("[data-roster-q]", "");
+  syncInput("[data-roster-team-ids]", "");
+  syncInput("[data-roster-chapter]", "");
+  syncInput("[data-roster-role]", "");
+  syncInput("[data-roster-sort]", state.sort);
+  syncInput("[data-roster-units-min]", "");
+  syncInput("[data-roster-units-max]", "");
+  syncInput("[data-roster-hp-min]", "");
+  syncInput("[data-roster-hp-max]", "");
+  refreshFilterUi();
   loadTeams();
 }
 
@@ -588,6 +815,7 @@ function bindPagerDelegation() {
 
 async function loadTeams() {
   const token = ++reqToken;
+  saveRosterState();
   const tbody = rootEl.querySelector("[data-roster-tbody]");
   const pagerHost = rootEl.querySelector("[data-roster-pager]");
   if (!tbody) return;
@@ -625,6 +853,11 @@ function updateMeta(isEmpty) {
   const speciesCount = state.filters.species.size;
   const parts = [`共 <b>${fmtNum(state.total)}</b> 支怪组`];
   if (speciesCount) parts.push(`同时包含 <b>${speciesCount}</b> 个怪种`);
+  if (state.filters.faction) parts.push(`阵营 ${esc(state.filters.faction)}`);
+  if (state.filters.boss) parts.push(state.filters.boss === "1" ? "含 BOSS" : "不含 BOSS");
+  if (state.filters.collectable) parts.push(state.filters.collectable === "1" ? "可作靶机" : "仅展示");
+  if (state.filters.teamIds) parts.push(`编号 ${esc(state.filters.teamIds)}`);
+  if (state.filters.hpMin || state.filters.hpMax) parts.push("已按总血量过滤");
   if (state.filters.chapter) parts.push("已按章节出现位置过滤");
   meta.innerHTML = `${icon("list", 12)} ${parts.join(" · ")}${isEmpty ? "（无结果）" : ""}`;
 }
