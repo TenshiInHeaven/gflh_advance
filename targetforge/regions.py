@@ -29,7 +29,8 @@ PROFILES: dict[str, dict[str, Any]] = {
         "package_hints": ["com.sunborn.girlsfrontline.pt"],
         "data_root": "dataMiner/reference/GFLData/ch/stc",
         "notes": "安卓复活版：把国服 STC/文字桥接进日服客户端（jp_3.0810），"
-                 "登录走国服数据；用模拟器抓包，数据应对齐国服 STC。",
+                 "登录走国服数据；用模拟器抓包，数据应对齐国服 STC。"
+                 "抓 sign 时必须大退（退出登录）后重新登录，仅重启客户端可能复用缓存登录态。",
     },
     "tw": {
         "id": "tw",

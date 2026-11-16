@@ -145,6 +145,10 @@ export async function render(root) {
           3. 打开游戏登录，抓包会从 HTTPS 流量里识别 uid/sign/base_url。<br>
           <span class="text-mute">注意：MuMu/雷电/夜神/BlueStacks 的 ADB 路径不同；只要 ADB 能连、能 root 装系统 CA，抓包流程通用。</span>
         </div>
+        <div data-revival-note style="display:none;margin-top:9px;padding:9px 10px;border:1px solid rgba(240,170,60,.45);border-radius:8px;background:rgba(240,170,60,.08);color:#f3c46b;font-size:11px;line-height:1.75">
+          ${icon("alert", 13)} <b>国服复活版抓 sign：必须大退（退出登录）再重新登录。</b><br>
+          一键重启后如果游戏直接回到主界面，说明复用了缓存登录态，此时不会产生 uid/sign 登录包；请在游戏内「切换帐号 / 退出登录」后重新登录同一账号，再等待抓包识别 sign。
+        </div>
       </div>
     </div>
     <div class="capture-cols">
@@ -432,13 +436,18 @@ function bindCaptureMode(root) {
   }
   const sync = () => {
     const emu = modeEl?.value === "emulator";
+    const revival = emu && regionEl?.value === "cn_revival";
     if (box) box.style.display = emu ? "" : "none";
     if (gameClient) gameClient.style.display = emu ? "none" : "";
     if (hint) {
-      hint.textContent = emu
-        ? "模拟器模式：不需要 PC 客户端目录；用 ADB + CA + 本机反向代理抓包。"
-        : "国服 PC 模式：沿用系统代理 + 本地 127.0.0.1 端口。";
+      hint.textContent = revival
+        ? "国服复活版：一键配置后必须大退/退出登录再重新登录，才会产生 uid/sign 登录包。"
+        : emu
+          ? "模拟器模式：不需要 PC 客户端目录；用 ADB + CA + 本机反向代理抓包。"
+          : "国服 PC 模式：沿用系统代理 + 本地 127.0.0.1 端口。";
     }
+    const revivalNote = root.querySelector("[data-revival-note]");
+    if (revivalNote) revivalNote.style.display = revival ? "" : "none";
     const wizard = root.querySelector("[data-wizard]");
     if (wizard) wizard.style.display = emu ? "none" : "";
     // 区服始终可切换：选到模拟器区服会自动切到模拟器模式
@@ -522,7 +531,10 @@ function bindCaptureMode(root) {
       if (!result.ok) {
         toastErr("配置未完全成功", (result.error || "请查看返回结果").slice(0, 300));
       } else {
-        toastOk("模拟器配置完成", "CA/代理已设置，游戏正在重启。请登录到主界面。");
+        const revivalHint = (regionEl?.value === "cn_revival")
+          ? "复活版注意：如果游戏直接回到主界面，必须大退/切换帐号并重新登录，才能抓到 uid/sign。"
+          : "CA/代理已设置，游戏正在重启。请登录到主界面。";
+        toastOk("模拟器配置完成", revivalHint);
       }
       await refreshStatus();
     } catch (err) {
@@ -861,7 +873,9 @@ function applyStatus(status) {
   });
   const hintEl = rootEl.querySelector("[data-cap-hint]");
   if (hintEl) {
-    if (state === "running" && !status.uid) {
+    if (state === "running" && status.region === "cn_revival" && !status.sign_set) {
+      hintEl.innerHTML = `${icon("alert", 12)} 国服复活版尚未抓到 sign：如果游戏已经自动进入主界面，请在游戏内「切换帐号 / 退出登录」再重新登录同一账号；只重启客户端会复用缓存登录态，抓不到 sign。`;
+    } else if (state === "running" && !status.uid) {
       hintEl.innerHTML = `${icon("info", 12)} 抓包代理运行中（${esc(proxyAddr(statusPort))}）。请点「设置代理并重启游戏」，然后在游戏里正常登录到主界面。`;
     } else if (state === "running" && status.uid && !status.targets_captured) {
       hintEl.innerHTML = `${icon("info", 12)} 已抓到 uid=${esc(status.uid)}，正在读取收藏标靶列表…`;
