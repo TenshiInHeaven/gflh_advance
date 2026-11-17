@@ -199,6 +199,10 @@ function parseTargets() {
 
 async function startBridge(root) {
   if (state.busy) return;
+  if (!parseTargets().length && state.mode === "inject") {
+    toastErr("缺少桥接目标", "注入模式至少填写一个队伍编号；只做 roundtrip 时请切换模式。");
+    return;
+  }
   await classifyTargets();
   state.busy = true;
   const button = root.querySelector("[data-bridge-start]");

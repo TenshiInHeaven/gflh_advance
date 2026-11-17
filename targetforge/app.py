@@ -794,6 +794,9 @@ def api_bridge_start(body: dict) -> dict:
     if emucapture.is_active():
         raise HttpError(409, "请先停止模拟器抓包", hint="桥接只用于 PC。")
     targets = [int(item) for item in (body.get("targets") or [])]
+    if not targets and str(body.get("mode") or "inject").lower() == "inject":
+        raise HttpError(400, "注入模式至少需要一个桥接目标",
+                        hint="请在桥接目标里填写至少一个队伍编号；roundtrip 模式可以留空。")
     if targets:
         cat = get_catalog()
         kinds = set()

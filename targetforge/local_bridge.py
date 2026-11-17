@@ -28,7 +28,6 @@ MODE_FILE = BRIDGE_DIR / "inject_mode.txt"
 LOG_FILE = BRIDGE_DIR / "inject_proxy.log"
 STDOUT_FILE = BRIDGE_DIR / "bridge_stdout.log"
 DEFAULT_PORT = 18080
-DEFAULT_TARGETS = [7301601]
 DEFAULT_PACKAGE = "com.sunborn.girlsfrontline.pt"
 
 
@@ -170,8 +169,6 @@ def set_targets(targets: list[int]) -> list[int]:
             continue
         if tid > 0 and tid not in clean:
             clean.append(tid)
-    if not clean:
-        clean = list(DEFAULT_TARGETS)
     if len(clean) > 35:
         raise ValueError("桥接目标最多 35 个")
     TARGETS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +210,8 @@ def start(targets: list[int] | None = None, mode: str = "inject",
     if targets is not None:
         set_targets(targets)
     mode = "inject" if str(mode).lower() == "inject" else "roundtrip"
+    if mode == "inject" and not _targets():
+        raise ValueError("注入模式至少需要一个桥接目标")
     client = "emulator" if str(client).lower() == "emulator" else "pc"
     package = str(package or DEFAULT_PACKAGE).strip()
     MODE_FILE.write_text(mode, encoding="utf-8")
@@ -295,7 +294,9 @@ def _cleanup(backup: dict) -> None:
         except Exception:
             pass
     else:
-        _restore_windows_proxy(backup.get("windows"))
+        # 没有备份时不要盲目关闭系统代理；stop() 也可能是在清理残留状态。
+        if isinstance(backup.get("windows"), dict):
+            _restore_windows_proxy(backup.get("windows"))
 
 
 def stop(restart_game: bool = True) -> dict:
