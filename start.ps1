@@ -42,7 +42,7 @@ function Test-PortAvailable {
 
 function Select-ServicePort {
     param([int]$Requested)
-    $candidates = @(11451, 14514, 91781, 78139)
+    $candidates = @(9178, 7813, 9191)
     if ($Requested -gt 0) {
         if ($Requested -lt 1024 -or $Requested -gt 65535) {
             Stop-WithMessage "Port $Requested is invalid. Use 1024-65535."

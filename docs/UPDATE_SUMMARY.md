@@ -10,7 +10,7 @@
   - 启动 WebUI 并输出带 token 的访问地址。
 - 新增 `serve.bat` / `serve.ps1`
   - 日常服务启动入口；
-  - 自动探测可用端口：`11451 / 14514 / 91781 / 78139`；
+  - 自动探测可用端口：`9178 / 7813 / 9191`；
   - 支持 `-WithEmulator`、`-CheckOnly`、`-Port`；
   - 启动后设置控制台标题：`靶机工坊 TargetForge | http://127.0.0.1:<port>/?token=<token>`。
 

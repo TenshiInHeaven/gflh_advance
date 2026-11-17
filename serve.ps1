@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 Set-Location -LiteralPath $Root
-$PreferredPorts = @(11451, 14514, 91781, 78139)
+$PreferredPorts = @(9178, 7813, 9191)
 
 function Stop-WithMessage {
     param([string]$Message, [int]$Code = 1)
