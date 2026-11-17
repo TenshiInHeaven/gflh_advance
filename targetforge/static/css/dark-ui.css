@@ -499,3 +499,11 @@
 
 :root[data-theme="dark"] .node-section-label { color: #9ba0a7; }
 :root[data-theme="dark"] .node-section-label b { color: #f1eee7; }
+
+:root[data-theme="dark"] .bridge-sequence-head { background: #242a33; border-color: #343c48; color: #a0a5ac; }
+:root[data-theme="dark"] .bridge-sequence-head b { color: #f1eee7; }
+:root[data-theme="dark"] .bridge-empty-sequence { background: #15191f; border-color: #3a3f48; color: #8d9299; }
+
+:root[data-theme="dark"] .seq-red-warning { background: #351f23; border-color: #6b323a; color: #e4c8c8; }
+:root[data-theme="dark"] .seq-red-warning b { color: #ff9a9f; }
+:root[data-theme="dark"] .seq-red-warning a { color: #8ecfff; }

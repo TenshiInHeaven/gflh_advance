@@ -1,18 +1,11 @@
 /* views/bridge.js —— 本地靶机桥接（实验） */
 import { api } from "../api.js";
-import { store } from "../store.js";
-import {
-  icon,
-  pageHeadHtml,
-  toastErr,
-  toastOk,
-  setBusy,
-} from "../ui.js";
+import { store, refreshSequence } from "../store.js";
+import { icon, pageHeadHtml, toastErr, toastOk, setBusy } from "../ui.js";
 import { esc } from "../util.js";
 
 const state = {
   status: null,
-  targets: "",
   mode: "inject",
   client: "pc",
   package: "com.sunborn.girlsfrontline.pt",
@@ -21,10 +14,18 @@ const state = {
   targetInfo: new Map(),
   mixed: false,
   unknown: [],
+  rendered: false,
+  formInit: false,
 };
 
-function targetsText(status) {
-  return (status?.targets || []).join(", ");
+function sequenceDraft() {
+  return Array.isArray(store.sequence?.draft) ? store.sequence.draft : [];
+}
+
+function targetIds() {
+  return sequenceDraft()
+    .map((team) => Number(team.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
 }
 
 function statusPill(status) {
@@ -34,18 +35,15 @@ function statusPill(status) {
   return `<span class="badge ${cls}">${label}</span>`;
 }
 
-
-function parseTargetIds() {
-  return state.targets
-    .split(/[,;\s]+/)
-    .map((item) => Number(item))
-    .filter((item) => Number.isInteger(item) && item > 0);
-}
-
 async function classifyTargets() {
-  const ids = parseTargetIds();
+  const ids = targetIds();
   const info = new Map();
   await Promise.all(ids.map(async (id) => {
+    const known = sequenceDraft().find((team) => Number(team.id) === id);
+    if (known && typeof known.collectable === "boolean") {
+      info.set(id, { collectable: known.collectable, team: known });
+      return;
+    }
     try {
       const team = await api.team(id);
       info.set(id, { collectable: team.collectable !== false, team });
@@ -61,19 +59,21 @@ async function classifyTargets() {
 }
 
 function targetKindsHtml() {
-  const ids = parseTargetIds();
-  if (!ids.length) return `<span class="bridge-kind-empty">尚未填写桥接目标</span>`;
+  const ids = targetIds();
+  if (!ids.length) {
+    return `<div class="bridge-empty-sequence">${icon("layers", 14)} 序列为空。桥接直接共用右侧序列，请先到「序列编排」加入目标。</div>`;
+  }
   const chips = ids.map((id) => {
     const item = state.targetInfo.get(id);
     const cls = item?.collectable === true ? "blue" : item?.collectable === false ? "red" : "unknown";
     const label = cls === "blue" ? "蓝框 · 可临时加入" : cls === "red" ? "红框 · 必须桥接" : "未知/无数据";
     return `<span class="bridge-target-chip ${cls}"><b>#${esc(id)}</b><span>${label}</span></span>`;
   }).join("");
-  let rule = "";
   const hasBlue = [...state.targetInfo.values()].some((item) => item.collectable === true);
   const hasRed = [...state.targetInfo.values()].some((item) => item.collectable === false);
+  let rule = "";
   if (hasRed && hasBlue) {
-    rule = `<div class="bridge-rule red">红框 + 蓝框混接：只要包含红框，整组都只能作为临时桥接，不能做任何服务器管理操作；停止桥接并重启后清空。</div>`;
+    rule = `<div class="bridge-rule red">红框 + 蓝框混接：只要包含红框，整组都只能作为临时桥接；停止桥接并重启后清空。</div>`;
   } else if (hasRed && !state.unknown.length) {
     rule = `<div class="bridge-rule red">红框目标：正常 addCollect 不会接受，只能通过桥接临时加入。</div>`;
   } else if (hasBlue && !state.unknown.length) {
@@ -85,9 +85,36 @@ function targetKindsHtml() {
   return `<div class="bridge-target-chips">${chips}</div>${rule}`;
 }
 
-function renderBody(root) {
+function sequenceHeaderHtml() {
+  return `<span>当前序列 <b>${sequenceDraft().length}</b> / 35</span>
+    <button class="btn btn-xs btn-ghost" type="button" data-nav="/sequence">${icon("layers", 11)} 去序列编排</button>`;
+}
+
+function statusFieldsHtml() {
   const status = state.status || {};
-  const log = status.log || "还没有桥接日志。";
+  return `
+    <div><span>PID</span><b>${esc(status.pid || "—")}</b></div>
+    <div><span>端口</span><b>${esc(status.port || 18080)}</b></div>
+    <div><span>目标数</span><b>${targetIds().length}</b></div>
+    <div><span>模式</span><b>${esc(status.mode || state.mode)}</b></div>`;
+}
+
+function bindEvents(root) {
+  root.querySelector("[data-bridge-mode]")?.addEventListener("change", (event) => {
+    state.mode = event.target.value;
+  });
+  root.querySelector("[data-bridge-client]")?.addEventListener("change", (event) => {
+    state.client = event.target.value;
+  });
+  root.querySelector("[data-bridge-package]")?.addEventListener("input", (event) => {
+    state.package = event.target.value;
+  });
+  root.querySelector("[data-bridge-start]")?.addEventListener("click", () => startBridge(root));
+  root.querySelector("[data-bridge-stop]")?.addEventListener("click", () => stopBridge(root));
+}
+
+function renderBody(root) {
+  const log = state.status?.log || "还没有桥接日志。";
   root.innerHTML = `
     <div class="bridge-warning">
       <span class="help-dot" title="实验功能：仅修改客户端 Index/index 响应，不写服务器">?</span>
@@ -98,17 +125,15 @@ function renderBody(root) {
     </div>
     <div class="bridge-grid">
       <section class="panel panel-pad">
-        <div class="subhead">${icon("crosshair", 13)} 桥接目标</div>
-        <label class="bridge-field">
-          <span>队伍编号（逗号分隔，最多 35 个）</span>
-          <textarea data-bridge-targets rows="4" spellcheck="false" placeholder="7301601, 7300101">${esc(state.targets)}</textarea>
-        </label>
+        <div class="subhead">${icon("layers", 13)} 桥接目标 · 共用右侧序列</div>
+        <div class="bridge-sequence-head" data-bridge-seq-head>${sequenceHeaderHtml()}</div>
         <div class="bridge-target-kinds" data-bridge-kinds>${targetKindsHtml()}</div>
+
         <label class="bridge-field">
           <span>模式</span>
           <select data-bridge-mode class="rf-select">
             <option value="roundtrip" ${state.mode === "roundtrip" ? "selected" : ""}>仅验证 roundtrip（不追加）</option>
-            <option value="inject" ${state.mode === "inject" ? "selected" : ""}>注入模式（追加目标）</option>
+            <option value="inject" ${state.mode === "inject" ? "selected" : ""}>注入模式（临时加入）</option>
           </select>
         </label>
         <div class="bridge-field-row">
@@ -129,78 +154,61 @@ function renderBody(root) {
           <button class="btn btn-primary" data-bridge-start ${state.busy ? "disabled" : ""}>${icon("play", 13)} 启动桥接并重启游戏</button>
           <button class="btn btn-danger" data-bridge-stop ${state.busy ? "disabled" : ""}>${icon("close", 13)} 停止桥接并恢复代理</button>
         </div>
-        <p class="bridge-note">启动前请先关闭普通抓包和模拟器抓包。HTTPS 会直通，不安装证书。</p>
+        <p class="bridge-note">普通注入入口仍在「序列编排」；含红框时普通执行注入会失败，请用本页桥接临时加入。启动前请先关闭普通抓包和模拟器抓包。HTTPS 会直通，不安装证书。</p>
       </section>
       <section class="panel panel-pad">
-        <div class="subhead">${icon("radar", 13)} 状态 ${statusPill(status)}</div>
-        <div class="bridge-status">
-          <div><span>PID</span><b>${esc(status.pid || "—")}</b></div>
-          <div><span>端口</span><b>${esc(status.port || 18080)}</b></div>
-          <div><span>目标数</span><b>${(status.targets || []).length}</b></div>
-          <div><span>模式</span><b>${esc(status.mode || state.mode)}</b></div>
-        </div>
+        <div class="subhead">${icon("radar", 13)} 状态 <span data-bridge-state>${statusPill(state.status)}</span></div>
+        <div class="bridge-status" data-bridge-status>${statusFieldsHtml()}</div>
         <div class="subhead">${icon("terminal", 13)} 日志</div>
         <pre class="bridge-log" data-bridge-log>${esc(log)}</pre>
       </section>
-    </div>
-  `;
+    </div>`;
+  bindEvents(root);
+}
 
-  let classifyTimer = null;
-  root.querySelector("[data-bridge-targets]")?.addEventListener("input", (event) => {
-    state.targets = event.target.value;
-    clearTimeout(classifyTimer);
-    classifyTimer = setTimeout(async () => {
-      await classifyTargets();
-      const kinds = root.querySelector("[data-bridge-kinds]");
-      if (kinds) kinds.innerHTML = targetKindsHtml();
-      const start = root.querySelector("[data-bridge-start]");
-      if (start) start.disabled = state.mixed;
-    }, 320);
-  });
-  root.querySelector("[data-bridge-mode]")?.addEventListener("change", (event) => {
-    state.mode = event.target.value;
-  });
-  root.querySelector("[data-bridge-client]")?.addEventListener("change", (event) => {
-    state.client = event.target.value;
-  });
-  root.querySelector("[data-bridge-package]")?.addEventListener("input", (event) => {
-    state.package = event.target.value;
-  });
-  root.querySelector("[data-bridge-start]")?.addEventListener("click", () => startBridge(root));
-  root.querySelector("[data-bridge-stop]")?.addEventListener("click", () => stopBridge(root));
-  if (parseTargetIds().length) {
-    classifyTargets().then(() => {
-      const kinds = root.querySelector("[data-bridge-kinds]");
-      if (kinds) kinds.innerHTML = targetKindsHtml();
-    });
-  }
+function updateStatusDom(root) {
+  const stateEl = root.querySelector("[data-bridge-state]");
+  if (stateEl) stateEl.innerHTML = statusPill(state.status);
+  const fields = root.querySelector("[data-bridge-status]");
+  if (fields) fields.innerHTML = statusFieldsHtml();
+  const log = root.querySelector("[data-bridge-log]");
+  if (log) log.textContent = state.status?.log || "还没有桥接日志。";
 }
 
 async function refresh(root) {
   try {
     state.status = await api.bridgeStatus();
-    if (!state.targets && (state.status.targets || []).length) state.targets = targetsText(state.status);
-    if (state.status.mode) state.mode = state.status.mode === "roundtrip" ? "roundtrip" : "inject";
-    if (state.status.client) state.client = state.status.client === "emulator" ? "emulator" : "pc";
-    if (state.status.package) state.package = state.status.package;
-    const log = root.querySelector("[data-bridge-log]");
-    if (log) log.textContent = state.status.log || "还没有桥接日志。";
-    const host = root.querySelector("[data-bridge-body]");
-    if (host) renderBody(host);
+    if (!state.formInit) {
+      if (state.status.mode) state.mode = state.status.mode === "roundtrip" ? "roundtrip" : "inject";
+      if (state.status.client) state.client = state.status.client === "emulator" ? "emulator" : "pc";
+      if (state.status.package) state.package = state.status.package;
+      state.formInit = true;
+    }
+    if (!state.rendered) {
+      const host = root.querySelector("[data-bridge-body]") || root;
+      renderBody(host);
+      state.rendered = true;
+      await classifyTargets();
+      const kinds = root.querySelector("[data-bridge-kinds]");
+      if (kinds) kinds.innerHTML = targetKindsHtml();
+    } else {
+      updateStatusDom(root);
+    }
   } catch (err) {
     const host = root.querySelector("[data-bridge-body]");
     if (host) host.innerHTML = `<div class="roster-error">${icon("alert", 15)} ${esc(err.message || "读取桥接状态失败")}</div>`;
   }
 }
 
-function parseTargets() {
-  return state.targets.split(/[,;\\s]+/).map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0);
-}
-
 async function startBridge(root) {
   if (state.busy) return;
-  if (!parseTargets().length && state.mode === "inject") {
-    toastErr("缺少桥接目标", "注入模式至少填写一个队伍编号；只做 roundtrip 时请切换模式。");
+  const ids = targetIds();
+  if (!ids.length) {
+    toastErr("序列为空", "桥接直接共用右侧序列，请先到「序列编排」加入目标。");
+    return;
+  }
+  if (state.mode === "inject" && !ids.length) {
+    toastErr("缺少桥接目标", "注入模式至少需要一个序列目标。");
     return;
   }
   await classifyTargets();
@@ -209,21 +217,19 @@ async function startBridge(root) {
   setBusy(button, true, "启动中…");
   try {
     state.status = await api.bridgeStart({
-      targets: parseTargets(),
+      targets: ids,
       mode: state.mode,
       client: state.client,
       package: state.package,
       restart_game: true,
     });
-    state.targets = targetsText(state.status);
     toastOk("桥接已启动", "游戏正在重启，请登录测试账号。");
-    await refresh(root);
+    updateStatusDom(root);
   } catch (err) {
     toastErr("启动桥接失败", err.hint || err.detail || err.message);
   } finally {
     state.busy = false;
-    const body = root.querySelector("[data-bridge-body]");
-    if (body) renderBody(body);
+    setBusy(button, false);
   }
 }
 
@@ -235,31 +241,50 @@ async function stopBridge(root) {
   try {
     state.status = await api.bridgeStop({ restart_game: true });
     toastOk("桥接已停止", "系统代理已恢复，游戏已重启，桥接靶机已清空。");
-    await refresh(root);
+    updateStatusDom(root);
   } catch (err) {
     toastErr("停止桥接失败", err.hint || err.detail || err.message);
   } finally {
     state.busy = false;
-    const body = root.querySelector("[data-bridge-body]");
-    if (body) renderBody(body);
+    setBusy(button, false);
   }
 }
 
 export async function render(root) {
+  state.rendered = false;
+  state.formInit = false;
+  state.status = null;
   root.innerHTML =
     pageHeadHtml({
       crumbs: [{ label: "本地靶机桥接" }],
       title: "本地靶机桥接",
       badge: "EXPERIMENTAL",
-      sub: "在客户端 Index 响应上追加本地临时靶机。只追加、不替换、不写服务器；停止桥接并重启游戏后清空。",
+      sub: "直接共用右侧序列。含红框时整组作为临时注入；只追加、不替换、不写服务器；停止桥接并重启游戏后清空。",
     }) +
     '<div data-bridge-body><div class="roster-loading"><span class="spinner"></span> 读取桥接状态…</div></div>';
 
+  try {
+    await refreshSequence();
+  } catch {
+    /* 序列读取失败时留空，桥接页会提示 */
+  }
   await refresh(root);
-  if (state.timer) window.clearInterval(state.timer);
-  state.timer = window.setInterval(() => refresh(root), 3000);
+
+  const seqRoot = root.querySelector("[data-bridge-body]");
+  const syncSequence = async () => {
+    if (!seqRoot) return;
+    const head = seqRoot.querySelector("[data-bridge-seq-head]");
+    if (head) head.innerHTML = sequenceHeaderHtml();
+    await classifyTargets();
+    const kinds = seqRoot.querySelector("[data-bridge-kinds]");
+    if (kinds) kinds.innerHTML = targetKindsHtml();
+  };
+  const unsub = store.on("sequence", syncSequence);
   store.registerCleanup(() => {
+    if (typeof unsub === "function") unsub();
     if (state.timer) window.clearInterval(state.timer);
     state.timer = null;
   });
+  if (state.timer) window.clearInterval(state.timer);
+  state.timer = window.setInterval(() => refresh(root).catch(() => {}), 3000);
 }

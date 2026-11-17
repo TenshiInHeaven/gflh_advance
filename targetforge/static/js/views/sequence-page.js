@@ -97,6 +97,7 @@ function renderPage() {
   const seq = store.sequence;
   const stats = sequenceStats(seq);
   const draft = seq?.draft || [];
+  const hasRed = draft.some((team) => team.collectable === false);
   const pageEl = rootEl.querySelector("[data-seq-page]");
   if (!pageEl) return;
 
@@ -160,9 +161,14 @@ function renderPage() {
             <span class="dot warn pulse"></span>
             <span style="flex:1">执行前会先弹出预览：删除 / 新增 / 保留 / 最终列表。</span>
           </div>
+          ${hasRed ? `<div class="seq-red-warning">
+            <b>${icon("alert", 12)} 序列含红框</b>
+            普通“执行注入”会被服务器拒绝；请去 <a href="#/bridge" data-nav="/bridge">本地靶机桥接</a> 用同一序列临时加入。
+            下方仍保留强制执行入口，仅用于让你确认普通注入无效。
+          </div>` : ""}
           <div class="mt12" style="display:flex;flex-direction:column;gap:7px">
             <button class="btn btn-primary btn-lg btn-block" type="button" data-act="execute">
-              ${icon("play", 14)} ${draft.length ? "预览并执行" : "执行注入（序列为空）"}
+              ${icon("play", 14)} ${hasRed ? "强制执行注入（红框会失败）" : draft.length ? "预览并执行" : "执行注入（序列为空）"}
             </button>
             <div style="display:flex;gap:7px">
               <button class="btn btn-ghost btn-sm" style="flex:1" type="button" data-act="import">${icon("download", 12)} 从当前导入</button>
