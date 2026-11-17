@@ -4,12 +4,25 @@ import hashlib
 import json
 import re
 import time
+import os
 from pathlib import Path
 
 from gflzirc import gf_authcode
 
 STATIC_KEY = "yundoudou"
-DATA_DIR = Path(__file__).resolve().parents[2] / "dataMiner" / "derived" / "targetforge"
+
+
+def _resolve_data_dir() -> Path:
+    override = os.environ.get("TARGETFORGE_DATA_DIR", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    # bridge_addon.py 位于 <repo>/targetforge/ 下，向上**一级**就是仓库根。
+    # 不能再用 parents[2]：那会跳到仓库的上一层，导致 addon 读不到界面写入的
+    # inject_targets.json，表现是 APPEND bridges=[] 的静默失效。
+    return Path(__file__).resolve().parents[1] / "dataMiner" / "derived" / "targetforge"
+
+
+DATA_DIR = _resolve_data_dir()
 LOG = DATA_DIR / "inject_proxy.log"
 MODE_FILE = DATA_DIR / "inject_mode.txt"
 TARGETS_FILE = DATA_DIR / "inject_targets.json"
@@ -17,6 +30,7 @@ TARGET_URL_PART = "Index/index"
 KEYFILE = DATA_DIR / "inject_key.txt"
 
 _current_key = STATIC_KEY
+_targets_warned = False
 
 
 def _log(message: str) -> None:
@@ -37,9 +51,13 @@ def _mode() -> str:
 
 
 def _targets() -> list[int]:
+    global _targets_warned
     try:
         raw = json.loads(TARGETS_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        if not _targets_warned:
+            _log(f"TARGETS_READ_FAILED path={TARGETS_FILE} err={type(exc).__name__}: {exc}")
+            _targets_warned = True
         return []
     if isinstance(raw, dict):
         raw = raw.get("targets") or []
@@ -53,6 +71,9 @@ def _targets() -> list[int]:
             continue
         if tid > 0 and tid not in out:
             out.append(tid)
+    if not out and not _targets_warned:
+        _log(f"TARGETS_EMPTY path={TARGETS_FILE}")
+        _targets_warned = True
     return out[:35]
 
 
