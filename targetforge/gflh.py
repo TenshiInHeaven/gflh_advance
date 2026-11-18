@@ -37,10 +37,12 @@
 """
 from __future__ import annotations
 
+import atexit
 import csv
 import importlib.util
 import io
 import json
+import os
 import random
 import socket
 import subprocess
@@ -52,6 +54,7 @@ from pathlib import Path
 from targetforge.datapaths import CREDS_LATEST as DEFAULT_CREDS
 from targetforge import creds_store
 from targetforge import cred_slots
+from targetforge import sysproxy
 from targetforge.datapaths import DATA_DIR
 
 # ---------------------------------------------------------------------------
@@ -91,6 +94,9 @@ CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 _TRAIN_MODULE = None
 _TRAIN_LOCK = threading.Lock()
+
+_PROXY_BACKUP_LOCK = threading.Lock()
+_PROXY_BACKUP: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -772,6 +778,8 @@ def _new_capture_state() -> dict:
 _CAPTURE = _new_capture_state()
 _CAPTURE_LOCK = threading.RLock()
 _CAPTURE_GENERATION = 0          # 每次 start 自增；旧 watchdog 看到代数变化自行退出
+_CAPTURE_DUMP = os.environ.get("TARGETFORGE_CAPTURE_DUMP", "") == "1"
+_CAPTURE_DUMP_FILE = Path(DATA_DIR) / "capture_events.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -946,6 +954,17 @@ def _on_capture_traffic(event_type, url, payload) -> None:
                 return
         if url:
             _remember_url(str(url))
+        if _CAPTURE_DUMP and event_type in ("C2S", "S2C"):
+            try:
+                with _CAPTURE_DUMP_FILE.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({
+                        "at": _now_iso(),
+                        "type": event_type,
+                        "url": str(url or ""),
+                        "payload": payload,
+                    }, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
         if event_type == "SYS_KEY_UPGRADE" and isinstance(payload, dict):
             uid = payload.get("uid")
             sign = payload.get("sign")
@@ -979,11 +998,26 @@ def _on_capture_traffic(event_type, url, payload) -> None:
         pass
 
 
+def _ensure_proxy_backup() -> bool:
+    """在第一次改系统代理前保存原值（包括 ProxyServer/AutoConfigURL）。"""
+    global _PROXY_BACKUP
+    with _PROXY_BACKUP_LOCK:
+        if _PROXY_BACKUP is not None:
+            return True
+        snapshot = sysproxy.snapshot()
+        if not isinstance(snapshot, dict):
+            _cap_log("warn", "无法读取抓包前的系统代理设置，停止时不会覆盖当前代理")
+            return False
+        _PROXY_BACKUP = snapshot
+        _cap_log("info", f"已保存抓包前系统代理：{sysproxy.describe(snapshot)}")
+        return True
+
+
 def _call_set_windows_proxy(enable: bool, addr: str | None = None) -> bool:
     """包装 gflzirc.set_windows_proxy；任何异常都吞掉返回 False。
 
-    ``enable=True`` 且没给 ``addr`` 时用最近会话端口（没有会话用默认 18080），
-    绝不把端口写死成 18080。
+    ``enable=True`` 之前会先保存原始系统代理，停止时精确还原，而不是只把
+    ProxyEnable 关掉、把 ProxyServer 留在 127.0.0.1:端口。
     """
     try:
         gflzirc = _require_gflzirc()
@@ -991,6 +1025,7 @@ def _call_set_windows_proxy(enable: bool, addr: str | None = None) -> bool:
         return False
     try:
         if enable:
+            _ensure_proxy_backup()
             return bool(gflzirc.set_windows_proxy(True, addr or _proxy_addr()))
         return bool(gflzirc.set_windows_proxy(False))
     except Exception:  # noqa: BLE001
@@ -998,14 +1033,38 @@ def _call_set_windows_proxy(enable: bool, addr: str | None = None) -> bool:
 
 
 def _restore_system_proxy() -> bool:
-    ok = _call_set_windows_proxy(False)
-    with _CAPTURE_LOCK:
-        _CAPTURE["system_proxy_on"] = False
-    if ok:
-        _cap_log("info", "已恢复系统代理（关闭）")
+    """恢复抓包前的系统代理注册表值，而不是简单关闭代理。"""
+    global _PROXY_BACKUP
+    with _PROXY_BACKUP_LOCK:
+        backup = _PROXY_BACKUP
+    if isinstance(backup, dict):
+        ok = sysproxy.restore(backup)
+        if ok:
+            with _PROXY_BACKUP_LOCK:
+                _PROXY_BACKUP = None
+            _cap_log("info", f"已还原到抓包前系统代理：{sysproxy.describe(backup)}")
+        else:
+            _cap_log("warn", f"还原系统代理失败；目标值：{sysproxy.describe(backup)}")
     else:
-        _cap_log("warn", "恢复系统代理失败，请手动关闭系统代理")
+        ok = False
+        _cap_log("warn", "没有抓包前的系统代理备份，未修改当前系统代理")
+    with _CAPTURE_LOCK:
+        _CAPTURE["system_proxy_on"] = not ok
     return ok
+
+
+def _restore_proxy_on_exit() -> None:
+    """正常退出时如果仍在抓包，尽量恢复原代理；不覆盖已经停止的会话。"""
+    with _CAPTURE_LOCK:
+        active = bool(_CAPTURE.get("system_proxy_on"))
+    if active:
+        try:
+            _restore_system_proxy()
+        except Exception:
+            pass
+
+
+atexit.register(_restore_proxy_on_exit)
 
 
 def _write_capture_creds() -> str | None:
@@ -1145,7 +1204,8 @@ def capture_start(*, port: int = CAPTURE_PORT, set_proxy: bool = True,
 def capture_stop() -> dict:
     """停止抓包：停代理 → 恢复系统代理 → 写 creds_latest.json。未启动时安全返回。
 
-    恢复系统代理是「关闭系统代理」（与本次会话用的端口无关，不需要端口）。
+    恢复系统代理是「精确还原抓包前的系统代理值」（与本次会话端口无关，
+    不需要端口；会保留 Dove/Clash 等原来的 ProxyServer）。
     """
     with _CAPTURE_LOCK:
         state = _CAPTURE.get("state") or "idle"
@@ -1761,13 +1821,20 @@ def set_system_proxy(enable: bool, addr: str | None = None) -> dict:
             "system_proxy": _read_system_proxy(),
             "hint": "" if ok else "设置失败：确认 gflzirc 可用；也可以手动改系统代理",
         }
-    ok = _call_set_windows_proxy(False)
+    with _PROXY_BACKUP_LOCK:
+        has_backup = _PROXY_BACKUP is not None
+    if has_backup:
+        ok = _restore_system_proxy()
+    else:
+        # 没有本程序保存的备份时，不盲目关闭系统代理（可能覆盖用户原代理）。
+        ok = False
+        _cap_log("warn", "没有抓包前的系统代理备份，拒绝直接关闭系统代理")
     return {
         "ok": bool(ok),
         "enabled": False,
         "addr": None,
         "port": None,
-        "source": "disable",
+        "source": "restore",
         "system_proxy": _read_system_proxy(),
-        "hint": "" if ok else "关闭失败：请手动关闭系统代理",
+        "hint": "" if ok else "没有可还原的抓包前代理备份；未修改当前系统代理",
     }
