@@ -336,8 +336,11 @@ function renderPage() {
     // ---- 段一：可能刷怪（固定/刷怪表内、不在场上；或推断候选）----
     // 灰域：所有非红框实际队伍 + 非红框候选进入已屏蔽；
     // 积分关卡：未证实的非红框支援/机场候选进入已屏蔽。
+    // 只屏蔽推断候选；秋水Ameth 等手动固定/刷怪/烟花强化表是显式数据，
+    // 即使可收藏也必须保留在「可能刷怪」，不能被屏蔽区吞掉。
+    const isManualSpawn = (team) => team.reserve_source === "manual" || team.inferred === false;
     const blockedReserve = (isGrayNode || isScoreStage)
-      ? (loaded.reserveTeams || []).filter((team) => team.collectable !== false)
+      ? (loaded.reserveTeams || []).filter((team) => team.collectable !== false && !isManualSpawn(team))
       : [];
     const blockedById = new Map();
     for (const team of [...blockedActual, ...blockedReserve]) {
@@ -349,13 +352,13 @@ function renderPage() {
     const absentSource = (loaded.absentTeams || []).filter((team) => !blockedIds.has(Number(team.id)));
     // 灰域标记的怪组才是原关卡一级候选；其余一律放二级，避免想打特定
     // 怪组时被非本关的无关怪组混入。
-    const blockedLevel1 = blockedAll.filter((team) => team.gray_zone === true);
-    const blockedLevel2 = blockedAll.filter((team) => team.gray_zone !== true);
+    const blockedLevel1 = applyFilters(blockedAll.filter((team) => team.gray_zone === true));
+    const blockedLevel2 = applyFilters(blockedAll.filter((team) => team.gray_zone !== true));
     const blockedExpanded = state.blockedOpen || (filtering && blockedAll.length > 0);
     const blockedShown1 = blockedExpanded ? blockedLevel1.slice(0, state.reserveVisible) : [];
     const blockedShown2 = blockedExpanded ? blockedLevel2.slice(0, state.reserveVisible) : [];
     const blockedTitle = `已屏蔽（过滤） <b>${blockedAll.length}</b> 支`;
-    const blockedHint = "STC数据给出这些是可能出现的，被标识为灰域（或机场支援的）怪组，但灰域/积分关卡中并没有他们的出现可能，因此在该类关卡下，不推荐该类怪组出现以防产生困扰，但也可从全怪组中抓取";
+    const blockedHint = "这里只屏蔽没有显式来源的推断候选；秋水Ameth 等固定/刷怪/烟花强化表中的显式数据不会被屏蔽。被屏蔽项仍可从全怪组中抓取。";
     const spawnAll = applyFilters(spawnSource);
     const spawnTotal = spawnSource.length;
     const spawnExpanded = state.reserveOpen || (filtering && spawnAll.length > 0);
